@@ -197,6 +197,9 @@ extension AIChatViewModel {
         // Sub-agent delegation.
         tools.append(Self.makeSubagentToolDefinition())
 
+        // Extension tools (from installed .minisx extensions).
+        tools.append(contentsOf: ExtensionRegistry.shared.extensionToolDefinitions())
+
         return tools
     }
 

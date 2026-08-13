@@ -7321,6 +7321,19 @@ private struct SettingsSheet: View {
                         }
                     }
                     NavigationLink {
+                        ExtensionManagerView()
+                    } label: {
+                        Label {
+                            Text("Extensions")
+                        } icon: {
+                            Image(systemName: "puzzlepiece.extension.fill")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.white)
+                                .frame(width: 21, height: 21)
+                                .background(.orange, in: Circle())
+                        }
+                    }
+                    NavigationLink {
                         MemoryManagementView()
                     } label: {
                         Label {

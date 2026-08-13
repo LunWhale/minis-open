@@ -839,6 +839,14 @@ extension AIChatViewModel {
             toolOutput = subResult.output
             toolSuccess = subResult.success
 
+        case let extName where extName.hasPrefix("extension_"):
+            let extResult = await ExtensionRegistry.shared.executeExtensionTool(apiName: extName, argsJSON: argsJson)
+            toolOutput = extResult.0
+            toolSuccess = !extResult.1
+            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
+                messages[msgIdx].blocks[blockIdx].content = toolOutput
+            }
+
         default:
             toolOutput = "Error: Unknown tool '\(tu.name)'"
             toolSuccess = false

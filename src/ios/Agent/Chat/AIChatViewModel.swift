@@ -1976,7 +1976,10 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
 
     /// Session ID for persistence integration. Set by the view on appear.
     var sessionId: String? {
-        didSet { browserTabPool.sessionId = sessionId }
+        didSet {
+            browserTabPool.sessionId = sessionId
+            ActiveSession.set(sessionId)
+        }
     }
 
     /// The draft ID assigned by the parent view (e.g. "__new__<UUID>").
