@@ -342,6 +342,7 @@
 		E5SHV0004 /* MountDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SHV0104 /* MountDetailView.swift */; };
 		E5SOUL001 /* SoulStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SOUL101 /* SoulStore.swift */; };
 		E5SOUL002 /* SoulSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SOUL102 /* SoulSettingsView.swift */; };
+		E5SUBRV2 /* SubagentRolesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SUBRV1 /* SubagentRolesView.swift */; };
 		E5SVP0021 /* ShadowVoiceProviderDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SVP0031 /* ShadowVoiceProviderDetailView.swift */; };
 		E5T000001 /* SessionEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5T000011 /* SessionEntity.swift */; };
 		E5T000002 /* ListSessionsIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5T000012 /* ListSessionsIntent.swift */; };
@@ -400,6 +401,10 @@
 		E5TODO002 /* AIChatViewModel+TodoTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5TODO001 /* AIChatViewModel+TodoTools.swift */; };
 		E5TODOS2 /* TodoStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5TODOS1 /* TodoStore.swift */; };
 		E5TODOM2 /* TodoModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5TODOM1 /* TodoModels.swift */; };
+		E5SUBAR1B /* AgentRole.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SUBAR1 /* AgentRole.swift */; };
+		E5SUBAR2B /* AgentRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SUBAR2 /* AgentRunner.swift */; };
+		E5SUBAR3B /* SubagentCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SUBAR3 /* SubagentCoordinator.swift */; };
+		E5SUBAT1B /* AIChatViewModel+SubagentTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SUBAT1 /* AIChatViewModel+SubagentTools.swift */; };
 		E5VMA0006 /* AIChatViewModel+ProviderFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMA0016 /* AIChatViewModel+ProviderFactory.swift */; };
 		E5VMA0007 /* AIChatViewModel+ToolDefinitions.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMA0017 /* AIChatViewModel+ToolDefinitions.swift */; };
 		E5VMA0008 /* AIChatViewModel+ToolPreflight.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMA0018 /* AIChatViewModel+ToolPreflight.swift */; };
@@ -975,6 +980,7 @@
 		E5SHV0104 /* MountDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MountDetailView.swift; sourceTree = "<group>"; };
 		E5SOUL101 /* SoulStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoulStore.swift; sourceTree = "<group>"; };
 		E5SOUL102 /* SoulSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoulSettingsView.swift; sourceTree = "<group>"; };
+		E5SUBRV1 /* SubagentRolesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubagentRolesView.swift; sourceTree = "<group>"; };
 		E5SVP0031 /* ShadowVoiceProviderDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShadowVoiceProviderDetailView.swift; sourceTree = "<group>"; };
 		E5T000011 /* SessionEntity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionEntity.swift; sourceTree = "<group>"; };
 		E5T000012 /* ListSessionsIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListSessionsIntent.swift; sourceTree = "<group>"; };
@@ -1024,6 +1030,10 @@
 		E5TODO001 /* AIChatViewModel+TodoTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+TodoTools.swift"; sourceTree = "<group>"; };
 		E5TODOS1 /* TodoStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoStore.swift; sourceTree = "<group>"; };
 		E5TODOM1 /* TodoModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoModels.swift; sourceTree = "<group>"; };
+		E5SUBAR1 /* AgentRole.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRole.swift; sourceTree = "<group>"; };
+		E5SUBAR2 /* AgentRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunner.swift; sourceTree = "<group>"; };
+		E5SUBAR3 /* SubagentCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubagentCoordinator.swift; sourceTree = "<group>"; };
+		E5SUBAT1 /* AIChatViewModel+SubagentTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+SubagentTools.swift"; sourceTree = "<group>"; };
 		E5VMA0016 /* AIChatViewModel+ProviderFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+ProviderFactory.swift"; sourceTree = "<group>"; };
 		E5VMA0017 /* AIChatViewModel+ToolDefinitions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+ToolDefinitions.swift"; sourceTree = "<group>"; };
 		E5VMA0018 /* AIChatViewModel+ToolPreflight.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+ToolPreflight.swift"; sourceTree = "<group>"; };
@@ -1433,6 +1443,7 @@
 				F1A00013 /* Sync */,
 				E5LD00003 /* ToolLoopDetector.swift */,
 				E5TODOG1 /* Todo */,
+				E5SUBAG1 /* Subagent */,
 			);
 			path = Agent;
 			sourceTree = "<group>";
@@ -1444,6 +1455,16 @@
 				E5TODOM1 /* TodoModels.swift */,
 			);
 			path = Todo;
+			sourceTree = "<group>";
+		};
+		E5SUBAG1 /* Subagent */ = {
+			isa = PBXGroup;
+			children = (
+				E5SUBAR1 /* AgentRole.swift */,
+				E5SUBAR2 /* AgentRunner.swift */,
+				E5SUBAR3 /* SubagentCoordinator.swift */,
+			);
+			path = Subagent;
 			sourceTree = "<group>";
 		};
 		E54000030 /* Debug */ = {
@@ -1881,6 +1902,7 @@
 				E5VMA0014 /* AIChatViewModel+TitleGeneration.swift */,
 				E5VMA0015 /* AIChatViewModel+MemoryTools.swift */,
 				E5TODO001 /* AIChatViewModel+TodoTools.swift */,
+				E5SUBAT1 /* AIChatViewModel+SubagentTools.swift */,
 				E5VMA0016 /* AIChatViewModel+ProviderFactory.swift */,
 				E5VMA0017 /* AIChatViewModel+ToolDefinitions.swift */,
 				E5VMA0018 /* AIChatViewModel+ToolPreflight.swift */,
@@ -2089,6 +2111,7 @@
 				E5SHV0103 /* SharedFoldersSettingsView.swift */,
 				E5SHV0104 /* MountDetailView.swift */,
 				E5SOUL102 /* SoulSettingsView.swift */,
+				E5SUBRV1 /* SubagentRolesView.swift */,
 				E5LOCK102 /* FaceIDProtectionSettingsView.swift */,
 				E5LOCK103 /* AppLockOverlay.swift */,
 			);
@@ -2587,6 +2610,10 @@
 				E5TODO002 /* AIChatViewModel+TodoTools.swift in Sources */,
 				E5TODOS2 /* TodoStore.swift in Sources */,
 				E5TODOM2 /* TodoModels.swift in Sources */,
+				E5SUBAR1B /* AgentRole.swift in Sources */,
+				E5SUBAR2B /* AgentRunner.swift in Sources */,
+				E5SUBAR3B /* SubagentCoordinator.swift in Sources */,
+				E5SUBAT1B /* AIChatViewModel+SubagentTools.swift in Sources */,
 				E5VMA0006 /* AIChatViewModel+ProviderFactory.swift in Sources */,
 				E5VMA0007 /* AIChatViewModel+ToolDefinitions.swift in Sources */,
 				E5VMA0008 /* AIChatViewModel+ToolPreflight.swift in Sources */,
@@ -2826,6 +2853,7 @@
 				E5LOCK001 /* SessionLockStore.swift in Sources */,
 				E5SOUL001 /* SoulStore.swift in Sources */,
 				E5SOUL002 /* SoulSettingsView.swift in Sources */,
+				E5SUBRV2 /* SubagentRolesView.swift in Sources */,
 				E5LOCK002 /* FaceIDProtectionSettingsView.swift in Sources */,
 				E5LOCK003 /* AppLockOverlay.swift in Sources */,
 				E5N0000042F3B941A00049557 /* MemoryManagementView.swift in Sources */,

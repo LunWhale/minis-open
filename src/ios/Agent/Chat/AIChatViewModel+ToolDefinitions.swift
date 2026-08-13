@@ -194,6 +194,9 @@ extension AIChatViewModel {
         // Todo tools — always available for complex multi-step work.
         tools.append(contentsOf: Self.makeTodoToolDefinitions())
 
+        // Sub-agent delegation.
+        tools.append(Self.makeSubagentToolDefinition())
+
         return tools
     }
 
