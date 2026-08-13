@@ -30,7 +30,20 @@ CACHE_DIR="$SCRIPT_DIR/.cache"
 ALPINE_VERSION="${1:-3.21}"
 ALPINE_MINOR="0"
 ALPINE_ARCH="aarch64"  # ARM64 for iSH-ARM64 emulation
-ALPINE_MIRROR="https://dl-cdn.alpinelinux.org/alpine"
+ALPINE_MIRROR="${MINIS_APK_MIRROR:-https://dl-cdn.alpinelinux.org/alpine}"
+
+# Lightweight dev tools preinstalled into the rootfs (small, high-value for
+# coding workflows). Heavy runtimes (bun/node/python) stay on-demand via
+# `minis-toolchain` to keep the bundled rootfs zip small.
+# Override with MINIS_PREINSTALL_TOOLS="" to disable, or extend with e.g.
+# "git ripgrep jq curl tar" — space-separated apk package names.
+PREINSTALL_TOOLS="${MINIS_PREINSTALL_TOOLS:-git ripgrep jq curl tar openssh-client}"
+# npm registry mirror (default official; set e.g. https://registry.npmmirror.com
+# for China users). Written into /etc/profile.d/minis.sh at build time.
+NPM_REGISTRY="${MINIS_NPM_REGISTRY:-https://registry.npmjs.org}"
+# pip mirror (default official PyPI; e.g. https://pypi.tuna.tsinghua.edu.cn/simple
+# for China users). Written into /etc/pip/pip.conf at build time.
+PIP_INDEX_URL="${MINIS_PIP_INDEX_URL:-https://pypi.org/simple}"
 
 # Colors
 RED='\033[0;31m'
@@ -259,13 +272,76 @@ nameserver 8.8.8.8
 nameserver 8.8.4.4
 EOF
 
-    # Configure APK repositories
+    # Configure APK repositories (mirror-aware)
     cat > "$ROOTFS_DATA/etc/apk/repositories" << EOF
-https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/main
-https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/community
+${ALPINE_MIRROR}/v${ALPINE_VERSION}/main
+${ALPINE_MIRROR}/v${ALPINE_VERSION}/community
+EOF
+
+    # npm registry mirror for the toolchain (survives rootfs rebuilds; the
+    # runtime minis-toolchain script also re-applies it on install).
+    mkdir -p "$ROOTFS_DATA/etc/profile.d"
+    cat >> "$ROOTFS_DATA/etc/profile.d/minis.sh" << EOF
+
+# npm registry (configured at rootfs build time; override in the sandbox with
+# minis-toolchain --npm-mirror <url>)
+export npm_config_registry="${NPM_REGISTRY}"
+EOF
+
+    # pip mirror
+    mkdir -p "$ROOTFS_DATA/etc/pip"
+    cat > "$ROOTFS_DATA/etc/pip/pip.conf" << EOF
+[global]
+break-system-packages = true
+index-url = ${PIP_INDEX_URL}
 EOF
 
     log_success "Rootfs configured"
+}
+
+# ============================================================================
+# Preinstall lightweight dev tools (best-effort, off by default)
+# ============================================================================
+# Runs `apk add` inside the freshly-extracted rootfs using a chroot when the
+# host can provide one (Linux + root, or via docker). Falls back to a warning
+# and leaves toolchain installation to the on-demand `minis-toolchain` script
+# in the app. Tools here are small (git/ripgrep/jq) so the bundle stays lean.
+preinstall_tools() {
+    if [ -z "$PREINSTALL_TOOLS" ]; then
+        log_info "Preinstall disabled (MINIS_PREINSTALL_TOOLS empty)"
+        return
+    fi
+    log_info "Preinstalling tools: $PREINSTALL_TOOLS"
+
+    local ROOTFS_DATA="$OUTPUT_DIR/alpine-rootfs/data"
+
+    # Strategy 1: chroot on Linux host with root.
+    if [ "$(uname -s)" = "Linux" ] && [ "$(id -u)" = "0" ]; then
+        log_info "Using chroot to preinstall packages..."
+        if chroot "$ROOTFS_DATA" /bin/sh -c \
+            "apk update && apk add --no-cache $PREINSTALL_TOOLS" 2>/dev/null; then
+            log_success "Preinstalled: $PREINSTALL_TOOLS (chroot)"
+            return
+        fi
+        log_warning "chroot preinstall failed, falling through"
+    fi
+
+    # Strategy 2: docker (linux/arm64) with the rootfs bind-mounted.
+    if command -v docker &> /dev/null; then
+        log_info "Using docker to preinstall packages..."
+        # Fake /proc and /dev so apk can run; --platform=linux/arm64 matches the guest.
+        if docker run --rm --platform linux/arm64 \
+            -v "$ROOTFS_DATA":/rootfs:rw \
+            --entrypoint /bin/sh alpine:${ALPINE_VERSION} -c \
+            "chroot /rootfs /bin/sh -c 'apk update && apk add --no-cache $PREINSTALL_TOOLS'" 2>/dev/null; then
+            log_success "Preinstalled: $PREINSTALL_TOOLS (docker)"
+            return
+        fi
+        log_warning "docker preinstall failed"
+    fi
+
+    log_warning "Could not preinstall tools on this host — the on-demand"
+    log_warning "'minis-toolchain' script in the app will install them at first use."
 }
 
 # ============================================================================
@@ -354,6 +430,7 @@ main() {
     build_fakefsify
     create_fakefs
     configure_rootfs
+    preinstall_tools
     create_zip_archive
     print_summary
 }

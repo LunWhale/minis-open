@@ -42,6 +42,7 @@ _RESOLVERS = {
     "npx": ["apk add --quiet nodejs npm"],
     "node": ["apk add --quiet nodejs npm"],
     "npm": ["apk add --quiet nodejs npm"],
+    "bun": ["minis-toolchain --with-bun"],
     "python3": ["apk add --quiet python3 py3-pip"],
     "pip": ["apk add --quiet python3 py3-pip"],
     "uvx": ["pip install --quiet uv", "pip install --quiet --break-system-packages uv"],
