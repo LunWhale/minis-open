@@ -660,6 +660,14 @@ extension AIChatViewModel {
             toolOutput = todoResult.output
             toolSuccess = todoResult.success
 
+        case "agent_delegate":
+            let subResult = await executeAgentDelegate(from: argsJson)
+            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
+                messages[msgIdx].blocks[blockIdx].content = subResult.output
+            }
+            toolOutput = subResult.output
+            toolSuccess = subResult.success
+
         default:
             toolOutput = "Error: Unknown tool '\(tu.name)'"
             toolSuccess = false

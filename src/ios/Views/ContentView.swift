@@ -4874,6 +4874,19 @@ private struct SettingsSheet: View {
                         }
                     }
                     NavigationLink {
+                        SubagentRolesView()
+                    } label: {
+                        Label {
+                            Text("Sub-agent Roles")
+                        } icon: {
+                            Image(systemName: "person.2.fill")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.white)
+                                .frame(width: 21, height: 21)
+                                .background(.purple, in: Circle())
+                        }
+                    }
+                    NavigationLink {
                         MemoryManagementView()
                     } label: {
                         Label {
