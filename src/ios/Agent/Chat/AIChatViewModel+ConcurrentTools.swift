@@ -628,6 +628,38 @@ extension AIChatViewModel {
             toolOutput = memResult.output
             toolSuccess = memResult.success
 
+        case "todo_create":
+            let todoResult = await executeTodoCreate(from: argsJson)
+            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
+                messages[msgIdx].blocks[blockIdx].content = todoResult.output
+            }
+            toolOutput = todoResult.output
+            toolSuccess = todoResult.success
+
+        case "todo_update":
+            let todoResult = await executeTodoUpdate(from: argsJson)
+            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
+                messages[msgIdx].blocks[blockIdx].content = todoResult.output
+            }
+            toolOutput = todoResult.output
+            toolSuccess = todoResult.success
+
+        case "todo_list":
+            let todoResult = await executeTodoList(from: argsJson)
+            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
+                messages[msgIdx].blocks[blockIdx].content = todoResult.output
+            }
+            toolOutput = todoResult.output
+            toolSuccess = todoResult.success
+
+        case "todo_clear":
+            let todoResult = await executeTodoClear(from: argsJson)
+            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
+                messages[msgIdx].blocks[blockIdx].content = todoResult.output
+            }
+            toolOutput = todoResult.output
+            toolSuccess = todoResult.success
+
         default:
             toolOutput = "Error: Unknown tool '\(tu.name)'"
             toolSuccess = false

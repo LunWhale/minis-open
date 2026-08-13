@@ -138,6 +138,9 @@ extension AIChatViewModel {
             ))
         }
 
+        // Todo tools — always available for complex multi-step work.
+        tools.append(contentsOf: Self.makeTodoToolDefinitions())
+
         return tools
     }
 
