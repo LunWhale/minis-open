@@ -369,6 +369,7 @@ struct AIChatView: View {
     @State private var showSessionSkills = false
     @State private var showSessionMCPs = false
     @State private var showSessionMemory = false
+    @State private var showTodoPanel = false
     @State private var showEnhancedCacheAlert = false
     @State private var showTokenUsage = false
     // [T-ios-json-open-provider-import-prompt] A shared/opened JSON file that
@@ -1012,6 +1013,11 @@ struct AIChatView: View {
         }
         .sheet(isPresented: $showSessionMemory) {
             SessionMemoryView(vm: cached.vm)
+        }
+        .sheet(isPresented: $showTodoPanel) {
+            TodoPanelView(sessionId: vm.sessionId) {
+                await vm.ensureSessionReturningId()
+            }
         }
         .sheet(isPresented: $showMoveToSheet) {
             MoveToSessionSheet(currentSessionId: vm.sessionId) { targetId in
@@ -1743,6 +1749,7 @@ struct AIChatView: View {
             onSkills: { showSessionSkills = true },
             onMCPs: { showSessionMCPs = true },
             onMemories: { showSessionMemory = true },
+            onTodos: { showTodoPanel = true },
             setSpeakEnabled: { enabled in
                 cached.vm.speakEnabled = enabled
                 // Keep the persisted "Read replies" preference in lockstep.
@@ -4873,6 +4880,7 @@ private struct ChatTrailingMenu: View, Equatable {
     let onSkills: () -> Void
     let onMCPs: () -> Void
     let onMemories: () -> Void
+    let onTodos: () -> Void
     let setSpeakEnabled: (Bool) -> Void
     let setEnhancedCache: (Bool) -> Void
     let setFastMode: (Bool) -> Void
@@ -4964,6 +4972,10 @@ private struct ChatTrailingMenu: View, Equatable {
                 }
             }
 
+            Button { onTodos() } label: {
+                Label(String(localized: "Todos in Session"), systemImage: "checklist")
+            }
+
             Toggle(isOn: Binding(
                 get: { speakEnabled },
                 set: { setSpeakEnabled($0) }
@@ -5053,6 +5065,7 @@ private struct ChatTrailingMenuButton: UIViewRepresentable {
     let onSkills: () -> Void
     let onMCPs: () -> Void
     let onMemories: () -> Void
+    let onTodos: () -> Void
     let setSpeakEnabled: (Bool) -> Void
     let setEnhancedCache: (Bool) -> Void
     let setFastMode: (Bool) -> Void
@@ -5180,6 +5193,8 @@ private struct ChatTrailingMenuButton: UIViewRepresentable {
             sessionGroup.append(UIAction(title: String(localized: "Memories in Session"),
                                          image: UIImage(systemName: "brain.head.profile")) { _ in coordinator.parent.onMemories() })
         }
+        sessionGroup.append(UIAction(title: String(localized: "Todos in Session"),
+                                     image: UIImage(systemName: "checklist")) { _ in coordinator.parent.onTodos() })
         sessionGroup.append(UIAction(title: String(localized: "Speak Responses"),
                                      image: UIImage(systemName: "speaker.wave.2"),
                                      state: key.speakEnabled ? .on : .off) { _ in

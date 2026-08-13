@@ -305,6 +305,7 @@
 		E5N0000032F3B941A00049557 /* SkillsManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5N0000132F3B941A00049557 /* SkillsManagementView.swift */; };
 		E5N0000042F3B941A00049557 /* MemoryManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5N0000142F3B941A00049557 /* MemoryManagementView.swift */; };
 		E5N0000052F3B941A00049557 /* SessionMemoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5N0000152F3B941A00049557 /* SessionMemoryView.swift */; };
+		E5TODOV2 /* TodoPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5TODOV1 /* TodoPanelView.swift */; };
 		E5N0000062F3B941A00049557 /* AlarmListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5N0000162F3B941A00049557 /* AlarmListView.swift */; };
 		E5OARC001 /* ClaudeOAuthRefreshCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5OARC010 /* ClaudeOAuthRefreshCoordinator.swift */; };
 		E5OARC002 /* ClaudeOAuthRefreshCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5OARC010 /* ClaudeOAuthRefreshCoordinator.swift */; };
@@ -396,6 +397,9 @@
 		E5VMA0003 /* AIChatViewModel+MentionMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMA0013 /* AIChatViewModel+MentionMenu.swift */; };
 		E5VMA0004 /* AIChatViewModel+TitleGeneration.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMA0014 /* AIChatViewModel+TitleGeneration.swift */; };
 		E5VMA0005 /* AIChatViewModel+MemoryTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMA0015 /* AIChatViewModel+MemoryTools.swift */; };
+		E5TODO002 /* AIChatViewModel+TodoTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5TODO001 /* AIChatViewModel+TodoTools.swift */; };
+		E5TODOS2 /* TodoStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5TODOS1 /* TodoStore.swift */; };
+		E5TODOM2 /* TodoModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5TODOM1 /* TodoModels.swift */; };
 		E5VMA0006 /* AIChatViewModel+ProviderFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMA0016 /* AIChatViewModel+ProviderFactory.swift */; };
 		E5VMA0007 /* AIChatViewModel+ToolDefinitions.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMA0017 /* AIChatViewModel+ToolDefinitions.swift */; };
 		E5VMA0008 /* AIChatViewModel+ToolPreflight.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMA0018 /* AIChatViewModel+ToolPreflight.swift */; };
@@ -939,6 +943,7 @@
 		E5N0000132F3B941A00049557 /* SkillsManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillsManagementView.swift; sourceTree = "<group>"; };
 		E5N0000142F3B941A00049557 /* MemoryManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryManagementView.swift; sourceTree = "<group>"; };
 		E5N0000152F3B941A00049557 /* SessionMemoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionMemoryView.swift; sourceTree = "<group>"; };
+		E5TODOV1 /* TodoPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoPanelView.swift; sourceTree = "<group>"; };
 		E5N0000162F3B941A00049557 /* AlarmListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmListView.swift; sourceTree = "<group>"; };
 		E5OARC010 /* ClaudeOAuthRefreshCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeOAuthRefreshCoordinator.swift; sourceTree = "<group>"; };
 		E5OARC030 /* OAuthRefreshCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OAuthRefreshCoordinator.swift; sourceTree = "<group>"; };
@@ -1016,6 +1021,9 @@
 		E5VMA0013 /* AIChatViewModel+MentionMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+MentionMenu.swift"; sourceTree = "<group>"; };
 		E5VMA0014 /* AIChatViewModel+TitleGeneration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+TitleGeneration.swift"; sourceTree = "<group>"; };
 		E5VMA0015 /* AIChatViewModel+MemoryTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+MemoryTools.swift"; sourceTree = "<group>"; };
+		E5TODO001 /* AIChatViewModel+TodoTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+TodoTools.swift"; sourceTree = "<group>"; };
+		E5TODOS1 /* TodoStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoStore.swift; sourceTree = "<group>"; };
+		E5TODOM1 /* TodoModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoModels.swift; sourceTree = "<group>"; };
 		E5VMA0016 /* AIChatViewModel+ProviderFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+ProviderFactory.swift"; sourceTree = "<group>"; };
 		E5VMA0017 /* AIChatViewModel+ToolDefinitions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+ToolDefinitions.swift"; sourceTree = "<group>"; };
 		E5VMA0018 /* AIChatViewModel+ToolPreflight.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+ToolPreflight.swift"; sourceTree = "<group>"; };
@@ -1424,8 +1432,18 @@
 				F1A00018 /* Speech */,
 				F1A00013 /* Sync */,
 				E5LD00003 /* ToolLoopDetector.swift */,
+				E5TODOG1 /* Todo */,
 			);
 			path = Agent;
+			sourceTree = "<group>";
+		};
+		E5TODOG1 /* Todo */ = {
+			isa = PBXGroup;
+			children = (
+				E5TODOS1 /* TodoStore.swift */,
+				E5TODOM1 /* TodoModels.swift */,
+			);
+			path = Todo;
 			sourceTree = "<group>";
 		};
 		E54000030 /* Debug */ = {
@@ -1862,6 +1880,7 @@
 				E5VMA0013 /* AIChatViewModel+MentionMenu.swift */,
 				E5VMA0014 /* AIChatViewModel+TitleGeneration.swift */,
 				E5VMA0015 /* AIChatViewModel+MemoryTools.swift */,
+				E5TODO001 /* AIChatViewModel+TodoTools.swift */,
 				E5VMA0016 /* AIChatViewModel+ProviderFactory.swift */,
 				E5VMA0017 /* AIChatViewModel+ToolDefinitions.swift */,
 				E5VMA0018 /* AIChatViewModel+ToolPreflight.swift */,
@@ -2040,6 +2059,7 @@
 				E5K000011 /* SelectableMarkdownView.swift */,
 				E5K000012 /* ChatTurnScreenshot.swift */,
 				E5N0000152F3B941A00049557 /* SessionMemoryView.swift */,
+				E5TODOV1 /* TodoPanelView.swift */,
 				E5N0000122F3B941A00049557 /* SessionSkillsView.swift */,
 				F1T00010 /* ToolLiveSheet.swift */,
 				E53000015 /* UsageStatsView.swift */,
@@ -2564,6 +2584,9 @@
 				E5VMA0003 /* AIChatViewModel+MentionMenu.swift in Sources */,
 				E5VMA0004 /* AIChatViewModel+TitleGeneration.swift in Sources */,
 				E5VMA0005 /* AIChatViewModel+MemoryTools.swift in Sources */,
+				E5TODO002 /* AIChatViewModel+TodoTools.swift in Sources */,
+				E5TODOS2 /* TodoStore.swift in Sources */,
+				E5TODOM2 /* TodoModels.swift in Sources */,
 				E5VMA0006 /* AIChatViewModel+ProviderFactory.swift in Sources */,
 				E5VMA0007 /* AIChatViewModel+ToolDefinitions.swift in Sources */,
 				E5VMA0008 /* AIChatViewModel+ToolPreflight.swift in Sources */,
@@ -2807,6 +2830,7 @@
 				E5LOCK003 /* AppLockOverlay.swift in Sources */,
 				E5N0000042F3B941A00049557 /* MemoryManagementView.swift in Sources */,
 				E5N0000052F3B941A00049557 /* SessionMemoryView.swift in Sources */,
+				E5TODOV2 /* TodoPanelView.swift in Sources */,
 				E5N0000062F3B941A00049557 /* AlarmListView.swift in Sources */,
 				E5P000001 /* EnvVarStore.swift in Sources */,
 				E5PRIV01 /* EnvVarPrivacyStore.swift in Sources */,
