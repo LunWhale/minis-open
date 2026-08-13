@@ -1,0 +1,157 @@
+#!/bin/sh
+# ============================================================================
+# minis-toolchain — one-shot dev toolchain installer for the Minis sandbox.
+#
+# Installs (or verifies) the coding toolchain inside Alpine (iSH/PRoot):
+#   git, ripgrep, jq, python3, pip, node, npm, bun
+# and applies npm / pip mirrors so installs are fast and reliable.
+#
+# Mirrors can be preconfigured at rootfs build time (MINIS_NPM_REGISTRY /
+# MINIS_PIP_INDEX_URL in deps/prepare_alpine_rootfs.sh); this script reads
+# those env vars if present and re-applies them on every run.
+#
+# Usage:
+#   minis-toolchain                 # install everything, then show versions
+#   minis-toolchain --check         # report what's installed without touching
+#   minis-toolchain --npm-mirror <url>   # set npm registry and install npm
+#   minis-toolchain --pip-mirror <url>   # set pip index-url
+#   minis-toolchain --with-bun      # also install Bun (default: yes)
+#   minis-toolchain --without-bun   # skip Bun (faster, smaller)
+#   minis-toolchain --node <version>    # e.g. 22 (uses Alpine package; ignores
+#                                       #    custom versions — Alpine ships LTS)
+#
+# Exit codes: 0 = success, 1 = network/install error (retryable), 2 = usage.
+# ============================================================================
+set -e
+
+# --- config ---------------------------------------------------------------
+# npm registry: env wins, else keep whatever is already configured, else official.
+DEFAULT_NPM_REGISTRY="https://registry.npmjs.org"
+CURRENT_NPM_REGISTRY="$(npm config get registry 2>/dev/null || echo "$DEFAULT_NPM_REGISTRY")"
+NPM_REGISTRY="${npm_config_registry:-${MINIS_NPM_REGISTRY:-$CURRENT_NPM_REGISTRY}}"
+
+DEFAULT_PIP_INDEX="https://pypi.org/simple"
+PIP_INDEX_URL="${MINIS_PIP_INDEX_URL:-$DEFAULT_PIP_INDEX}"
+
+# Packages kept deliberately small & fast to install. bun is separate.
+APK_CORE="git ripgrep jq curl tar openssh-client"
+APK_PYTHON="python3 py3-pip"
+APK_NODE="nodejs npm"
+
+WITH_BUN=1
+CHECK_ONLY=0
+
+# --- helpers --------------------------------------------------------------
+say() { printf '\033[1;32m[ok]\033[0m %s\n' "$*"; }
+warn() { printf '\033[1;33m[warn]\033[0m %s\n' "$*"; }
+die() { printf '\033[1;31m[err]\033[0m %s\n' "$*" >&2; exit 1; }
+have() { command -v "$1" >/dev/null 2>&1; }
+
+usage() {
+    sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'
+    exit "${1:-0}"
+}
+
+# --- arg parsing ----------------------------------------------------------
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --check) CHECK_ONLY=1 ;;
+        --with-bun) WITH_BUN=1 ;;
+        --without-bun) WITH_BUN=0 ;;
+        --npm-mirror) shift; [ -z "$1" ] && usage 2; NPM_REGISTRY="$1" ;;
+        --pip-mirror) shift; [ -z "$1" ] && usage 2; PIP_INDEX_URL="$1" ;;
+        --node) shift; [ -z "$1" ] && usage 2; warn "--node version ignored: Alpine ships the distro LTS build" ;;
+        -h|--help) usage 0 ;;
+        *) usage 2 ;;
+    esac
+    shift
+done
+
+# --- preflight ------------------------------------------------------------
+if [ ! -f /etc/alpine-release ]; then
+    warn "not running on Alpine — this script targets the Minis sandbox"
+fi
+
+if ! have apk; then
+    die "apk not found — the Minis sandbox is not set up correctly"
+fi
+
+# --- check mode -----------------------------------------------------------
+if [ "$CHECK_ONLY" -eq 1 ]; then
+    echo "Toolchain status:"
+    for t in git rg jq python3 pip node npm bun; do
+        if have "$t"; then
+            printf '  %-8s installed (%s)\n' "$t" "$($t --version 2>/dev/null | head -1)"
+        else
+            printf '  %-8s NOT installed\n' "$t"
+        fi
+    done
+    exit 0
+fi
+
+# --- install --------------------------------------------------------------
+echo "==> Updating package index (first run may take a moment)..."
+apk update
+
+echo "==> Installing core tools: $APK_CORE"
+apk add --no-cache $APK_CORE
+
+if ! have python3; then
+    echo "==> Installing Python: $APK_PYTHON"
+    apk add --no-cache $APK_PYTHON
+else
+    say "python3 already installed"
+fi
+
+if ! have node; then
+    echo "==> Installing Node.js + npm: $APK_NODE"
+    apk add --no-cache $APK_NODE
+else
+    say "node already installed"
+fi
+
+# --- mirrors --------------------------------------------------------------
+echo "==> Configuring npm registry: $NPM_REGISTRY"
+npm config set registry "$NPM_REGISTRY" --location=user 2>/dev/null || \
+    npm config set registry "$NPM_REGISTRY" 2>/dev/null || true
+
+echo "==> Configuring pip index: $PIP_INDEX_URL"
+pip config set global.index-url "$PIP_INDEX_URL" 2>/dev/null || \
+    printf '[global]\nbreak-system-packages = true\nindex-url = %s\n' "$PIP_INDEX_URL" > /etc/pip/pip.conf || true
+
+# --- bun ------------------------------------------------------------------
+if [ "$WITH_BUN" -eq 1 ] && ! have bun; then
+    echo "==> Installing Bun (larger download, one-time)..."
+    # Official installer; on iSH-ARM64 Bun is ~2-4x faster than jitless Node.
+    if have curl; then
+        curl -fsSL https://bun.sh/install | bash || warn "Bun install failed — retry later with: minis-toolchain"
+    fi
+    # Installer puts bun in ~/.bun/bin; make it available even in non-login shells.
+    if [ -x "$HOME/.bun/bin/bun" ]; then
+        mkdir -p /usr/local/bin
+        ln -sf "$HOME/.bun/bin/bun" /usr/local/bin/bun
+        say "bun installed"
+    fi
+else
+    [ "$WITH_BUN" -eq 1 ] && say "bun already installed"
+fi
+
+# --- report ---------------------------------------------------------------
+echo ""
+echo "============================================================"
+echo "  Minis toolchain ready"
+echo "============================================================"
+for t in git rg jq python3 pip node npm bun; do
+    if have "$t"; then
+        printf '  %-8s %s\n' "$t" "$($t --version 2>/dev/null | head -1)"
+    fi
+done
+echo "  npm registry: $(npm config get registry 2>/dev/null)"
+echo "  pip index:    $(pip config get global.index-url 2>/dev/null || echo "$PIP_INDEX_URL")"
+echo "============================================================"
+echo ""
+echo "Quick checks:"
+echo "  minis-toolchain --check          # show what's installed"
+echo "  node -e 'console.log(\"hi\")'      # node works"
+echo "  bun -e 'console.log(\"hi\")'       # bun works (if installed)"
+exit 0

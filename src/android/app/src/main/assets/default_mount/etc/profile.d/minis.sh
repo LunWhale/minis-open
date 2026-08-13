@@ -33,3 +33,9 @@ export BROWSER=/usr/local/bin/minis-open
 # Force uv to symlink package files instead — the sentinels are then never
 # touched as link sources. Reported as openminis/openminis#7.
 export UV_LINK_MODE=symlink
+
+# npm registry — set once at rootfs build; override at runtime with:
+#   minis-toolchain --npm-mirror <url>
+if [ -z "$npm_config_registry" ]; then
+    export npm_config_registry="https://registry.npmjs.org"
+fi

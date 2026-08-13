@@ -14,3 +14,9 @@ export ENV="$HOME/.ashrc"
 # / www-browser / x-www-browser / gnome-open / kde-open wrappers live as
 # real files in default_mount/usr/local/bin/ and are overlaid on every
 # boot. Nothing to do here.
+
+# npm registry — set once at rootfs build; override at runtime with:
+#   minis-toolchain --npm-mirror <url>
+if [ -z "$npm_config_registry" ]; then
+    export npm_config_registry="https://registry.npmjs.org"
+fi
