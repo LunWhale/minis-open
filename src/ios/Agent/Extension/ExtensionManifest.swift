@@ -42,10 +42,13 @@ struct ExtensionManifest: Codable, Equatable, Sendable {
     var theme: ThemeDef?
 
     struct ToolDef: Codable, Equatable, Sendable {
-        /// JS file relative to the extension root, e.g. "agent/tools/my_tool.js".
+        /// Script file relative to the extension root, e.g. "agent/tools/my_tool.js"
+        /// or "agent/tools/my_tool.lua".
         var file: String
         var name: String
         var description: String
+        /// Runtime language: "js" (JavaScriptCore, default) or "lua" (vendored 5.4).
+        var language: String?
         /// JSON Schema for parameters (typebox-like subset).
         var schema: [String: AnyCodable]?
     }
@@ -54,12 +57,16 @@ struct ExtensionManifest: Codable, Equatable, Sendable {
         var file: String
         var name: String
         var description: String?
+        /// Runtime language: "js" (default) or "lua".
+        var language: String?
     }
 
     struct HookDef: Codable, Equatable, Sendable {
         var file: String
         /// Events to subscribe to: "tool_call", "agent_start", "agent_end", ...
         var events: [String]
+        /// Runtime language: "js" (default) or "lua".
+        var language: String?
     }
 
     struct UIDef: Codable, Equatable, Sendable {

@@ -74,7 +74,25 @@ my-extension.minisx/
 
 ---
 
-## 3. agent 侧：JS API（JavaScriptCore）
+## 3. agent 侧：双语言运行时（JS / Lua）
+
+agent 侧脚本支持两种语言，在 manifest 的 `tools`/`commands`/`hooks` 条目里用
+`language` 字段声明：
+
+- **`js`（默认）**：JavaScriptCore（iOS 内置，独立 JSContext）
+- **`lua`**：vendored Lua 5.4 解释器（随 App 编译，独立 lua_State）
+
+```json
+{
+  "tools": [{"file": "agent/tools/greet.lua", "name": "lua_greet", "language": "lua"}],
+  "commands": [{"file": "agent/commands/status.lua", "name": "ext-lua-status", "language": "lua"}]
+}
+```
+
+两个运行时的 `minis` 全局 API 语义一致（JS 用 `minis.registerTool`，Lua 用
+`minis.register_tool`）。示例见 `examples/lua-demo/`（Lua 工具 + Lua 命令）。
+
+### JS API（JavaScriptCore）
 
 每个扩展一个独立 JSContext，全局 `minis` 对象可用：
 
@@ -115,7 +133,7 @@ minis.on("agent_start", function (event) {
 | `minis.api.shell(cmd, {timeout})` | ✅ | 执行沙箱 shell（需要 `shell` 权限）→ Promise\<string\> |
 | `minis.api.file.read(path)` | ✅ | 读沙箱文件（需要 `files` 权限）→ Promise\<string\> |
 | `minis.api.permission.request(kind)` | ✅ | 请求权限 → Promise\<boolean\>（复用 OffloadPermissionDialog） |
-| `minis.api.event.emit(name, data)` | ⏳ 预留 | 扩展间事件总线（定义可用，暂无订阅者） |
+| `minis.api.event.emit(name, data)` | ✅ | 扩展间事件总线（发布到所有订阅了该事件的扩展） |
 | `minis.api.offload(name, args)` | ⏳ 预留 | 桥到 apple-* 原生 offload CLI |
 | `minis.api.ui.postMessage(data)` | ⏳ 预留 | 向 WebView 组件广播消息（组件与原生桥见 §4） |
 | `minis.api.file.write(path, content)` | ⏳ 预留 | 写沙箱文件（当前用 shell 或宿主工具代替） |
@@ -198,6 +216,9 @@ cd examples/demo-extension && zip -r ../demo-extension.minisx .
 
 ## 7. 调试
 
-- 扩展日志：控制台分类 `Ext[<id>]`。
+- **Debug Log 面板**：扩展管理器右上角 📜 按钮（或 `minis://extensions/debug` 深度链接）打开
+  内存日志面板（最近 500 条：安装/卸载/加载错误、工具/命令调用、权限决策、JS/Lua 运行时消息）。
+- **`/extensions` 斜杠命令**：聊天里输入 `/extensions` 直接打开扩展管理器。
+- 扩展日志：控制台分类 `Ext[<id>]`（JS）、`ExtLua[<id>]`（Lua）。
 - 安装错误会在设置页内联显示（manifest 缺失 / 引用文件缺失 / id 冲突等）。
-- JS 语法错误会在加载时以 `ExtensionRegistry` 错误日志报出，安装仍成功但该脚本不生效——修好 JS 后停用再启用即可重新加载。
+- JS/Lua 语法错误会在加载时以 `ExtensionRegistry` 错误日志报出，安装仍成功但该脚本不生效——修好脚本后停用再启用即可重新加载。

@@ -993,6 +993,7 @@ struct ContentView: View {
     // showSettings consolidated into activeToolSheet (.settings)
     @State private var showTerminal = false
     @State private var showAlarmList = false
+    @State private var showExtensionsSheet = false
     @State private var hasAlarms = false
     @State private var activeToolSheet: ToolSheet?
     #if DEBUG
@@ -1394,7 +1395,11 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $showAlarmList, onDismiss: { fetchAlarmsIfNeeded() }) {
+
             AlarmListView()
+        }
+        .sheet(isPresented: $showExtensionsSheet) {
+            ExtensionManagerView()
         }
         .sheet(item: $activeToolSheet) { sheet in
             switch sheet {
@@ -1888,6 +1893,12 @@ struct ContentView: View {
             if show {
                 showAlarmList = true
                 deepLink.showAlarmList = false
+            }
+        }
+        .onChange(of: deepLink.showExtensions) { show in
+            if show {
+                showExtensionsSheet = true
+                deepLink.showExtensions = false
             }
         }
         // Open the SettingsSheet whenever a deep link sets a settings

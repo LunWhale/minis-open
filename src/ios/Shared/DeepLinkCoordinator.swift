@@ -139,6 +139,10 @@ final class DeepLinkCoordinator: ObservableObject {
     @Published var showAlarmList = false
     @Published var showTerminal = false
     @Published var terminalInitCommand: String?
+    /// Set by minis://extensions (and minis://extensions/debug) to open the
+    /// Extension Manager; consumed by SettingsSheet/ContentView. The debug
+    /// panel is a tab inside the manager.
+    @Published var showExtensions = false
 
     // MARK: - Legacy flags (retained for binding compatibility)
 

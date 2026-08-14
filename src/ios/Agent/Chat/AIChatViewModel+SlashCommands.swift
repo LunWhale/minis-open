@@ -43,6 +43,7 @@ extension AIChatViewModel {
         SlashCommand(id: "compact", icon: "arrow.down.right.and.arrow.up.left", title: "Compact", subtitle: "Compress conversation history into summary"),
         SlashCommand(id: "memory", icon: "brain.head.profile", title: "Memory", subtitle: "Toggle memory writes on/off (reads unaffected)"),
         SlashCommand(id: "thinking", icon: "lightbulb", title: "Thinking", subtitle: "Toggle deep thinking mode on/off"),
+        SlashCommand(id: "extensions", icon: "puzzlepiece.extension.fill", title: "Extensions", subtitle: "Open the extension manager"),
     ]
 
     /// Show slash menu without replacing existing input text.
@@ -448,6 +449,10 @@ extension AIChatViewModel {
             }
             let status = memoryEnabled ? "enabled" : "disabled"
             appendSystemInfo("Memory writes \(status). Reads are unaffected.", icon: "brain.head.profile")
+        case "extensions":
+            // Open the Extension Manager (same path as minis://extensions).
+            DeepLinkCoordinator.shared.showExtensions = true
+            appendSystemInfo("Opening extension manager…", icon: "puzzlepiece.extension.fill")
         case "clear":
             clearChatConfirmRequested = true
         default:

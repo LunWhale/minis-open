@@ -65,6 +65,11 @@ enum DeepLinkRouter {
                 coord.showAlarmList = true
             }
 
+        case "extensions":
+            // minis://extensions and minis://extensions/debug both open the
+            // Extension Manager (the debug log panel lives inside it).
+            coord.showExtensions = true
+
         case "open_terminal":
             let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
             coord.terminalInitCommand = components?.queryItems?.first(where: { $0.name == "init_command" })?.value

@@ -1,0 +1,25 @@
+{
+  "id": "com.example.luademo",
+  "name": "Lua Demo Extension",
+  "version": "1.0.0",
+  "description": "Showcase: an agent tool and a slash command written in Lua (vendored Lua 5.4 runtime).",
+  "author": "Minis Example",
+  "kinds": ["agent-tool", "command"],
+  "permissions": [],
+  "tools": [
+    {
+      "file": "agent/tools/greet.lua",
+      "name": "lua_greet",
+      "description": "Returns a greeting computed in Lua. Demonstrates the Lua extension runtime.",
+      "language": "lua"
+    }
+  ],
+  "commands": [
+    {
+      "file": "agent/commands/status.lua",
+      "name": "ext-lua-status",
+      "description": "Lua command: reports the Lua runtime version",
+      "language": "lua"
+    }
+  ]
+}
