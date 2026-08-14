@@ -140,6 +140,10 @@ struct MinisApp: App {
         BiometricAuth.prewarm()
         // Clean up Live Activities left over from a previous app session (e.g. app was killed)
         AgentLiveActivityManager.shared.cleanupStaleActivities(source: "MinisApp.init")
+        // Pre-load enabled .minisx extensions so their tools/commands are
+        // available to the agent on cold launch (reload() is also called
+        // after install/enable/disable/uninstall from the manager UI).
+        Task { await ExtensionRegistry.shared.reload() }
         // Start screen-awake controller — it will observe running tasks
         // + the user's opt-in flag and toggle the idle timer accordingly.
         Task { @MainActor in KeepScreenAwakeController.shared.start() }
