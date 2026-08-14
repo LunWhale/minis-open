@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body { font-family: -apple-system, sans-serif; margin: 12px; color: #fff; }
+  .card { background: #1c1c1e; border-radius: 12px; padding: 16px; }
+  h3 { margin: 0 0 8px; }
+  button { background: #0a84ff; color: #fff; border: none; border-radius: 8px; padding: 8px 14px; }
+  #out { margin-top: 8px; font-size: 13px; opacity: 0.8; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h3>Demo Widget</h3>
+  <p>This is a WebView UI widget from the Demo Extension. It renders inside the chat panel.</p>
+  <button onclick="sayHi()">Say hi to Minis</button>
+  <div id="out"></div>
+</div>
+<script>
+  // Communicate with the native side via window.minisBridge (injected by the host).
+  function sayHi() {
+    if (window.minisBridge && window.minisBridge.postMessage) {
+      window.minisBridge.postMessage({ type: "demo:hi", text: "Hello from widget!" });
+      document.getElementById("out").textContent = "Message sent to native.";
+    } else {
+      document.getElementById("out").textContent = "minisBridge not available (widget host not attached).";
+    }
+  }
+  // Receive messages from native.
+  window.minisBridge = window.minisBridge || {};
+  if (!window.minisBridge.onMessage) {
+    window.minisBridge.onMessage = function (data) {
+      document.getElementById("out").textContent = "Native said: " + JSON.stringify(data);
+    };
+  }
+</script>
+</body>
+</html>
