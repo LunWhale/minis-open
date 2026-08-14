@@ -367,9 +367,10 @@ final class ExtensionRegistry {
                     return ("Error: cannot write \(path): \(error.localizedDescription)", true)
                 }
             },
-            postToUI: { _, _ in
-                // UI widget messaging is wired via ExtensionWebView delegate;
-                // a broadcast implementation can be added when widgets exist.
+            postToUI: { extID, payload in
+                // Route agent-side minis.api.ui.postMessage to the rendered
+                // widgets of this extension (see ExtensionWidgetMessageCenter).
+                ExtensionWidgetMessageCenter.shared.post(to: extID, payload: payload)
             },
             emitEvent: { name, data in
                 // Cross-extension events via the event bus (routes to every
