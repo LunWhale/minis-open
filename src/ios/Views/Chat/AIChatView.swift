@@ -68,20 +68,31 @@ private final class CachedViewModel: ObservableObject {
 // MARK: - Color Palette (clean light theme)
 
 enum ChatColors {
-    static let background = Color(UIColor.systemBackground)
-    static let secondaryBg = Color(UIColor.secondarySystemBackground)
-    static let inputIconBg = Color(UIColor.secondarySystemBackground)
+    // Theme-aware accessors: extension themes (ThemeTokens.active) override
+    // the defaults per-token. Kept as computed so an applied theme takes
+    // effect immediately without an app restart.
+    static let fallbackBackground = Color(UIColor.systemBackground)
+    static let fallbackSecondaryBg = Color(UIColor.secondarySystemBackground)
+    static let fallbackInputBg = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.12, alpha: 1) : .white })
+    static let fallbackPrimaryText = Color(UIColor.label)
+    static let fallbackSecondaryText = Color(UIColor.secondaryLabel)
+    static let fallbackUserBubble = Color(UIColor.tertiarySystemFill)
+    static let fallbackAccent = Color(UIColor.label)
+
+    static var background: Color { ThemeTokens.active?.color("background", fallback: fallbackBackground) ?? fallbackBackground }
+    static var secondaryBg: Color { ThemeTokens.active?.color("secondaryBackground", fallback: fallbackSecondaryBg) ?? fallbackSecondaryBg }
+    static var inputIconBg: Color { ThemeTokens.active?.color("inputBackground", fallback: fallbackSecondaryBg) ?? fallbackSecondaryBg }
     static let inputIconBorder = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.35, alpha: 1) : UIColor(white: 0, alpha: 0) })
-    static let inputBg = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.12, alpha: 1) : .white })
+    static var inputBg: Color { ThemeTokens.active?.color("inputBackground", fallback: fallbackInputBg) ?? fallbackInputBg }
     static let inputBorder = Color(UIColor.separator)
-    static let primaryText = Color(UIColor.label)
-    static let secondaryText = Color(UIColor.secondaryLabel)
+    static var primaryText: Color { ThemeTokens.active?.color("text", fallback: fallbackPrimaryText) ?? fallbackPrimaryText }
+    static var secondaryText: Color { ThemeTokens.active?.color("textSecondary", fallback: fallbackSecondaryText) ?? fallbackSecondaryText }
     static let tertiaryText = Color(UIColor.tertiaryLabel)
-    static let userBubble = Color(UIColor.tertiarySystemFill)
+    static var userBubble: Color { ThemeTokens.active?.color("userBubble", fallback: fallbackUserBubble) ?? fallbackUserBubble }
     static let toolBg = Color(UIColor.tertiarySystemGroupedBackground)
     static let toolBorder = Color(UIColor.separator).opacity(0.5)
-    static let accent = Color(UIColor.label)
-    static let sendButton = Color(UIColor.label)
+    static var accent: Color { ThemeTokens.active?.color("accent", fallback: fallbackAccent) ?? fallbackAccent }
+    static var sendButton: Color { ThemeTokens.active?.color("accent", fallback: fallbackAccent) ?? fallbackAccent }
     static let sendButtonDisabled = Color(UIColor.quaternaryLabel)
 }
 
@@ -3009,6 +3020,25 @@ struct AIChatView: View {
     /// to sit higher than sibling buttons when the keyboard is up.
     /// Use confirmationDialog on iOS 16, Menu on iOS 17+.
     @ViewBuilder
+    /// One-tap iSH terminal button (plan requirement 5: single tap into the
+    /// sandbox shell, single tap back via the terminal's own close button).
+    /// Placed leftmost in the input bottom row, next to the + attachment menu.
+    private var terminalButton: some View {
+        Button {
+            showTerminal = true
+        } label: {
+            Image(systemName: "terminal")
+                .font(.system(size: 17, weight: .medium))
+                .foregroundStyle(ChatColors.secondaryText)
+                .frame(width: 34, height: 34)
+                .background(ChatColors.inputIconBg)
+                .clipShape(Circle())
+                .overlay(Circle().stroke(ChatColors.inputIconBorder, lineWidth: 0.5))
+        }
+        .accessibilityLabel(String(localized: "Open Terminal"))
+        .help(String(localized: "Open iSH terminal"))
+    }
+
     private var attachmentMenuButton: some View {
         let icon = Image(systemName: "plus")
             .font(.system(size: 18, weight: .medium))
@@ -3043,6 +3073,7 @@ struct AIChatView: View {
     /// runtime demangle chokes on deep nested types otherwise.
     private var inputBottomRow: AnyView {
         let row = HStack(spacing: 12) {
+            terminalButton
             attachmentMenuButton
             slashMenuButton
             if vm.editingMessageIndex != nil { editExitButton }

@@ -4418,9 +4418,17 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
         // triggered by a new user message send or a retry.
         let _diagRound = Self.bumpDiagRound()
         AppLogger(category: "RoundMarker").warning("══════════════ ROUND BEGIN \(_diagRound) ══════════════ vm=\(self.vmInstanceId) session=\(self.sessionId ?? "nil") history=\(self.agentHistory.count) resuming=\(existingMsgIdx != nil)")
+        // [M3-extensions] Fire agent lifecycle event so extension hooks
+        // (minis.on("agent_start")) run at the start of every round.
+        ExtensionRegistry.shared.emitLifecycleEvent("agent_start", data: ["sessionId": self.sessionId ?? "", "round": _diagRound])
         defer { AppLogger(category: "RoundMarker").warning("══════════════ ROUND END \(_diagRound) ════════════════ vm=\(self.vmInstanceId) session=\(self.sessionId ?? "nil") history=\(self.agentHistory.count) estimated ~\(self.estimateContextTokens()) tokens") }
         logger.info("🔄SESSION [vm=\(self.vmInstanceId)] runAgentLoop START session=\(self.sessionId ?? "nil") history=\(self.agentHistory.count) resuming=\(existingMsgIdx != nil)")
-        defer { logger.info("🔄SESSION [vm=\(self.vmInstanceId)] runAgentLoop END session=\(self.sessionId ?? "nil") history=\(self.agentHistory.count) estimated ~\(self.estimateContextTokens()) tokens") }
+        defer {
+            logger.info("🔄SESSION [vm=\(self.vmInstanceId)] runAgentLoop END session=\(self.sessionId ?? "nil") history=\(self.agentHistory.count) estimated ~\(self.estimateContextTokens()) tokens")
+            // [M3-extensions] agent_end hook fires when the round finishes
+            // (success or error).
+            ExtensionRegistry.shared.emitLifecycleEvent("agent_end", data: ["sessionId": self.sessionId ?? "", "round": _diagRound])
+        }
 
         let loopSetupStart = CFAbsoluteTimeGetCurrent()
 
