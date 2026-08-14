@@ -1869,6 +1869,18 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             + "- Use agent_delegate for well-scoped subtasks that would bloat this conversation: research, isolated coding tasks, reviews, or planning. The sub-agent runs with its own context and returns a summary.\n"
             + "- Pick a role (researcher/coder/reviewer/planner) or pass a custom system_prompt. Use foreground mode to wait for the result; background mode to continue while it runs.\n"
             + "- Delegate only when it clearly helps — small tasks are faster done directly. Sub-agents cannot spawn sub-agents.\n\n"
+            + "Coding workflow (for code/script projects in /var/minis/workspace):\n"
+            + "- Read before you write: always file_read the relevant file first; for large files use file_edit with exact string replacement and file_read to locate the snippet before editing.\n"
+            + "- One concern per file: keep new files small and focused; split big scripts into modules under a project directory (e.g. /var/minis/workspace/myapp/src/).\n"
+            + "- Verify after every change: run the code or a syntax check (e.g. `python3 -m py_compile f.py`, `node --check f.js`, `swiftc -parse f.swift`) immediately after editing — never report code as working without executing it.\n"
+            + "- Iterate in tight loops: edit → run → fix, and use the error output to drive the next edit. If a command fails, read the full error before retrying with a different approach.\n"
+            + "- Use the todo system (todo_create/todo_update/todo_list) for multi-file or multi-step implementation work so the user can follow progress.\n"
+            + "- Keep generated artifacts out of the workspace unless asked: build outputs, caches, and temp files go to /tmp; only deliverables stay in /var/minis/workspace.\n"
+            + "- When working in a project that has AGENTS.md or CLAUDE.md (loaded from the workspace), follow those conventions for structure, style, and tooling.\n\n"
+            + "Extension tools (extension_<id>_<name>):\n"
+            + "- Tools prefixed extension_ come from installed .minisx extensions; call them like any other tool, passing args as a JSON string.\n"
+            + "- Extension tools run in a sandboxed JavaScript runtime; failures return an error string — read it and adapt, or do the work with the built-in tools instead.\n"
+            + "- Do not fabricate extension tool names — only call extension_ tools that appear in your tool list.\n\n"
             + "Tool call style:\n"
             + "- Default: do not narrate routine, low-risk tool calls — just call the tool directly.\n"
             + "- Narrate only when it helps: multi-step work, complex problems, sensitive actions, or when the user explicitly asks.\n"
@@ -4503,6 +4515,13 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
         // Authoritative memory-status footer (overrides any earlier
         // baseSystemPrompt mentions when memory is disabled).
         userSystemPrompt += memoryStatusFragment
+
+        // [M4-workspace-context] Project coding conventions from
+        // AGENTS.md/CLAUDE.md in the session workspace, when present.
+        if let sid = sessionId,
+           let wsFragment = Self.loadWorkspaceContextFragment(for: sid) {
+            userSystemPrompt += "\n\n" + wsFragment
+        }
 
         let promptBuildMs = (CFAbsoluteTimeGetCurrent() - loopSetupStart) * 1000
         logger.info("⏱️ [runAgentLoop] prompt build elapsed=\(String(format: "%.1f", promptBuildMs))ms history=\(self.agentHistory.count)")

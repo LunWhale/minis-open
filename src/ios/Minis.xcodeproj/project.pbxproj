@@ -1029,6 +1029,8 @@
 		E5VMA0013 /* AIChatViewModel+MentionMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+MentionMenu.swift"; sourceTree = "<group>"; };
 		E5VMA0014 /* AIChatViewModel+TitleGeneration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+TitleGeneration.swift"; sourceTree = "<group>"; };
 		E5VMA0015 /* AIChatViewModel+MemoryTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+MemoryTools.swift"; sourceTree = "<group>"; };
+		E5M4WS01 /* AIChatViewModel+WorkspaceContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+WorkspaceContext.swift"; sourceTree = "<group>"; };
+		E5M4WS01B /* AIChatViewModel+WorkspaceContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5M4WS01 /* AIChatViewModel+WorkspaceContext.swift */; };
 		E5TODO001 /* AIChatViewModel+TodoTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+TodoTools.swift"; sourceTree = "<group>"; };
 		E5TODOS1 /* TodoStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoStore.swift; sourceTree = "<group>"; };
 		E5TODOM1 /* TodoModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoModels.swift; sourceTree = "<group>"; };
@@ -1930,6 +1932,7 @@
 				E5VMA0013 /* AIChatViewModel+MentionMenu.swift */,
 				E5VMA0014 /* AIChatViewModel+TitleGeneration.swift */,
 				E5VMA0015 /* AIChatViewModel+MemoryTools.swift */,
+				E5M4WS01 /* AIChatViewModel+WorkspaceContext.swift */,
 				E5TODO001 /* AIChatViewModel+TodoTools.swift */,
 				E5SUBAT1 /* AIChatViewModel+SubagentTools.swift */,
 				E5VMA0016 /* AIChatViewModel+ProviderFactory.swift */,
@@ -2637,6 +2640,7 @@
 				E5VMA0003 /* AIChatViewModel+MentionMenu.swift in Sources */,
 				E5VMA0004 /* AIChatViewModel+TitleGeneration.swift in Sources */,
 				E5VMA0005 /* AIChatViewModel+MemoryTools.swift in Sources */,
+				E5M4WS01B /* AIChatViewModel+WorkspaceContext.swift in Sources */,
 				E5TODO002 /* AIChatViewModel+TodoTools.swift in Sources */,
 				E5TODOS2 /* TodoStore.swift in Sources */,
 				E5TODOM2 /* TodoModels.swift in Sources */,

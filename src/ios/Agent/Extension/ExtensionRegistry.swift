@@ -227,47 +227,55 @@ final class ExtensionRegistry {
     }
 }
 
-/// Permission gate for extension first-use confirmation. Delegates to the
-/// standard OffloadPermissionDialog flow; a lightweight reimplementation
-/// keeps the extension system decoupled from the chat view model.
+/// Permission gate for extension first-use confirmation. Reuses the
+/// standard OffloadPermissionDialog sheet: constructs a PermissionRequest
+/// into `OffloadPermissionManager.pendingRequest` (the dialog modifier is
+/// attached to AIChatView), awaits the Allow/Deny continuation, and caches
+/// per-extension grants for the session. Times out after 30s (deny).
 enum PermissionGate {
     private static var grantedCache: [String: Set<String>] = [:]  // extID → kinds
+    private static let logger = AppLogger(category: "ExtensionPermission")
 
     static func request(_ kind: String, extensionID: String) async -> Bool {
         if grantedCache[extensionID, default: []].contains(kind) { return true }
-        // Post a permission request notification; the UI presents the dialog
-        // and replies via PermissionResponse. If no UI handler is attached,
-        // default to allowing read-only kinds and denying powerful ones.
-        let response = await withCheckedContinuation { cont in
-            let token = UUID().uuidString
-            NotificationCenter.default.post(
-                name: .extensionPermissionRequest,
-                object: nil,
-                userInfo: ["token": token, "extensionID": extensionID, "kind": kind]
+
+        let allowed = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
+            let request = PermissionRequest(
+                id: UUID().uuidString,
+                commandName: "extension:\(extensionID)",
+                displayLabel: extensionID,
+                description: "The extension requests **\(kind)** access. This lets its agent-side code \(kindDescription(kind)).",
+                fullCommand: "extension \(extensionID) requests \(kind) access",
+                continuation: cont
             )
-            PermissionResponseHandler.shared.register(token: token) { granted in
-                cont.resume(returning: granted)
+            Task { @MainActor in
+                OffloadPermissionManager.shared.pendingRequest = request
+                // 30s timeout (mirrors OffloadPermissionManager.checkPermission)
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 30_000_000_000)
+                    if OffloadPermissionManager.shared.pendingRequest?.id == request.id {
+                        OffloadPermissionManager.shared.pendingRequest = nil
+                        cont.resume(returning: false)
+                    }
+                }
             }
         }
-        if response {
+
+        logger.info("\(extensionID) \(kind) -> \(allowed ? "granted" : "denied")")
+        if allowed {
             grantedCache[extensionID, default: []].insert(kind)
         }
-        return response
-    }
-}
-
-/// Completion handler registry for permission dialogs.
-final class PermissionResponseHandler {
-    static let shared = PermissionResponseHandler()
-    private var handlers: [String: (Bool) -> Void] = [:]
-    private init() {}
-
-    func register(token: String, handler: @escaping (Bool) -> Void) {
-        handlers[token] = handler
+        return allowed
     }
 
-    func resolve(token: String, granted: Bool) {
-        handlers.removeValue(forKey: token)?(granted)
+    private static func kindDescription(_ kind: String) -> String {
+        switch kind {
+        case "shell": return "run shell commands in the sandbox"
+        case "files": return "read and write files under /var/minis/"
+        case "network": return "make network requests"
+        case "ui": return "render UI widgets in this session"
+        default: return "use device capabilities"
+        }
     }
 }
 
@@ -276,9 +284,4 @@ enum ActiveSession {
     private static var current: String?
     static func set(_ id: String?) { current = id }
     static func id() -> String? { current }
-}
-
-extension Notification.Name {
-    static let extensionPermissionRequest = Notification.Name("minis.extension.permission.request")
-    static let extensionPermissionResponse = Notification.Name("minis.extension.permission.response")
 }
