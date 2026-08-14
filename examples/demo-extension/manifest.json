@@ -17,6 +17,17 @@
           "name": { "type": "string", "description": "Who to greet" }
         }
       }
+    },
+    {
+      "file": "agent/tools/notify_widget.js",
+      "name": "notify_widget",
+      "description": "Broadcasts a message to the extension's UI widget via minis.api.ui.postMessage.",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string", "description": "Message text to send" }
+        }
+      }
     }
   ],
   "commands": [

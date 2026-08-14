@@ -66,6 +66,10 @@ private let LUA_TFUNCTION: Int32 = 6
 final class ExtensionLuaRuntime {
     private let L: OpaquePointer
     private let extensionID: String
+    /// Native bridge shared with the JS runtime (shell/file/permission).
+    /// Lua calls are synchronous, so async bridges are awaited via a
+    /// semaphore inside the C callbacks.
+    var bridge: ExtensionJSRuntime.Bridge?
 
     struct RegisteredTool {
         let name: String
@@ -332,12 +336,102 @@ final class ExtensionLuaRuntime {
         lua_pushcclosure(L, log, 1)
         lua_setfield(L, -2, "log")
 
-        // minis.api = {} (reserved surface; shell/file/offload async bridges
-        // are provided by the JS runtime — Lua scripts should expose host
-        // operations through registered tools instead.)
+        // minis.api = { shell, file, permission } — real bridges. Lua calls
+        // are synchronous; each async host operation is awaited on a
+        // DispatchSemaphore inside the C callback.
         lua_newtable(L)
-        lua_pushstring(L, "async bridge not available in Lua; use a registered tool for shell/file")
-        lua_setfield(L, -2, "note")
+        // api.shell(cmd, opts) → string
+        let shell: @convention(c) (OpaquePointer?) -> Int32 = { L in
+            guard let L else { return 1 }
+            let upval = LUA_REGISTRYINDEX - 1
+            guard let ud = lua_touserdata(L, upval),
+                  let runtime = Unmanaged<ExtensionLuaRuntime>.fromOpaque(ud).takeUnretainedValue().optionalSelf else {
+                lua_pushstring(L, "Error: runtime unavailable")
+                return 1
+            }
+            let state = runtime.L
+            lua_getfield(state, 1, "cmd")
+            let cmd = lua_tostring(state, -1).map { String(cString: $0) } ?? ""
+            lua_pop(state, 1)
+            guard !cmd.isEmpty, let bridge = runtime.bridge else {
+                lua_pushstring(L, "Error: shell bridge unavailable")
+                return 1
+            }
+            let semaphore = DispatchSemaphore(value: 0)
+            var output = "Error: shell timeout"
+            Task {
+                let (out, isErr) = await bridge.shell(cmd, [:])
+                output = isErr ? "Error: \(out)" : out
+                semaphore.signal()
+            }
+            semaphore.wait()
+            lua_pushstring(L, output)
+            return 1
+        }
+        lua_pushlightuserdata(L, selfPtr)
+        lua_pushcclosure(L, shell, 1)
+        lua_setfield(L, -2, "shell")
+        // api.file.read(path) → string
+        let fileRead: @convention(c) (OpaquePointer?) -> Int32 = { L in
+            guard let L else { return 1 }
+            let upval = LUA_REGISTRYINDEX - 1
+            guard let ud = lua_touserdata(L, upval),
+                  let runtime = Unmanaged<ExtensionLuaRuntime>.fromOpaque(ud).takeUnretainedValue().optionalSelf else {
+                lua_pushstring(L, "Error: runtime unavailable")
+                return 1
+            }
+            let state = runtime.L
+            lua_getfield(state, 1, "path")
+            let path = lua_tostring(state, -1).map { String(cString: $0) } ?? ""
+            lua_pop(state, 1)
+            guard !path.isEmpty, let bridge = runtime.bridge else {
+                lua_pushstring(L, "Error: file bridge unavailable")
+                return 1
+            }
+            let semaphore = DispatchSemaphore(value: 0)
+            var output = "Error: file read timeout"
+            Task {
+                let (out, isErr) = await bridge.fileRead(path)
+                output = isErr ? "Error: \(out)" : out
+                semaphore.signal()
+            }
+            semaphore.wait()
+            lua_pushstring(L, output)
+            return 1
+        }
+        lua_pushlightuserdata(L, selfPtr)
+        lua_pushcclosure(L, fileRead, 1)
+        lua_setfield(L, -2, "file")
+        // api.permission.request(kind) → boolean
+        let permission: @convention(c) (OpaquePointer?) -> Int32 = { L in
+            guard let L else { return 1 }
+            let upval = LUA_REGISTRYINDEX - 1
+            guard let ud = lua_touserdata(L, upval),
+                  let runtime = Unmanaged<ExtensionLuaRuntime>.fromOpaque(ud).takeUnretainedValue().optionalSelf else {
+                lua_pushboolean(L, 0)
+                return 1
+            }
+            let state = runtime.L
+            lua_getfield(state, 1, "kind")
+            let kind = lua_tostring(state, -1).map { String(cString: $0) } ?? ""
+            lua_pop(state, 1)
+            guard let bridge = runtime.bridge else {
+                lua_pushboolean(L, 0)
+                return 1
+            }
+            let semaphore = DispatchSemaphore(value: 0)
+            var granted = false
+            Task {
+                granted = await bridge.requestPermission(kind)
+                semaphore.signal()
+            }
+            semaphore.wait()
+            lua_pushboolean(L, granted ? 1 : 0)
+            return 1
+        }
+        lua_pushlightuserdata(L, selfPtr)
+        lua_pushcclosure(L, permission, 1)
+        lua_setfield(L, -2, "permission")
         lua_setfield(L, -2, "api")
 
         // globals.minis = minis
