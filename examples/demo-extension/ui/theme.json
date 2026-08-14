@@ -1,0 +1,13 @@
+{
+  "name": "Demo Dark",
+  "scope": "chat",
+  "tokens": {
+    "background": "#1C1C1E",
+    "text": "#FFFFFF",
+    "accent": "#0A84FF",
+    "userBubble": "#0A84FF",
+    "assistantBubble": "#2C2C2E",
+    "inputBackground": "#2C2C2E",
+    "border": "#3A3A3C"
+  }
+}

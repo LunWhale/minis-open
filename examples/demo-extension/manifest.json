@@ -1,0 +1,46 @@
+{
+  "id": "com.example.demo",
+  "name": "Demo Extension",
+  "version": "1.0.0",
+  "description": "Showcase: an agent tool (weather-by-name stub), a slash command, an event hook, a chat UI widget, and a theme — all in one .minisx.",
+  "author": "Minis Example",
+  "kinds": ["agent-tool", "command", "event-hook", "ui-widget", "theme"],
+  "permissions": ["files", "ui"],
+  "tools": [
+    {
+      "file": "agent/tools/hello.js",
+      "name": "hello_world",
+      "description": "Returns a greeting. Demonstrates a minimal extension tool.",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Who to greet" }
+        }
+      }
+    }
+  ],
+  "commands": [
+    {
+      "file": "agent/commands/hello.js",
+      "name": "ext-hello",
+      "description": "Slash command: says hello from the extension"
+    }
+  ],
+  "hooks": [
+    {
+      "file": "agent/hooks/log.js",
+      "events": ["agent_start"]
+    }
+  ],
+  "ui": [
+    {
+      "type": "widget",
+      "file": "ui/widget.html",
+      "placement": "chat-panel"
+    }
+  ],
+  "theme": {
+    "file": "ui/theme.json",
+    "scope": "chat"
+  }
+}
