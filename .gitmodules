@@ -1,7 +1,7 @@
 [submodule "deps/ish"]
 	path = deps/ish
-	url = https://github.com/OpenMinis/ish-arm64.git
-	branch = feature/fork-guard
+	url = https://github.com/LunWhale/ish-arm64.git
+	branch = feature/fcvt-arm64
 [submodule "deps/proot"]
 	path = deps/proot
 	url = https://github.com/OpenMinis/proot.git
