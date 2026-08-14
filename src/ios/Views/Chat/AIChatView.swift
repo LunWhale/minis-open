@@ -241,6 +241,9 @@ struct AIChatView: View {
     @ObservedObject private var configStore = ProviderConfigStore.shared
     @ObservedObject private var fontSettings = FontSettings.shared
     @ObservedObject private var deepLink = DeepLinkCoordinator.shared
+    // [M3-extensions] Observe the theme manager so an applied extension
+    // theme re-renders chat colors immediately (reactive, no restart).
+    @ObservedObject private var themeManager = ThemeManager.shared
     @Environment(\.dismiss) private var dismiss
     @State private var inputFocused: Bool = false
     @State private var inputHasSelection: Bool = false
@@ -381,6 +384,8 @@ struct AIChatView: View {
     @State private var showSessionMCPs = false
     @State private var showSessionMemory = false
     @State private var showTodoPanel = false
+    @State private var showSubagentPanel = false
+    @State private var showWidgetsPanel = false
     @State private var showEnhancedCacheAlert = false
     @State private var showTokenUsage = false
     // [T-ios-json-open-provider-import-prompt] A shared/opened JSON file that
@@ -1029,6 +1034,12 @@ struct AIChatView: View {
             TodoPanelView(sessionId: vm.sessionId) {
                 await vm.ensureSessionReturningId()
             }
+        }
+        .sheet(isPresented: $showSubagentPanel) {
+            SubagentBlockView()
+        }
+        .sheet(isPresented: $showWidgetsPanel) {
+            ExtensionWidgetsPanelView()
         }
         .sheet(isPresented: $showMoveToSheet) {
             MoveToSessionSheet(currentSessionId: vm.sessionId) { targetId in
@@ -1761,6 +1772,8 @@ struct AIChatView: View {
             onMCPs: { showSessionMCPs = true },
             onMemories: { showSessionMemory = true },
             onTodos: { showTodoPanel = true },
+            onSubagents: { showSubagentPanel = true },
+            onWidgets: { showWidgetsPanel = true },
             setSpeakEnabled: { enabled in
                 cached.vm.speakEnabled = enabled
                 // Keep the persisted "Read replies" preference in lockstep.
@@ -4912,6 +4925,8 @@ private struct ChatTrailingMenu: View, Equatable {
     let onMCPs: () -> Void
     let onMemories: () -> Void
     let onTodos: () -> Void
+    let onSubagents: () -> Void
+    let onWidgets: () -> Void
     let setSpeakEnabled: (Bool) -> Void
     let setEnhancedCache: (Bool) -> Void
     let setFastMode: (Bool) -> Void
@@ -5007,6 +5022,14 @@ private struct ChatTrailingMenu: View, Equatable {
                 Label(String(localized: "Todos in Session"), systemImage: "checklist")
             }
 
+            Button { onSubagents() } label: {
+                Label(String(localized: "Sub-agent Runs"), systemImage: "person.2")
+            }
+
+            Button { onWidgets() } label: {
+                Label(String(localized: "Extension Widgets"), systemImage: "rectangle.inset.filled.and.person.filled")
+            }
+
             Toggle(isOn: Binding(
                 get: { speakEnabled },
                 set: { setSpeakEnabled($0) }
@@ -5097,6 +5120,8 @@ private struct ChatTrailingMenuButton: UIViewRepresentable {
     let onMCPs: () -> Void
     let onMemories: () -> Void
     let onTodos: () -> Void
+    let onSubagents: () -> Void
+    let onWidgets: () -> Void
     let setSpeakEnabled: (Bool) -> Void
     let setEnhancedCache: (Bool) -> Void
     let setFastMode: (Bool) -> Void

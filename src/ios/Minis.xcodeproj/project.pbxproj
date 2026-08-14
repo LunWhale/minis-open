@@ -950,7 +950,11 @@
 		E5N0000142F3B941A00049557 /* MemoryManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryManagementView.swift; sourceTree = "<group>"; };
 		E5N0000152F3B941A00049557 /* SessionMemoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionMemoryView.swift; sourceTree = "<group>"; };
 		E5TODOV1 /* TodoPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoPanelView.swift; sourceTree = "<group>"; };
+		E5SUBAB1 /* SubagentBlockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubagentBlockView.swift; sourceTree = "<group>"; };
+		E5SUBAB1B /* SubagentBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SUBAB1 /* SubagentBlockView.swift */; };
 		E5EXTWV1 /* ExtensionWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionWebView.swift; sourceTree = "<group>"; };
+		E5EXTWP1 /* ExtensionWidgetsPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionWidgetsPanelView.swift; sourceTree = "<group>"; };
+		E5EXTWP1B /* ExtensionWidgetsPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5EXTWP1 /* ExtensionWidgetsPanelView.swift */; };
 		E5EXTWV1B /* ExtensionWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5EXTWV1 /* ExtensionWebView.swift */; };
 		E5N0000162F3B941A00049557 /* AlarmListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmListView.swift; sourceTree = "<group>"; };
 		E5OARC010 /* ClaudeOAuthRefreshCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeOAuthRefreshCoordinator.swift; sourceTree = "<group>"; };
@@ -1646,6 +1650,7 @@
 			isa = PBXGroup;
 			children = (
 				E5EXTWV1 /* ExtensionWebView.swift */,
+				E5EXTWP1 /* ExtensionWidgetsPanelView.swift */,
 			);
 			path = Extensions;
 			sourceTree = "<group>";
@@ -2125,6 +2130,7 @@
 				E5K000012 /* ChatTurnScreenshot.swift */,
 				E5N0000152F3B941A00049557 /* SessionMemoryView.swift */,
 				E5TODOV1 /* TodoPanelView.swift */,
+				E5SUBAB1 /* SubagentBlockView.swift */,
 				E5N0000122F3B941A00049557 /* SessionSkillsView.swift */,
 				F1T00010 /* ToolLiveSheet.swift */,
 				E53000015 /* UsageStatsView.swift */,
@@ -2912,7 +2918,9 @@
 				E5N0000042F3B941A00049557 /* MemoryManagementView.swift in Sources */,
 				E5N0000052F3B941A00049557 /* SessionMemoryView.swift in Sources */,
 				E5TODOV2 /* TodoPanelView.swift in Sources */,
+				E5SUBAB1B /* SubagentBlockView.swift in Sources */,
 				E5EXTWV1B /* ExtensionWebView.swift in Sources */,
+				E5EXTWP1B /* ExtensionWidgetsPanelView.swift in Sources */,
 				E5N0000062F3B941A00049557 /* AlarmListView.swift in Sources */,
 				E5P000001 /* EnvVarStore.swift in Sources */,
 				E5PRIV01 /* EnvVarPrivacyStore.swift in Sources */,

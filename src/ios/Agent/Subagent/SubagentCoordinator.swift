@@ -11,6 +11,61 @@ import Foundation
 /// parent session's history or the UI message list.
 enum SubagentCoordinator {
 
+    // MARK: - Run Registry
+
+    /// A completed/in-flight sub-agent run, kept so the parent session can
+    /// inspect what sub-agents did (agent_status tool + SubagentBlockView).
+    struct RunRecord: Identifiable, Sendable {
+        let id: String
+        let roleName: String
+        let task: String
+        let status: String          // running / done / error / cancelled
+        let startedAt: Date
+        var finishedAt: Date?
+        var summary: String?
+        var toolCalls: Int
+        var turns: Int
+        var error: String?
+
+        var idString: String { id }
+    }
+
+    /// Process-local run log (in-memory; survives within the session).
+    /// Capped at 50 records, newest first.
+    private static let lock = NSLock()
+    private static var runLog: [RunRecord] = []
+
+    static func record(_ run: RunRecord) {
+        lock.lock()
+        runLog.insert(run, at: 0)
+        if runLog.count > 50 { runLog.removeLast(runLog.count - 50) }
+        lock.unlock()
+    }
+
+    static func updateRecord(id: String, mutate: (inout RunRecord) -> Void) {
+        lock.lock()
+        if let idx = runLog.firstIndex(where: { $0.id == id }) {
+            mutate(&runLog[idx])
+        }
+        lock.unlock()
+    }
+
+    /// Recent runs, newest first.
+    static func recentRuns(limit: Int = 20) -> [RunRecord] {
+        lock.lock()
+        defer { lock.unlock() }
+        return Array(runLog.prefix(limit))
+    }
+
+    static func runRecord(id: String) -> RunRecord? {
+        lock.lock()
+        defer { lock.unlock() }
+        return runLog.first(where: { $0.id == id })
+    }
+
+    static func newRunID() -> String {
+        UUID().uuidString.prefix(8).lowercased()
+    }
     /// Tool names the sub-agent sees. Kept deliberately small and focused:
     /// shell for everything, plus direct file tools for reading/writing
     /// without shell overhead (mirrors the parent's core tool set).
@@ -51,12 +106,21 @@ enum SubagentCoordinator {
         sessionId: String?,
         extraTools: [AgentToolDefinition] = []
     ) async -> AgentRunner.Result {
+        let runID = newRunID()
+        record(RunRecord(
+            id: runID, roleName: role.name, task: task,
+            status: "running", startedAt: Date(),
+            finishedAt: nil, summary: nil, toolCalls: 0, turns: 0, error: nil
+        ))
+
         guard let provider = await resolveProvider(activeEntry: activeEntry) else {
-            return AgentRunner.Result(
+            let errResult = AgentRunner.Result(
                 text: "", toolCalls: 0, turns: 0,
                 usage: nil, stopReason: nil,
                 error: "No model provider configured"
             )
+            updateRecord(id: runID) { $0.status = "error"; $0.finishedAt = Date(); $0.error = errResult.error }
+            return errResult
         }
 
         var tools = toolDefinitions(role: role)
@@ -72,7 +136,16 @@ enum SubagentCoordinator {
                 timeoutSeconds: TimeInterval(role.timeoutSeconds)
             )
         )
-        return await runner.run(task: task)
+        let result = await runner.run(task: task)
+        updateRecord(id: runID) {
+            $0.status = result.error == nil ? "done" : "error"
+            $0.finishedAt = Date()
+            $0.summary = result.text
+            $0.toolCalls = result.toolCalls
+            $0.turns = result.turns
+            $0.error = result.error
+        }
+        return result
     }
 
     /// Launch a sub-agent in the background. Returns a `Task` the caller can

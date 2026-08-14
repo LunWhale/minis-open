@@ -5337,7 +5337,18 @@ fun ChatScreen(
                             .padding(horizontal = 12.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        // Left: + button (iOS: 34×34 circle, secondary bg)
+                        // Left: terminal button (iOS parity: one tap into
+                        // the iSH terminal) then the + attachment menu.
+                        InputCircleButton(
+                            onClick = onOpenTerminal,
+                        ) {
+                            Icon(
+                                Icons.Default.Terminal,
+                                contentDescription = "Open Terminal",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
                         Box {
                             InputCircleButton(
                                 onClick = { showAttachMenu = true },
