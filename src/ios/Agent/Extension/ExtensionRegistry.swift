@@ -27,7 +27,6 @@ final class ExtensionRegistry {
     /// Extension id → registered Lua command name → RegisteredCommand.
     private var luaCommandIndex: [String: [String: ExtensionLuaRuntime.RegisteredCommand]] = [:]
     private var manifests: [String: ExtensionManifest] = [:]
-    private var loaded = false
 
     private init() {}
 
@@ -53,7 +52,6 @@ final class ExtensionRegistry {
                 ExtensionLogStore.shared.log("Failed to load \(record.id): \(error.localizedDescription)", level: .error)
             }
         }
-        loaded = true
     }
 
     private func load(_ record: ExtensionStore.Record) async throws {
