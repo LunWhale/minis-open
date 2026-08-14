@@ -69,6 +69,9 @@ final class ExtensionRegistry {
             bridge: makeBridge(extensionID: record.id, manifest: manifest)
         )
         let luaRuntime = ExtensionLuaRuntime(extensionID: record.id)
+        // Share the native bridge (shell/file/permission) so Lua's
+        // minis.api.shell/file/permission are real, not stubs.
+        luaRuntime.bridge = makeBridge(extensionID: record.id, manifest: manifest)
 
         // Evaluate tool/command/hook scripts, dispatching by language.
         // .js → JavaScriptCore runtime; .lua → vendored Lua 5.4 runtime.
