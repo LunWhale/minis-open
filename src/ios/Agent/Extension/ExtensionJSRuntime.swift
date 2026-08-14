@@ -32,6 +32,8 @@ final class ExtensionJSRuntime {
         var fileRead: @Sendable (String) async -> (String, Bool)
         var fileWrite: @Sendable (String, String, Bool) async -> (String, Bool)
         var requestPermission: @Sendable (String) async -> Bool
+        /// Check whether the extension declared a permission in its manifest.
+        var hasPermission: @Sendable (String) -> Bool
         var postToUI: @Sendable (String, [String: Any]) -> Void
         var emitEvent: @Sendable (String, [String: Any]) -> Void
     }
@@ -161,13 +163,30 @@ final class ExtensionJSRuntime {
         }
         minis.setObject(log, forKeyedSubscript: "log" as NSString)
 
-        // api.*
+        // api.* — file is an object {read, write}; others are functions.
         let api = JSValue(newObjectIn: context)!
         api.setObject(makeShellBridge(), forKeyedSubscript: "shell" as NSString)
-        api.setObject(makeFileReadBridge(), forKeyedSubscript: "file" as NSString)
+        let fileObj = JSValue(newObjectIn: context)!
+        fileObj.setObject(makeFileReadBridge(), forKeyedSubscript: "read" as NSString)
+        fileObj.setObject(makeFileWriteBridge(), forKeyedSubscript: "write" as NSString)
+        api.setObject(fileObj, forKeyedSubscript: "file" as NSString)
         api.setObject(makePermissionBridge(), forKeyedSubscript: "permission" as NSString)
         api.setObject(makeEventBridge(), forKeyedSubscript: "event" as NSString)
+        api.setObject(makeOffloadBridge(), forKeyedSubscript: "offload" as NSString)
+        api.setObject(makeUIBridge(), forKeyedSubscript: "ui" as NSString)
         minis.setObject(api, forKeyedSubscript: "api" as NSString)
+
+        // minis.store = { get, set } — small KV persistence scoped to the
+        // extension (UserDefaults keyed by extension id).
+        let store = JSValue(newObjectIn: context)!
+        store.setObject(makeStoreGetBridge(), forKeyedSubscript: "get" as NSString)
+        store.setObject(makeStoreSetBridge(), forKeyedSubscript: "set" as NSString)
+        minis.setObject(store, forKeyedSubscript: "store" as NSString)
+
+        // minis.http = { fetch } — HTTP via URLSession (network permission).
+        let http = JSValue(newObjectIn: context)!
+        http.setObject(makeHTTPBridge(), forKeyedSubscript: "fetch" as NSString)
+        minis.setObject(http, forKeyedSubscript: "http" as NSString)
 
         context.setObject(minis, forKeyedSubscript: "minis" as NSString)
     }
@@ -202,6 +221,112 @@ final class ExtensionJSRuntime {
                 Task {
                     let (out, isErr) = await bridge.fileRead(path)
                     if isErr { reject?.call(withArguments: [out]) } else { resolve?.call(withArguments: [out]) }
+                }
+            }
+            return promise
+        }
+    }
+
+    private func makeFileWriteBridge() -> @convention(block) (JSValue, JSValue) -> JSValue {
+        let bridge = self.bridge
+        let context = self.context
+        return { pathVal, contentVal in
+            let path = pathVal.toString() ?? ""
+            let content = contentVal.toString() ?? ""
+            let promise = JSValue(newPromiseIn: context) { resolve, reject in
+                Task {
+                    let (out, isErr) = await bridge.fileWrite(path, content, false)
+                    if isErr { reject?.call(withArguments: [out]) } else { resolve?.call(withArguments: [out]) }
+                }
+            }
+            return promise
+        }
+    }
+
+    private func makeOffloadBridge() -> @convention(block) (JSValue, JSValue) -> JSValue {
+        // Reserved surface: routes to the shell bridge (apple-* CLIs run in
+        // the sandbox like any other command). Returns a promise.
+        let bridge = self.bridge
+        let context = self.context
+        return { nameVal, argsVal in
+            let name = nameVal.toString() ?? ""
+            let args = argsVal.toString() ?? ""
+            let cmd = "\(name) \(args)".trimmingCharacters(in: .whitespaces)
+            let promise = JSValue(newPromiseIn: context) { resolve, reject in
+                Task {
+                    let (out, isErr) = await bridge.shell(cmd, [:])
+                    if isErr { reject?.call(withArguments: [out]) } else { resolve?.call(withArguments: [out]) }
+                }
+            }
+            return promise
+        }
+    }
+
+    private func makeUIBridge() -> @convention(block) (JSValue) -> Void {
+        let bridge = self.bridge
+        return { dataVal in
+            let payload = dataVal.toObject() as? [String: Any] ?? [:]
+            bridge.postToUI(extensionID, payload)
+        }
+    }
+
+    private func makeStoreGetBridge() -> @convention(block) (JSValue) -> JSValue {
+        let extID = self.extensionID
+        return { keyVal in
+            let key = keyVal.toString() ?? ""
+            let fullKey = "ext.kv.\(extID).\(key)"
+            let value = UserDefaults.standard.string(forKey: fullKey)
+            return JSValue(object: value as Any, in: self.context)!
+        }
+    }
+
+    private func makeStoreSetBridge() -> @convention(block) (JSValue, JSValue) -> Void {
+        let extID = self.extensionID
+        return { keyVal, valueVal in
+            let key = keyVal.toString() ?? ""
+            let fullKey = "ext.kv.\(extID).\(key)"
+            if valueVal.isUndefined || valueVal.isNull {
+                UserDefaults.standard.removeObject(forKey: fullKey)
+            } else {
+                UserDefaults.standard.set(valueVal.toString() ?? "", forKey: fullKey)
+            }
+        }
+    }
+
+    private func makeHTTPBridge() -> @convention(block) (JSValue, JSValue) -> JSValue {
+        let context = self.context
+        let bridge = self.bridge
+        return { urlVal, optsVal in
+            let urlStr = urlVal.toString() ?? ""
+            // Network permission gate (declared in manifest).
+            guard bridge.hasPermission("network") else {
+                let promise = JSValue(newPromiseIn: context) { _, reject in
+                    reject?.call(withArguments: ["Error: extension needs 'network' permission (declare it in manifest.json)"])
+                }
+                return promise
+            }
+            let method = (optsVal.objectForKeyedSubscript("method").toString() ?? "GET").uppercased()
+            let body = optsVal.objectForKeyedSubscript("body").toString()
+            let promise = JSValue(newPromiseIn: context) { resolve, reject in
+                guard let url = URL(string: urlStr) else {
+                    reject?.call(withArguments: ["Error: invalid URL"])
+                    return
+                }
+                var request = URLRequest(url: url)
+                request.httpMethod = method
+                if let body, !body.isEmpty {
+                    request.httpBody = body.data(using: .utf8)
+                }
+                Task {
+                    do {
+                        let (data, response) = try await URLSession.shared.data(for: request)
+                        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                        let text = String(data: data, encoding: .utf8) ?? ""
+                        let result: [String: Any] = ["status": status, "body": text]
+                        resolve?.call(withArguments: [JSValue(object: result, in: context)!])
+                    } catch {
+                        reject?.call(withArguments: [error.localizedDescription])
+                    }
                 }
             }
             return promise

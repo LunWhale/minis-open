@@ -134,12 +134,12 @@ minis.on("agent_start", function (event) {
 | `minis.api.file.read(path)` | ✅ | 读沙箱文件（需要 `files` 权限）→ Promise\<string\> |
 | `minis.api.permission.request(kind)` | ✅ | 请求权限 → Promise\<boolean\>（复用 OffloadPermissionDialog） |
 | `minis.api.event.emit(name, data)` | ✅ | 扩展间事件总线（发布到所有订阅了该事件的扩展） |
-| `minis.api.offload(name, args)` | ⏳ 预留 | 桥到 apple-* 原生 offload CLI |
-| `minis.api.ui.postMessage(data)` | ⏳ 预留 | 向 WebView 组件广播消息（组件与原生桥见 §4） |
-| `minis.api.file.write(path, content)` | ⏳ 预留 | 写沙箱文件（当前用 shell 或宿主工具代替） |
+| `minis.api.offload(name, args)` | ✅ | 桥到沙箱命令执行（apple-* CLI 等，需要 `shell` 权限） |
+| `minis.api.ui.postMessage(data)` | ✅ | 向 WebView 组件广播消息（组件用 window.minisBridge 接收，见 §4） |
+| `minis.api.file.write(path, content)` | ✅ | 写沙箱文件（需要 `files` 权限，仅 /var/minis/ 路径） |
 | `minis.log(...)` | ✅ | 打日志（`Ext[<id>]` 分类） |
-| `minis.store.get/set(key, value)` | ⏳ 预留 | KV 持久化 |
-| `minis.http.fetch(url)` | ⏳ 预留 | HTTP 请求（当前可用 shell 的 curl 代替） |
+| `minis.store.get/set(key, value)` | ✅ | KV 持久化（UserDefaults，按扩展 id 隔离） |
+| `minis.http.fetch(url, {method, body})` | ✅ | HTTP 请求（需要 `network` 权限）→ Promise\<{status, body}\> |
 
 > 权限：`shell`/`files`/`ui` 等**首次使用时**触发原生确认弹窗（复用
 > OffloadPermissionDialog，30 秒超时）；未声明权限的调用直接报错。
