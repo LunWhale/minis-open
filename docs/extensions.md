@@ -107,9 +107,9 @@ minis.on("agent_start", function (event) {
 
 | API | 说明 |
 |---|---|
-| `minis.registerTool({name, description, parameters, execute})` | 注册 agent 工具 |
-| `minis.registerCommand({name, handler})` | 注册 `/` 命令 |
-| `minis.on(event, handler)` | 订阅 agent 事件 |
+| `minis.registerTool({name, description, parameters, execute})` | 注册 agent 工具（`extension_<id>_<name>` 命名空间挂入工具集） |
+| `minis.registerCommand({name, handler})` | 注册 `/` 命令（出现在斜杠菜单，输入 `/name` 直接执行） |
+| `minis.on(event, handler)` | 订阅 agent 生命周期事件（当前已接线：`agent_start` / `agent_end` 每轮触发） |
 | `minis.api.shell(cmd, {timeout})` | 执行沙箱 shell（需要 `shell` 权限）→ Promise\<string\> |
 | `minis.api.file.read(path)` | 读沙箱文件（需要 `files` 权限）→ Promise\<string\> |
 | `minis.api.permission.request(kind)` | 请求权限 → Promise\<boolean\> |
@@ -117,7 +117,8 @@ minis.on("agent_start", function (event) {
 | `minis.log(...)` | 打日志（`Ext[<id>]` 分类） |
 | `minis.store.get/set(key, value)` | KV 持久化（预留） |
 
-> 权限：`shell`/`files` 等**首次使用时**触发原生确认弹窗（复用 App 权限体系）；未声明权限的调用直接报错。
+> 权限：`shell`/`files`/`ui` 等**首次使用时**触发原生确认弹窗（复用
+> OffloadPermissionDialog，30 秒超时）；未声明权限的调用直接报错。
 
 ---
 

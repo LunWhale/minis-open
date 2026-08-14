@@ -18,6 +18,8 @@ final class ExtensionRegistry {
     private var runtimes: [String: ExtensionJSRuntime] = [:]
     /// Extension id → registered tool name → RegisteredTool.
     private var toolIndex: [String: [String: ExtensionJSRuntime.RegisteredTool]] = [:]
+    /// Extension id → registered command name → RegisteredCommand.
+    private var commandIndex: [String: [String: ExtensionJSRuntime.RegisteredCommand]] = [:]
     private var manifests: [String: ExtensionManifest] = [:]
     private var loaded = false
 
@@ -31,6 +33,7 @@ final class ExtensionRegistry {
         let records = await ExtensionStore.shared.list().filter(\.enabled)
         runtimes.removeAll()
         toolIndex.removeAll()
+        commandIndex.removeAll()
         manifests.removeAll()
 
         for record in records {
@@ -81,6 +84,21 @@ final class ExtensionRegistry {
             byName[tool.name] = tool
         }
         toolIndex[record.id] = byName
+        var cmdByName: [String: ExtensionJSRuntime.RegisteredCommand] = [:]
+        for command in runtime.registeredCommands {
+            cmdByName[command.name] = command
+        }
+        commandIndex[record.id] = cmdByName
+
+        // Apply the extension's theme (if any) — last loaded wins.
+        if let themeDef = manifest.theme {
+            let themeURL = record.bundleURL.appendingPathComponent(themeDef.file)
+            if let data = try? Data(contentsOf: themeURL),
+               let theme = ThemeTokens.parse(data: data) {
+                ThemeTokens.active = theme
+                AppLogger(category: "ExtensionTheme").info("Applied theme '\(theme.name)' from \(record.id)")
+            }
+        }
     }
 
     // MARK: - Tool surface for the agent
@@ -142,6 +160,39 @@ final class ExtensionRegistry {
         }
 
         return runtime.callTool(tool, args: args)
+    }
+
+    // MARK: - Commands
+
+    /// All registered extension slash commands: [(name, extensionID)]
+    /// Names are prefixed with `ext-` by the extension author; exposed as-is.
+    func extensionCommands() -> [(name: String, extensionID: String)] {
+        var out: [(String, String)] = []
+        for (extID, cmds) in commandIndex {
+            for (cmdName, _) in cmds {
+                out.append((cmdName, extID))
+            }
+        }
+        return out
+    }
+
+    /// Execute a registered extension command by name. Returns (output, isError).
+    func executeExtensionCommand(name: String, args: [String]) async -> (String, Bool) {
+        for (extID, cmds) in commandIndex {
+            if let cmd = cmds[name], let runtime = runtimes[extID] {
+                return runtime.callCommand(cmd, args: args)
+            }
+        }
+        return ("Error: extension command '\(name)' not found", true)
+    }
+
+    // MARK: - Events
+
+    /// Fire an agent lifecycle event to all extensions with matching hooks.
+    func emitLifecycleEvent(_ event: String, data: [String: Any]) {
+        for runtime in runtimes.values {
+            runtime.emitEvent(event, data: data)
+        }
     }
 
     // MARK: - UI widgets

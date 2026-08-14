@@ -21,14 +21,20 @@ extension AIChatViewModel {
         /// minis-mcp-cli once the message is sent. Separate flag from isSkill so
         /// the picker can tag/icon them distinctly ([mcp] / wrench).
         let isMCP: Bool
+        /// True when this row comes from an installed .minisx extension
+        /// command. Tap fills the composer with "/<name>"; the command
+        /// executes extension-side via ExtensionRegistry.executeExtensionCommand
+        /// when the message is sent (minis://extensions/run/<name>).
+        let isExtension: Bool
 
-        init(id: String, icon: String, title: String, subtitle: String, isSkill: Bool = false, isMCP: Bool = false) {
+        init(id: String, icon: String, title: String, subtitle: String, isSkill: Bool = false, isMCP: Bool = false, isExtension: Bool = false) {
             self.id = id
             self.icon = icon
             self.title = title
             self.subtitle = subtitle
             self.isSkill = isSkill
             self.isMCP = isMCP
+            self.isExtension = isExtension
         }
     }
 
@@ -238,6 +244,22 @@ extension AIChatViewModel {
             }
         commands.append(contentsOf: mcpRows)
 
+        // [M3-extensions] Extension command rows (from .minisx bundles).
+        // Typing aid like skills/MCP: tap fills "/<name>"; execution routes
+        // to the extension's JS handler when the message is processed.
+        let extRows: [SlashCommand] = ExtensionRegistry.shared.extensionCommands()
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            .map { cmd in
+                SlashCommand(
+                    id: "ext:\(cmd.extensionID):\(cmd.name)",
+                    icon: "puzzlepiece.extension.fill",
+                    title: cmd.name,
+                    subtitle: "Extension command",
+                    isExtension: true
+                )
+            }
+        commands.append(contentsOf: extRows)
+
         if filter.isEmpty {
             // [T-slash-picker-recent] Default `/` view: top 100 by
             // recency. Builtins keep priority — they always appear in
@@ -248,9 +270,10 @@ extension AIChatViewModel {
             // skill libraries can scroll the full set without first
             // typing a filter.
             let usage = slashCommandUsage()
-            let builtins = commands.filter { !$0.isSkill && !$0.isMCP }
+            let builtins = commands.filter { !$0.isSkill && !$0.isMCP && !$0.isExtension }
             let skills = commands.filter { $0.isSkill }
             let mcps = commands.filter { $0.isMCP }
+            let exts = commands.filter { $0.isExtension }
             let rankByUsage: ([SlashCommand]) -> [SlashCommand] = { rows in
                 rows.sorted { a, b in
                     let ta = usage[a.id] ?? 0
@@ -259,7 +282,7 @@ extension AIChatViewModel {
                     return a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
                 }
             }
-            return Array((builtins + rankByUsage(skills) + rankByUsage(mcps)).prefix(100))
+            return Array((builtins + rankByUsage(skills) + rankByUsage(mcps) + rankByUsage(exts)).prefix(100))
         }
         return commands.filter { $0.title.lowercased().contains(filter) }
     }
@@ -325,6 +348,24 @@ extension AIChatViewModel {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard text.hasPrefix("/") else { return false }
         let name = String(text.dropFirst()).lowercased()
+
+        // [M3-extensions] Extension commands: "/<name>" where <name> is a
+        // registered extension command. Execute the JS handler and surface
+        // its output via appendSystemInfo (the same channel built-in slash
+        // commands use for results).
+        let extCommands = ExtensionRegistry.shared.extensionCommands()
+        if let matched = extCommands.first(where: { $0.name.lowercased() == name }) {
+            Task {
+                let (output, isError) = await ExtensionRegistry.shared.executeExtensionCommand(name: matched.name, args: [])
+                let icon = isError ? "exclamationmark.triangle" : "puzzlepiece.extension.fill"
+                let label = isError ? "Extension command \(matched.name) failed" : "Extension command: \(matched.name)"
+                await MainActor.run {
+                    self.appendSystemInfo("\(label)\n\(output)", icon: icon)
+                }
+            }
+            return true
+        }
+
         guard let cmd = Self.availableSlashCommands.first(where: { $0.title.lowercased() == name }) else {
             return false
         }

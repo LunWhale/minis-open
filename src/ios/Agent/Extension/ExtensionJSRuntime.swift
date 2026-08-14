@@ -60,12 +60,48 @@ final class ExtensionJSRuntime {
 
     /// Registered tools collected from `minis.registerTool` calls.
     private(set) var registeredTools: [RegisteredTool] = []
+    private(set) var registeredCommands: [RegisteredCommand] = []
+    private(set) var eventHandlers: [String: [JSValue]] = [:]
 
     struct RegisteredTool {
         let name: String
         let description: String
         let execute: JSValue  // JS function
     }
+
+    struct RegisteredCommand {
+        let name: String
+        let handler: JSValue  // JS function
+    }
+
+    /// Execute a registered slash command. Returns output string.
+    func callCommand(_ command: RegisteredCommand, args: [String]) -> (String, Bool) {
+        let jsArgs = JSValue(object: args, in: context)!
+        guard let result = command.handler.call(withArguments: [jsArgs]) else {
+            return ("Error: command execution failed", true)
+        }
+        if result.isUndefined || result.isNull {
+            return ("", false)
+        }
+        if let str = result.toString() {
+            return (str, false)
+        }
+        return (result.toObject() as? String ?? "\(result)", false)
+    }
+
+    /// Fire an event to all registered `minis.on(event, handler)` hooks.
+    /// Handlers run synchronously on the JS thread; results are logged.
+    func emitEvent(_ event: String, data: [String: Any]) {
+        guard let handlers = eventHandlers[event], !handlers.isEmpty else { return }
+        let jsData = JSValue(object: data, in: context)!
+        for handler in handlers {
+            guard let result = handler.call(withArguments: [jsData]) else { continue }
+            if result.isString, let str = result.toString(), !str.isEmpty {
+                AppLogger(category: "ExtHook[\(event)]").info("\(str)")
+            }
+        }
+    }
+
 
     /// Execute a registered tool. `args` is bridged to JS, result string
     /// returned (or an error string).
@@ -98,6 +134,25 @@ final class ExtensionJSRuntime {
             self.registeredTools.append(RegisteredTool(name: name, description: desc, execute: execute))
         }
         minis.setObject(registerTool, forKeyedSubscript: "registerTool" as NSString)
+
+        // registerCommand
+        let registerCommand: @convention(block) (JSValue) -> Void = { [weak self] def in
+            guard let self else { return }
+            let name = def.objectForKeyedSubscript("name").toString() ?? ""
+            let handler = def.objectForKeyedSubscript("handler")
+            guard !name.isEmpty, !handler.isUndefined else { return }
+            self.registeredCommands.append(RegisteredCommand(name: name, handler: handler))
+        }
+        minis.setObject(registerCommand, forKeyedSubscript: "registerCommand" as NSString)
+
+        // on(event, handler) — event hook subscription
+        let on: @convention(block) (JSValue, JSValue) -> Void = { [weak self] nameVal, handlerVal in
+            guard let self else { return }
+            let name = nameVal.toString() ?? ""
+            guard !name.isEmpty, !handlerVal.isUndefined else { return }
+            self.eventHandlers[name, default: []].append(handlerVal)
+        }
+        minis.setObject(on, forKeyedSubscript: "on" as NSString)
 
         // log
         let log: @convention(block) (JSValue) -> Void = { [extensionID] args in

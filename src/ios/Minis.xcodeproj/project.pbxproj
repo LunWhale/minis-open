@@ -937,6 +937,8 @@
 		E5N0000142F3B941A00049557 /* MemoryManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryManagementView.swift; sourceTree = "<group>"; };
 		E5N0000152F3B941A00049557 /* SessionMemoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionMemoryView.swift; sourceTree = "<group>"; };
 		E5TODOV1 /* TodoPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoPanelView.swift; sourceTree = "<group>"; };
+		E5EXTWV1 /* ExtensionWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionWebView.swift; sourceTree = "<group>"; };
+		E5EXTWV1B /* ExtensionWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5EXTWV1 /* ExtensionWebView.swift */; };
 		E5N0000162F3B941A00049557 /* AlarmListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmListView.swift; sourceTree = "<group>"; };
 		E5OARC010 /* ClaudeOAuthRefreshCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeOAuthRefreshCoordinator.swift; sourceTree = "<group>"; };
 		E5OARC030 /* OAuthRefreshCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OAuthRefreshCoordinator.swift; sourceTree = "<group>"; };
@@ -1615,6 +1617,14 @@
 		};
 		E5D000030 /* Views */ = {
 			isa = PBXGroup;
+		E5EXTWG1 /* Extensions */ = {
+			isa = PBXGroup;
+			children = (
+				E5EXTWV1 /* ExtensionWebView.swift */,
+			);
+			path = Extensions;
+			sourceTree = "<group>";
+		};
 			children = (
 				E51000012 /* ContentView.swift */,
 				F1V00014 /* Alarms */,
@@ -1624,6 +1634,7 @@
 				F1V00013 /* Rootfs */,
 				F1V00011 /* Settings */,
 				F1V00016 /* Skills */,
+				E5EXTWG1 /* Extensions */,
 				F1VMCPG0 /* MCP */,
 				EAB000060 /* Sync */,
 			);
@@ -2848,6 +2859,7 @@
 				E5N0000042F3B941A00049557 /* MemoryManagementView.swift in Sources */,
 				E5N0000052F3B941A00049557 /* SessionMemoryView.swift in Sources */,
 				E5TODOV2 /* TodoPanelView.swift in Sources */,
+				E5EXTWV1B /* ExtensionWebView.swift in Sources */,
 				E5N0000062F3B941A00049557 /* AlarmListView.swift in Sources */,
 				E5P000001 /* EnvVarStore.swift in Sources */,
 				E5PRIV01 /* EnvVarPrivacyStore.swift in Sources */,
