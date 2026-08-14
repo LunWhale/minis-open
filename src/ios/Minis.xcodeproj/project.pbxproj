@@ -940,6 +940,8 @@
 		E5SUBAB1 /* SubagentBlockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubagentBlockView.swift; sourceTree = "<group>"; };
 		E5SUBAB1B /* SubagentBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SUBAB1 /* SubagentBlockView.swift */; };
 		E5EXTWV1 /* ExtensionWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionWebView.swift; sourceTree = "<group>"; };
+		E5EXTDV1 /* ExtensionDebugView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionDebugView.swift; sourceTree = "<group>"; };
+		E5EXTDV1B /* ExtensionDebugView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5EXTDV1 /* ExtensionDebugView.swift */; };
 		E5EXTWP1 /* ExtensionWidgetsPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionWidgetsPanelView.swift; sourceTree = "<group>"; };
 		E5EXTWP1B /* ExtensionWidgetsPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5EXTWP1 /* ExtensionWidgetsPanelView.swift */; };
 		E5EXTWV1B /* ExtensionWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5EXTWV1 /* ExtensionWebView.swift */; };
@@ -1027,8 +1029,102 @@
 		E5SUBAR3 /* SubagentCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubagentCoordinator.swift; sourceTree = "<group>"; };
 		E5EXTM01 /* ExtensionManifest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionManifest.swift; sourceTree = "<group>"; };
 		E5EXTS01 /* ExtensionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionStore.swift; sourceTree = "<group>"; };
+		E5EVTBS1 /* ExtensionEventBus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionEventBus.swift; sourceTree = "<group>"; };
+		E5EVTBS1B /* ExtensionEventBus.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5EVTBS1 /* ExtensionEventBus.swift */; };
 		E5EXTI01 /* ExtensionInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionInstaller.swift; sourceTree = "<group>"; };
 		E5EXTR01 /* ExtensionJSRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionJSRuntime.swift; sourceTree = "<group>"; };
+		E5LUASW1 /* ExtensionLuaRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionLuaRuntime.swift; sourceTree = "<group>"; };
+		E5LUASW1B /* ExtensionLuaRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5LUASW1 /* ExtensionLuaRuntime.swift */; };
+		E5LUAH000 /* lapi.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = lapi.h; sourceTree = "<group>"; };
+		E5LUAH001 /* lauxlib.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = lauxlib.h; sourceTree = "<group>"; };
+		E5LUAH002 /* lcode.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = lcode.h; sourceTree = "<group>"; };
+		E5LUAH003 /* lctype.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = lctype.h; sourceTree = "<group>"; };
+		E5LUAH004 /* ldebug.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ldebug.h; sourceTree = "<group>"; };
+		E5LUAH005 /* ldo.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ldo.h; sourceTree = "<group>"; };
+		E5LUAH006 /* lfunc.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = lfunc.h; sourceTree = "<group>"; };
+		E5LUAH007 /* lgc.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = lgc.h; sourceTree = "<group>"; };
+		E5LUAH008 /* ljumptab.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ljumptab.h; sourceTree = "<group>"; };
+		E5LUAH009 /* llex.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = llex.h; sourceTree = "<group>"; };
+		E5LUAH010 /* llimits.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = llimits.h; sourceTree = "<group>"; };
+		E5LUAH011 /* lmem.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = lmem.h; sourceTree = "<group>"; };
+		E5LUAH012 /* lobject.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = lobject.h; sourceTree = "<group>"; };
+		E5LUAH013 /* lopcodes.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = lopcodes.h; sourceTree = "<group>"; };
+		E5LUAH014 /* lopnames.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = lopnames.h; sourceTree = "<group>"; };
+		E5LUAH015 /* lparser.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = lparser.h; sourceTree = "<group>"; };
+		E5LUAH016 /* lprefix.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = lprefix.h; sourceTree = "<group>"; };
+		E5LUAH017 /* lstate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = lstate.h; sourceTree = "<group>"; };
+		E5LUAH018 /* lstring.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = lstring.h; sourceTree = "<group>"; };
+		E5LUAH019 /* ltable.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ltable.h; sourceTree = "<group>"; };
+		E5LUAH020 /* ltm.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ltm.h; sourceTree = "<group>"; };
+		E5LUAH021 /* lua.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = lua.h; sourceTree = "<group>"; };
+		E5LUAH022 /* luaconf.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = luaconf.h; sourceTree = "<group>"; };
+		E5LUAH023 /* lualib.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = lualib.h; sourceTree = "<group>"; };
+		E5LUAH024 /* lundump.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = lundump.h; sourceTree = "<group>"; };
+		E5LUAH025 /* lvm.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = lvm.h; sourceTree = "<group>"; };
+		E5LUAH026 /* lzio.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = lzio.h; sourceTree = "<group>"; };
+		E5LUA000 /* lapi.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = lapi.c; sourceTree = "<group>"; };
+		E5LUA001 /* lauxlib.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = lauxlib.c; sourceTree = "<group>"; };
+		E5LUA002 /* lbaselib.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = lbaselib.c; sourceTree = "<group>"; };
+		E5LUA003 /* lcode.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = lcode.c; sourceTree = "<group>"; };
+		E5LUA004 /* lcorolib.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = lcorolib.c; sourceTree = "<group>"; };
+		E5LUA005 /* lctype.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = lctype.c; sourceTree = "<group>"; };
+		E5LUA006 /* ldblib.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = ldblib.c; sourceTree = "<group>"; };
+		E5LUA007 /* ldebug.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = ldebug.c; sourceTree = "<group>"; };
+		E5LUA008 /* ldo.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = ldo.c; sourceTree = "<group>"; };
+		E5LUA009 /* ldump.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = ldump.c; sourceTree = "<group>"; };
+		E5LUA010 /* lfunc.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = lfunc.c; sourceTree = "<group>"; };
+		E5LUA011 /* lgc.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = lgc.c; sourceTree = "<group>"; };
+		E5LUA012 /* linit.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = linit.c; sourceTree = "<group>"; };
+		E5LUA013 /* liolib.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = liolib.c; sourceTree = "<group>"; };
+		E5LUA014 /* llex.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = llex.c; sourceTree = "<group>"; };
+		E5LUA015 /* lmathlib.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = lmathlib.c; sourceTree = "<group>"; };
+		E5LUA016 /* lmem.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = lmem.c; sourceTree = "<group>"; };
+		E5LUA017 /* lobject.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = lobject.c; sourceTree = "<group>"; };
+		E5LUA018 /* lopcodes.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = lopcodes.c; sourceTree = "<group>"; };
+		E5LUA019 /* loslib.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = loslib.c; sourceTree = "<group>"; };
+		E5LUA020 /* lparser.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = lparser.c; sourceTree = "<group>"; };
+		E5LUA021 /* lstate.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = lstate.c; sourceTree = "<group>"; };
+		E5LUA022 /* lstring.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = lstring.c; sourceTree = "<group>"; };
+		E5LUA023 /* lstrlib.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = lstrlib.c; sourceTree = "<group>"; };
+		E5LUA024 /* ltable.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = ltable.c; sourceTree = "<group>"; };
+		E5LUA025 /* ltablib.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = ltablib.c; sourceTree = "<group>"; };
+		E5LUA026 /* ltm.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = ltm.c; sourceTree = "<group>"; };
+		E5LUA027 /* lundump.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = lundump.c; sourceTree = "<group>"; };
+		E5LUA028 /* lutf8lib.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = lutf8lib.c; sourceTree = "<group>"; };
+		E5LUA029 /* lvm.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = lvm.c; sourceTree = "<group>"; };
+		E5LUA030 /* lzio.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = lzio.c; sourceTree = "<group>"; };
+		E5LUA000B /* lapi.c in Sources */ = {isa = PBXBuildFile; fileRef = E5LUA000 /* lapi.c */; };
+		E5LUA001B /* lauxlib.c in Sources */ = {isa = PBXBuildFile; fileRef = E5LUA001 /* lauxlib.c */; };
+		E5LUA002B /* lbaselib.c in Sources */ = {isa = PBXBuildFile; fileRef = E5LUA002 /* lbaselib.c */; };
+		E5LUA003B /* lcode.c in Sources */ = {isa = PBXBuildFile; fileRef = E5LUA003 /* lcode.c */; };
+		E5LUA004B /* lcorolib.c in Sources */ = {isa = PBXBuildFile; fileRef = E5LUA004 /* lcorolib.c */; };
+		E5LUA005B /* lctype.c in Sources */ = {isa = PBXBuildFile; fileRef = E5LUA005 /* lctype.c */; };
+		E5LUA006B /* ldblib.c in Sources */ = {isa = PBXBuildFile; fileRef = E5LUA006 /* ldblib.c */; };
+		E5LUA007B /* ldebug.c in Sources */ = {isa = PBXBuildFile; fileRef = E5LUA007 /* ldebug.c */; };
+		E5LUA008B /* ldo.c in Sources */ = {isa = PBXBuildFile; fileRef = E5LUA008 /* ldo.c */; };
+		E5LUA009B /* ldump.c in Sources */ = {isa = PBXBuildFile; fileRef = E5LUA009 /* ldump.c */; };
+		E5LUA010B /* lfunc.c in Sources */ = {isa = PBXBuildFile; fileRef = E5LUA010 /* lfunc.c */; };
+		E5LUA011B /* lgc.c in Sources */ = {isa = PBXBuildFile; fileRef = E5LUA011 /* lgc.c */; };
+		E5LUA012B /* linit.c in Sources */ = {isa = PBXBuildFile; fileRef = E5LUA012 /* linit.c */; };
+		E5LUA013B /* liolib.c in Sources */ = {isa = PBXBuildFile; fileRef = E5LUA013 /* liolib.c */; };
+		E5LUA014B /* llex.c in Sources */ = {isa = PBXBuildFile; fileRef = E5LUA014 /* llex.c */; };
+		E5LUA015B /* lmathlib.c in Sources */ = {isa = PBXBuildFile; fileRef = E5LUA015 /* lmathlib.c */; };
+		E5LUA016B /* lmem.c in Sources */ = {isa = PBXBuildFile; fileRef = E5LUA016 /* lmem.c */; };
+		E5LUA017B /* lobject.c in Sources */ = {isa = PBXBuildFile; fileRef = E5LUA017 /* lobject.c */; };
+		E5LUA018B /* lopcodes.c in Sources */ = {isa = PBXBuildFile; fileRef = E5LUA018 /* lopcodes.c */; };
+		E5LUA019B /* loslib.c in Sources */ = {isa = PBXBuildFile; fileRef = E5LUA019 /* loslib.c */; };
+		E5LUA020B /* lparser.c in Sources */ = {isa = PBXBuildFile; fileRef = E5LUA020 /* lparser.c */; };
+		E5LUA021B /* lstate.c in Sources */ = {isa = PBXBuildFile; fileRef = E5LUA021 /* lstate.c */; };
+		E5LUA022B /* lstring.c in Sources */ = {isa = PBXBuildFile; fileRef = E5LUA022 /* lstring.c */; };
+		E5LUA023B /* lstrlib.c in Sources */ = {isa = PBXBuildFile; fileRef = E5LUA023 /* lstrlib.c */; };
+		E5LUA024B /* ltable.c in Sources */ = {isa = PBXBuildFile; fileRef = E5LUA024 /* ltable.c */; };
+		E5LUA025B /* ltablib.c in Sources */ = {isa = PBXBuildFile; fileRef = E5LUA025 /* ltablib.c */; };
+		E5LUA026B /* ltm.c in Sources */ = {isa = PBXBuildFile; fileRef = E5LUA026 /* ltm.c */; };
+		E5LUA027B /* lundump.c in Sources */ = {isa = PBXBuildFile; fileRef = E5LUA027 /* lundump.c */; };
+		E5LUA028B /* lutf8lib.c in Sources */ = {isa = PBXBuildFile; fileRef = E5LUA028 /* lutf8lib.c */; };
+		E5LUA029B /* lvm.c in Sources */ = {isa = PBXBuildFile; fileRef = E5LUA029 /* lvm.c */; };
+		E5LUA030B /* lzio.c in Sources */ = {isa = PBXBuildFile; fileRef = E5LUA030 /* lzio.c */; };
+
 		E5EXTRG1 /* ExtensionRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionRegistry.swift; sourceTree = "<group>"; };
 		E5EXTT01 /* ThemeToken.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeToken.swift; sourceTree = "<group>"; };
 		E5EXTT01B /* ThemeToken.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5EXTT01 /* ThemeToken.swift */; };
@@ -1467,15 +1563,84 @@
 			path = Subagent;
 			sourceTree = "<group>";
 		};
+		E5LUAG01 /* Lua */ = {
+			isa = PBXGroup;
+			children = (
+				E5LUA000 /* lapi.c */,
+				E5LUA001 /* lauxlib.c */,
+				E5LUA002 /* lbaselib.c */,
+				E5LUA003 /* lcode.c */,
+				E5LUA004 /* lcorolib.c */,
+				E5LUA005 /* lctype.c */,
+				E5LUA006 /* ldblib.c */,
+				E5LUA007 /* ldebug.c */,
+				E5LUA008 /* ldo.c */,
+				E5LUA009 /* ldump.c */,
+				E5LUA010 /* lfunc.c */,
+				E5LUA011 /* lgc.c */,
+				E5LUA012 /* linit.c */,
+				E5LUA013 /* liolib.c */,
+				E5LUA014 /* llex.c */,
+				E5LUA015 /* lmathlib.c */,
+				E5LUA016 /* lmem.c */,
+				E5LUA017 /* lobject.c */,
+				E5LUA018 /* lopcodes.c */,
+				E5LUA019 /* loslib.c */,
+				E5LUA020 /* lparser.c */,
+				E5LUA021 /* lstate.c */,
+				E5LUA022 /* lstring.c */,
+				E5LUA023 /* lstrlib.c */,
+				E5LUA024 /* ltable.c */,
+				E5LUA025 /* ltablib.c */,
+				E5LUA026 /* ltm.c */,
+				E5LUA027 /* lundump.c */,
+				E5LUA028 /* lutf8lib.c */,
+				E5LUA029 /* lvm.c */,
+				E5LUA030 /* lzio.c */,
+				E5LUAH000 /* lapi.h */,
+				E5LUAH001 /* lauxlib.h */,
+				E5LUAH002 /* lcode.h */,
+				E5LUAH003 /* lctype.h */,
+				E5LUAH004 /* ldebug.h */,
+				E5LUAH005 /* ldo.h */,
+				E5LUAH006 /* lfunc.h */,
+				E5LUAH007 /* lgc.h */,
+				E5LUAH008 /* ljumptab.h */,
+				E5LUAH009 /* llex.h */,
+				E5LUAH010 /* llimits.h */,
+				E5LUAH011 /* lmem.h */,
+				E5LUAH012 /* lobject.h */,
+				E5LUAH013 /* lopcodes.h */,
+				E5LUAH014 /* lopnames.h */,
+				E5LUAH015 /* lparser.h */,
+				E5LUAH016 /* lprefix.h */,
+				E5LUAH017 /* lstate.h */,
+				E5LUAH018 /* lstring.h */,
+				E5LUAH019 /* ltable.h */,
+				E5LUAH020 /* ltm.h */,
+				E5LUAH021 /* lua.h */,
+				E5LUAH022 /* luaconf.h */,
+				E5LUAH023 /* lualib.h */,
+				E5LUAH024 /* lundump.h */,
+				E5LUAH025 /* lvm.h */,
+				E5LUAH026 /* lzio.h */,
+
+			);
+			path = Lua;
+			sourceTree = "<group>";
+		};
 		E5EXTG01 /* Extension */ = {
 			isa = PBXGroup;
 			children = (
 				E5EXTM01 /* ExtensionManifest.swift */,
 				E5EXTS01 /* ExtensionStore.swift */,
+				E5EVTBS1 /* ExtensionEventBus.swift */,
 				E5EXTI01 /* ExtensionInstaller.swift */,
 				E5EXTR01 /* ExtensionJSRuntime.swift */,
+				E5LUASW1 /* ExtensionLuaRuntime.swift */,
 				E5EXTRG1 /* ExtensionRegistry.swift */,
 				E5EXTT01 /* ThemeToken.swift */,
+				E5LUAG01 /* Lua */,
 			);
 			path = Extension;
 			sourceTree = "<group>";
@@ -1625,6 +1790,7 @@
 			isa = PBXGroup;
 			children = (
 				E5EXTWV1 /* ExtensionWebView.swift */,
+				E5EXTDV1 /* ExtensionDebugView.swift */,
 				E5EXTWP1 /* ExtensionWidgetsPanelView.swift */,
 			);
 			path = Extensions;
@@ -2623,10 +2789,44 @@
 				E5SUBAR3B /* SubagentCoordinator.swift in Sources */,
 				E5EXTM01B /* ExtensionManifest.swift in Sources */,
 				E5EXTS01B /* ExtensionStore.swift in Sources */,
+				E5EVTBS1B /* ExtensionEventBus.swift in Sources */,
 				E5EXTI01B /* ExtensionInstaller.swift in Sources */,
 				E5EXTR01B /* ExtensionJSRuntime.swift in Sources */,
+				E5LUASW1B /* ExtensionLuaRuntime.swift in Sources */,
 				E5EXTRG1B /* ExtensionRegistry.swift in Sources */,
 				E5EXTT01B /* ThemeToken.swift in Sources */,
+				E5LUA000B /* lapi.c in Sources */,
+				E5LUA001B /* lauxlib.c in Sources */,
+				E5LUA002B /* lbaselib.c in Sources */,
+				E5LUA003B /* lcode.c in Sources */,
+				E5LUA004B /* lcorolib.c in Sources */,
+				E5LUA005B /* lctype.c in Sources */,
+				E5LUA006B /* ldblib.c in Sources */,
+				E5LUA007B /* ldebug.c in Sources */,
+				E5LUA008B /* ldo.c in Sources */,
+				E5LUA009B /* ldump.c in Sources */,
+				E5LUA010B /* lfunc.c in Sources */,
+				E5LUA011B /* lgc.c in Sources */,
+				E5LUA012B /* linit.c in Sources */,
+				E5LUA013B /* liolib.c in Sources */,
+				E5LUA014B /* llex.c in Sources */,
+				E5LUA015B /* lmathlib.c in Sources */,
+				E5LUA016B /* lmem.c in Sources */,
+				E5LUA017B /* lobject.c in Sources */,
+				E5LUA018B /* lopcodes.c in Sources */,
+				E5LUA019B /* loslib.c in Sources */,
+				E5LUA020B /* lparser.c in Sources */,
+				E5LUA021B /* lstate.c in Sources */,
+				E5LUA022B /* lstring.c in Sources */,
+				E5LUA023B /* lstrlib.c in Sources */,
+				E5LUA024B /* ltable.c in Sources */,
+				E5LUA025B /* ltablib.c in Sources */,
+				E5LUA026B /* ltm.c in Sources */,
+				E5LUA027B /* lundump.c in Sources */,
+				E5LUA028B /* lutf8lib.c in Sources */,
+				E5LUA029B /* lvm.c in Sources */,
+				E5LUA030B /* lzio.c in Sources */,
+
 
 				E5SUBAT1B /* AIChatViewModel+SubagentTools.swift in Sources */,
 				E5VMA0006 /* AIChatViewModel+ProviderFactory.swift in Sources */,
@@ -2867,6 +3067,7 @@
 				E5TODOV2 /* TodoPanelView.swift in Sources */,
 				E5SUBAB1B /* SubagentBlockView.swift in Sources */,
 				E5EXTWV1B /* ExtensionWebView.swift in Sources */,
+				E5EXTDV1B /* ExtensionDebugView.swift in Sources */,
 				E5EXTWP1B /* ExtensionWidgetsPanelView.swift in Sources */,
 				E5N0000062F3B941A00049557 /* AlarmListView.swift in Sources */,
 				E5P000001 /* EnvVarStore.swift in Sources */,

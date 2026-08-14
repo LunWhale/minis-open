@@ -16,6 +16,7 @@ struct ExtensionManagerView: View {
     @State private var isInstalling = false
     @State private var errorMessage: String?
     @State private var showInfo: ExtensionStore.Record?
+    @State private var showDebugLog = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -56,13 +57,24 @@ struct ExtensionManagerView: View {
                     Button("Done") { dismiss() }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showFilePicker = true
-                    } label: {
-                        Image(systemName: "plus")
+                    HStack(spacing: 12) {
+                        Button {
+                            showDebugLog = true
+                        } label: {
+                            Image(systemName: "scroll")
+                        }
+                        .accessibilityLabel("Extension Debug Log")
+                        Button {
+                            showFilePicker = true
+                        } label: {
+                            Image(systemName: "plus")
+                        }
+                        .disabled(isInstalling)
                     }
-                    .disabled(isInstalling)
                 }
+            }
+            .sheet(isPresented: $showDebugLog) {
+                ExtensionDebugView()
             }
             .fileImporter(
                 isPresented: $showFilePicker,

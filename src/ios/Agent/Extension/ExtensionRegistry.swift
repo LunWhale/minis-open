@@ -16,10 +16,16 @@ final class ExtensionRegistry {
 
     /// Live runtimes keyed by extension id (only enabled extensions).
     private var runtimes: [String: ExtensionJSRuntime] = [:]
+    /// Live Lua runtimes keyed by extension id (only enabled extensions).
+    private var luaRuntimes: [String: ExtensionLuaRuntime] = [:]
     /// Extension id → registered tool name → RegisteredTool.
     private var toolIndex: [String: [String: ExtensionJSRuntime.RegisteredTool]] = [:]
+    /// Extension id → registered Lua tool name → RegisteredTool.
+    private var luaToolIndex: [String: [String: ExtensionLuaRuntime.RegisteredTool]] = [:]
     /// Extension id → registered command name → RegisteredCommand.
     private var commandIndex: [String: [String: ExtensionJSRuntime.RegisteredCommand]] = [:]
+    /// Extension id → registered Lua command name → RegisteredCommand.
+    private var luaCommandIndex: [String: [String: ExtensionLuaRuntime.RegisteredCommand]] = [:]
     private var manifests: [String: ExtensionManifest] = [:]
     private var loaded = false
 
@@ -32,8 +38,11 @@ final class ExtensionRegistry {
     func reload() async {
         let records = await ExtensionStore.shared.list().filter(\.enabled)
         runtimes.removeAll()
+        luaRuntimes.removeAll()
         toolIndex.removeAll()
+        luaToolIndex.removeAll()
         commandIndex.removeAll()
+        luaCommandIndex.removeAll()
         manifests.removeAll()
 
         for record in records {
@@ -41,6 +50,7 @@ final class ExtensionRegistry {
                 try await load(record)
             } catch {
                 AppLogger(category: "ExtensionRegistry").error("Failed to load \(record.id): \(error.localizedDescription)")
+                ExtensionLogStore.shared.log("Failed to load \(record.id): \(error.localizedDescription)", level: .error)
             }
         }
         loaded = true
@@ -58,27 +68,43 @@ final class ExtensionRegistry {
             extensionID: record.id,
             bridge: makeBridge(extensionID: record.id, manifest: manifest)
         )
-        // Evaluate tool/command/hook scripts.
+        let luaRuntime = ExtensionLuaRuntime(extensionID: record.id)
+
+        // Evaluate tool/command/hook scripts, dispatching by language.
+        // .js → JavaScriptCore runtime; .lua → vendored Lua 5.4 runtime.
         for tool in manifest.tools ?? [] {
             let url = record.bundleURL.appendingPathComponent(tool.file)
-            if let js = try? String(contentsOf: url, encoding: .utf8) {
-                try runtime.evaluateScript(js, fileName: tool.file)
+            guard let source = try? String(contentsOf: url, encoding: .utf8) else { continue }
+            if (tool.language ?? "js") == "lua" {
+                try luaRuntime.evaluate(source, chunkName: tool.file)
+            } else {
+                try runtime.evaluateScript(source, fileName: tool.file)
             }
         }
         for command in manifest.commands ?? [] {
             let url = record.bundleURL.appendingPathComponent(command.file)
-            if let js = try? String(contentsOf: url, encoding: .utf8) {
-                try runtime.evaluateScript(js, fileName: command.file)
+            guard let source = try? String(contentsOf: url, encoding: .utf8) else { continue }
+            if (command.language ?? "js") == "lua" {
+                try luaRuntime.evaluate(source, chunkName: command.file)
+            } else {
+                try runtime.evaluateScript(source, fileName: command.file)
             }
         }
         for hook in manifest.hooks ?? [] {
             let url = record.bundleURL.appendingPathComponent(hook.file)
-            if let js = try? String(contentsOf: url, encoding: .utf8) {
-                try runtime.evaluateScript(js, fileName: hook.file)
+            guard let source = try? String(contentsOf: url, encoding: .utf8) else { continue }
+            if (hook.language ?? "js") == "lua" {
+                try luaRuntime.evaluate(source, chunkName: hook.file)
+            } else {
+                try runtime.evaluateScript(source, fileName: hook.file)
             }
         }
 
+        // Register JS + Lua tools/commands in their indexes.
         runtimes[record.id] = runtime
+        if !luaRuntime.registeredTools.isEmpty || !luaRuntime.registeredCommands.isEmpty || !luaRuntime.eventHandlers.isEmpty {
+            luaRuntimes[record.id] = luaRuntime
+        }
         var byName: [String: ExtensionJSRuntime.RegisteredTool] = [:]
         for tool in runtime.registeredTools {
             byName[tool.name] = tool
@@ -89,6 +115,18 @@ final class ExtensionRegistry {
             cmdByName[command.name] = command
         }
         commandIndex[record.id] = cmdByName
+
+        // Lua tools/commands (from .lua scripts in this extension).
+        var luaToolByName: [String: ExtensionLuaRuntime.RegisteredTool] = [:]
+        for tool in luaRuntime.registeredTools {
+            luaToolByName[tool.name] = tool
+        }
+        luaToolIndex[record.id] = luaToolByName
+        var luaCmdByName: [String: ExtensionLuaRuntime.RegisteredCommand] = [:]
+        for command in luaRuntime.registeredCommands {
+            luaCmdByName[command.name] = command
+        }
+        luaCommandIndex[record.id] = luaCmdByName
 
         // Apply the extension's theme (if any) — last loaded wins. Uses
         // ThemeManager so ChatColors (which observes it) re-evaluates
@@ -124,6 +162,22 @@ final class ExtensionRegistry {
                 ))
             }
         }
+        // Lua tools.
+        for (extID, tools) in luaToolIndex {
+            guard let manifest = manifests[extID] else { continue }
+            for (toolName, _) in tools {
+                let apiName = "extension_\(extID)_\(toolName)"
+                defs.append(AgentToolDefinition(
+                    name: apiName,
+                    description: "Extension tool '\(toolName)' from '\(manifest.name)'. Executes Lua in the extension's sandboxed runtime.",
+                    parameters: [
+                        "tool_title": AgentToolParam(type: .string, description: "Concise summary shown to the user."),
+                        "args": AgentToolParam(type: .string, description: "JSON object of arguments to pass to the extension tool."),
+                    ],
+                    required: ["tool_title", "args"]
+                ))
+            }
+        }
         return defs
     }
 
@@ -148,9 +202,7 @@ final class ExtensionRegistry {
                 break
             }
         }
-        guard let (extID, toolName) = matched,
-              let runtime = runtimes[extID],
-              let tool = toolIndex[extID]?[toolName] else {
+        guard let (extID, toolName) = matched else {
             return ("Error: extension tool '\(apiName)' not found", true)
         }
 
@@ -161,7 +213,14 @@ final class ExtensionRegistry {
             args = obj
         }
 
-        return runtime.callTool(tool, args: args)
+        // JS runtime first, then Lua runtime.
+        if let runtime = runtimes[extID], let tool = toolIndex[extID]?[toolName] {
+            return runtime.callTool(tool, args: args)
+        }
+        if let luaRuntime = luaRuntimes[extID], let luaTool = luaToolIndex[extID]?[toolName] {
+            return luaRuntime.callTool(luaTool, args: args)
+        }
+        return ("Error: extension tool '\(apiName)' not found", true)
     }
 
     // MARK: - Commands
@@ -171,6 +230,11 @@ final class ExtensionRegistry {
     func extensionCommands() -> [(name: String, extensionID: String)] {
         var out: [(String, String)] = []
         for (extID, cmds) in commandIndex {
+            for (cmdName, _) in cmds {
+                out.append((cmdName, extID))
+            }
+        }
+        for (extID, cmds) in luaCommandIndex {
             for (cmdName, _) in cmds {
                 out.append((cmdName, extID))
             }
@@ -185,6 +249,11 @@ final class ExtensionRegistry {
                 return runtime.callCommand(cmd, args: args)
             }
         }
+        for (extID, cmds) in luaCommandIndex {
+            if let cmd = cmds[name], let luaRuntime = luaRuntimes[extID] {
+                return luaRuntime.callCommand(cmd, args: args)
+            }
+        }
         return ("Error: extension command '\(name)' not found", true)
     }
 
@@ -195,6 +264,16 @@ final class ExtensionRegistry {
         for runtime in runtimes.values {
             runtime.emitEvent(event, data: data)
         }
+        for luaRuntime in luaRuntimes.values {
+            luaRuntime.emitEvent(event, data: data)
+        }
+    }
+
+    /// Publish an extension-to-extension event (minis.api.event.emit).
+    /// Routes to every extension whose runtime has a handler for the event
+    /// name, mirroring lifecycle events.
+    func emitExtensionEvent(_ event: String, data: [String: Any]) {
+        emitLifecycleEvent(event, data: data)
     }
 
     // MARK: - UI widgets
@@ -264,8 +343,10 @@ final class ExtensionRegistry {
                 // UI widget messaging is wired via ExtensionWebView delegate;
                 // a broadcast implementation can be added when widgets exist.
             },
-            emitEvent: { _, _ in
-                // Cross-extension events: reserved for a future event bus.
+            emitEvent: { name, data in
+                // Cross-extension events via the event bus (routes to every
+                // extension runtime with a matching handler).
+                ExtensionRegistry.shared.emitExtensionEvent(name, data: data)
             }
         )
     }
