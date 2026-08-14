@@ -29,11 +29,6 @@ struct ThemeTokens {
     let scope: String
     var tokens: [String: String]
 
-    /// Currently active theme (last applied extension theme, or default).
-    static var active: ThemeTokens? {
-        didSet { NotificationCenter.default.post(name: .themeChanged, object: nil) }
-    }
-
     /// Parse from raw JSON.
     static func parse(data: Data) -> ThemeTokens? {
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -81,4 +76,33 @@ struct ThemeTokens {
 
 extension Notification.Name {
     static let themeChanged = Notification.Name("minis.theme.changed")
+}
+
+// MARK: - Theme Manager (reactive)
+
+/// Observable holder for the currently applied extension theme. Views that
+/// depend on theme tokens observe this (via @ObservedObject) so applying a
+/// theme during an install takes effect immediately, without a navigation
+/// or view-body re-evaluation from another source.
+final class ThemeManager: ObservableObject {
+    static let shared = ThemeManager()
+
+    /// Last applied extension theme (or nil for the default look).
+    @Published var active: ThemeTokens? {
+        didSet {
+            NotificationCenter.default.post(name: .themeChanged, object: nil)
+        }
+    }
+
+    private init() {}
+
+    /// Apply a theme (or clear with nil).
+    func apply(_ theme: ThemeTokens?) {
+        active = theme
+    }
+}
+
+extension ThemeTokens {
+    /// Convenience: current active theme via the reactive manager.
+    static var active: ThemeTokens? { ThemeManager.shared.active }
 }

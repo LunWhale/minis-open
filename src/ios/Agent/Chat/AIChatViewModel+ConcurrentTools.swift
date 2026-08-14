@@ -668,6 +668,14 @@ extension AIChatViewModel {
             toolOutput = subResult.output
             toolSuccess = subResult.success
 
+        case "agent_status":
+            let statusResult = await executeAgentStatus(from: argsJson)
+            toolOutput = statusResult.output
+            toolSuccess = statusResult.success
+            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
+                messages[msgIdx].blocks[blockIdx].content = toolOutput
+            }
+
         case let extName where extName.hasPrefix("extension_"):
             let extResult = await ExtensionRegistry.shared.executeExtensionTool(apiName: extName, argsJSON: argsJson)
             toolOutput = extResult.0

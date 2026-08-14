@@ -90,12 +90,14 @@ final class ExtensionRegistry {
         }
         commandIndex[record.id] = cmdByName
 
-        // Apply the extension's theme (if any) — last loaded wins.
+        // Apply the extension's theme (if any) — last loaded wins. Uses
+        // ThemeManager so ChatColors (which observes it) re-evaluates
+        // immediately.
         if let themeDef = manifest.theme {
             let themeURL = record.bundleURL.appendingPathComponent(themeDef.file)
             if let data = try? Data(contentsOf: themeURL),
                let theme = ThemeTokens.parse(data: data) {
-                ThemeTokens.active = theme
+                ThemeManager.shared.apply(theme)
                 AppLogger(category: "ExtensionTheme").info("Applied theme '\(theme.name)' from \(record.id)")
             }
         }

@@ -105,17 +105,23 @@ minis.on("agent_start", function (event) {
 
 ### minis 全局 API
 
-| API | 说明 |
-|---|---|
-| `minis.registerTool({name, description, parameters, execute})` | 注册 agent 工具（`extension_<id>_<name>` 命名空间挂入工具集） |
-| `minis.registerCommand({name, handler})` | 注册 `/` 命令（出现在斜杠菜单，输入 `/name` 直接执行） |
-| `minis.on(event, handler)` | 订阅 agent 生命周期事件（当前已接线：`agent_start` / `agent_end` 每轮触发） |
-| `minis.api.shell(cmd, {timeout})` | 执行沙箱 shell（需要 `shell` 权限）→ Promise\<string\> |
-| `minis.api.file.read(path)` | 读沙箱文件（需要 `files` 权限）→ Promise\<string\> |
-| `minis.api.permission.request(kind)` | 请求权限 → Promise\<boolean\> |
-| `minis.api.event.emit(name, data)` | 扩展间事件（预留） |
-| `minis.log(...)` | 打日志（`Ext[<id>]` 分类） |
-| `minis.store.get/set(key, value)` | KV 持久化（预留） |
+状态标注：**✅ 已实现** / **⏳ 预留**（API 已定义但功能未接线，调用返回空或 no-op）。
+
+| API | 状态 | 说明 |
+|---|---|---|
+| `minis.registerTool({name, description, parameters, execute})` | ✅ | 注册 agent 工具（`extension_<id>_<name>` 命名空间挂入工具集） |
+| `minis.registerCommand({name, handler})` | ✅ | 注册 `/` 命令（出现在斜杠菜单，输入 `/name` 直接执行并回显结果） |
+| `minis.on(event, handler)` | ✅ | 订阅 agent 生命周期事件（已接线：`agent_start` / `agent_end` 每轮触发） |
+| `minis.api.shell(cmd, {timeout})` | ✅ | 执行沙箱 shell（需要 `shell` 权限）→ Promise\<string\> |
+| `minis.api.file.read(path)` | ✅ | 读沙箱文件（需要 `files` 权限）→ Promise\<string\> |
+| `minis.api.permission.request(kind)` | ✅ | 请求权限 → Promise\<boolean\>（复用 OffloadPermissionDialog） |
+| `minis.api.event.emit(name, data)` | ⏳ 预留 | 扩展间事件总线（定义可用，暂无订阅者） |
+| `minis.api.offload(name, args)` | ⏳ 预留 | 桥到 apple-* 原生 offload CLI |
+| `minis.api.ui.postMessage(data)` | ⏳ 预留 | 向 WebView 组件广播消息（组件与原生桥见 §4） |
+| `minis.api.file.write(path, content)` | ⏳ 预留 | 写沙箱文件（当前用 shell 或宿主工具代替） |
+| `minis.log(...)` | ✅ | 打日志（`Ext[<id>]` 分类） |
+| `minis.store.get/set(key, value)` | ⏳ 预留 | KV 持久化 |
+| `minis.http.fetch(url)` | ⏳ 预留 | HTTP 请求（当前可用 shell 的 curl 代替） |
 
 > 权限：`shell`/`files`/`ui` 等**首次使用时**触发原生确认弹窗（复用
 > OffloadPermissionDialog，30 秒超时）；未声明权限的调用直接报错。
@@ -126,7 +132,9 @@ minis.on("agent_start", function (event) {
 
 ### WebView 组件（功能型 UI）
 
-`ui/widget.html` 在 WKWebView 中渲染，注入桥：
+`ui/widget.html` 在 WKWebView 中渲染（Android 用 WebView），注入桥。
+已启用扩展的组件显示在聊天页 **… 菜单 → Extension Widgets** 面板；
+每个组件在首次展示时确认 `ui` 权限。
 
 ```html
 <script>

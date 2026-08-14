@@ -121,4 +121,50 @@ extension AIChatViewModel {
         }
         return TodoToolResult(output: out, success: result.error == nil)
     }
+
+    /// Canonical `agent_status` tool definition: query sub-agent runs.
+    static func makeAgentStatusToolDefinition() -> AgentToolDefinition {
+        AgentToolDefinition(
+            name: "agent_status",
+            description: """
+            List recent sub-agent runs (id, role, status, turns, tool calls, summary/error). \
+            Use after delegating in background mode to check whether the sub-agent finished and what it returned.
+            """,
+            parameters: [
+                "tool_title": AgentToolParam(type: .string, description: "Concise summary."),
+                "limit": AgentToolParam(type: .integer, description: "Max runs to list (default 10)."),
+            ],
+            required: ["tool_title"]
+        )
+    }
+
+    /// Execute agent_status: render the sub-agent run log.
+    func executeAgentStatus(from json: String) async -> TodoToolResult {
+        var limit = 10
+        if let data = json.data(using: .utf8),
+           let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let l = dict["limit"] as? Int, l > 0 {
+            limit = min(l, 50)
+        }
+        let runs = SubagentCoordinator.recentRuns(limit: limit)
+        guard !runs.isEmpty else {
+            return TodoToolResult(output: "No sub-agent runs yet.", success: true)
+        }
+        var lines = ["Sub-agent runs (newest first):"]
+        for run in runs {
+            let statusIcon: String
+            switch run.status {
+            case "running": statusIcon = "🔄"
+            case "done": statusIcon = "✅"
+            case "error": statusIcon = "❌"
+            default: statusIcon = "⏹"
+            }
+            var line = "\(statusIcon) \(run.id) [\(run.roleName)] \(run.status) — \(run.turns) turns, \(run.toolCalls) tools"
+            if let err = run.error {
+                line += " | error: \(err.prefix(120))"
+            }
+            lines.append(line)
+        }
+        return TodoToolResult(output: lines.joined(separator: "\n"), success: true)
+    }
 }
