@@ -9,8 +9,9 @@
 //    window.minisBridge.onMessage = fn      // native → widget
 //    window.minisBridge.onReady = fn        // called after bridge is injected
 //
-//  The host applies the extension's declared permissions ("ui" permission)
-//  before creating the view, and keeps the bridge scoped to the extension.
+//  Native → widget delivery (from minis.api.ui.postMessage) goes through
+//  ExtensionWidgetMessageCenter → sendToWidget → evaluateJavaScript, so the
+//  path is live end-to-end.
 //
 
 import SwiftUI
@@ -25,11 +26,12 @@ struct ExtensionWebView: UIViewRepresentable {
     let htmlURL: URL
     /// Widget → native messages (extensionID, payload).
     var onMessage: ((String, [String: Any]) -> Void)?
-    /// Native → widget messages queued until the widget's onReady fires.
-    var pendingMessages: [String] = []
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(extensionID: extensionID, onMessage: onMessage)
+        // Stable receiver key so the widget message center can route native →
+        // widget messages to this widget instance.
+        let key = "widget:\(extensionID):\(htmlURL.lastPathComponent)"
+        return Coordinator(extensionID: extensionID, receiverKey: key, onMessage: onMessage)
     }
 
     func makeUIView(context: Context) -> WKWebView {
@@ -75,6 +77,8 @@ struct ExtensionWebView: UIViewRepresentable {
         webView.isOpaque = false
         webView.backgroundColor = .clear
         webView.scrollView.backgroundColor = .clear
+        // Give the coordinator a handle so sendToWidget can reach the webview.
+        context.coordinator.webView = webView
         return webView
     }
 
@@ -82,22 +86,43 @@ struct ExtensionWebView: UIViewRepresentable {
         if webView.url?.absoluteString != htmlURL.absoluteString {
             webView.loadFileURL(htmlURL, allowingReadAccessTo: htmlURL.deletingLastPathComponent())
         }
-        // Forward pending native → widget messages.
-        for msg in pendingMessages {
-            let js = "if (window.minisBridge) { window.minisBridge._dispatch(\(msg)); }"
-            webView.evaluateJavaScript(js, completionHandler: nil)
-        }
+        context.coordinator.webView = webView
     }
 
     // MARK: - Coordinator
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         let extensionID: String
+        let receiverKey: String
         var onMessage: ((String, [String: Any]) -> Void)?
+        /// Live handle to the backing WKWebView (set in makeUIView/updateUIView).
+        weak var webView: WKWebView?
 
-        init(extensionID: String, onMessage: ((String, [String: Any]) -> Void)?) {
+        init(extensionID: String, receiverKey: String, onMessage: ((String, [String: Any]) -> Void)?) {
             self.extensionID = extensionID
+            self.receiverKey = receiverKey
             self.onMessage = onMessage
+            super.init()
+            // Register with the widget message center so native → widget
+            // messages (from minis.api.ui.postMessage) reach this widget.
+            let center = ExtensionWidgetMessageCenter.shared
+            center.register(extensionID: extensionID, key: receiverKey) { [weak self] payload in
+                self?.sendToWidget(payload: payload)
+            }
+        }
+
+        deinit {
+            ExtensionWidgetMessageCenter.shared.unregister(key: receiverKey)
+        }
+
+        /// Deliver a native → widget message (from the widget message center).
+        /// Serializes to JSON and dispatches through window.minisBridge._dispatch.
+        func sendToWidget(payload: [String: Any]) {
+            guard let webView,
+                  let data = try? JSONSerialization.data(withJSONObject: payload),
+                  let json = String(data: data, encoding: .utf8) else { return }
+            let js = "if (window.minisBridge) { window.minisBridge._dispatch(\(json)); }"
+            webView.evaluateJavaScript(js, completionHandler: nil)
         }
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {

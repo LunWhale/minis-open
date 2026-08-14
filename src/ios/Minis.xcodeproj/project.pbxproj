@@ -940,6 +940,8 @@
 		E5SUBAB1 /* SubagentBlockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubagentBlockView.swift; sourceTree = "<group>"; };
 		E5SUBAB1B /* SubagentBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SUBAB1 /* SubagentBlockView.swift */; };
 		E5EXTWV1 /* ExtensionWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionWebView.swift; sourceTree = "<group>"; };
+		E5EXTMC1 /* ExtensionWidgetMessageCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionWidgetMessageCenter.swift; sourceTree = "<group>"; };
+		E5EXTMC1B /* ExtensionWidgetMessageCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5EXTMC1 /* ExtensionWidgetMessageCenter.swift */; };
 		E5EXTDV1 /* ExtensionDebugView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionDebugView.swift; sourceTree = "<group>"; };
 		E5EXTDV1B /* ExtensionDebugView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5EXTDV1 /* ExtensionDebugView.swift */; };
 		E5EXTWP1 /* ExtensionWidgetsPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionWidgetsPanelView.swift; sourceTree = "<group>"; };
@@ -1790,6 +1792,7 @@
 			isa = PBXGroup;
 			children = (
 				E5EXTWV1 /* ExtensionWebView.swift */,
+				E5EXTMC1 /* ExtensionWidgetMessageCenter.swift */,
 				E5EXTDV1 /* ExtensionDebugView.swift */,
 				E5EXTWP1 /* ExtensionWidgetsPanelView.swift */,
 			);
@@ -3067,6 +3070,7 @@
 				E5TODOV2 /* TodoPanelView.swift in Sources */,
 				E5SUBAB1B /* SubagentBlockView.swift in Sources */,
 				E5EXTWV1B /* ExtensionWebView.swift in Sources */,
+				E5EXTMC1B /* ExtensionWidgetMessageCenter.swift in Sources */,
 				E5EXTDV1B /* ExtensionDebugView.swift in Sources */,
 				E5EXTWP1B /* ExtensionWidgetsPanelView.swift in Sources */,
 				E5N0000062F3B941A00049557 /* AlarmListView.swift in Sources */,
