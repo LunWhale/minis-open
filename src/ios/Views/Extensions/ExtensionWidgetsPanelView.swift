@@ -110,7 +110,6 @@ struct ExtensionWidgetsPanelView: View {
 
     private func permissions(for extensionID: String) -> [String] {
         // Look up the manifest permissions from the registry's cached manifests.
-        // Fall back to ["ui"] when unavailable so the gate can still prompt.
-        ["ui"]
+        ExtensionRegistry.shared.manifestPermissions(for: extensionID)
     }
 }

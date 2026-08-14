@@ -290,6 +290,11 @@ final class ExtensionRegistry {
         return out
     }
 
+    /// Declared permissions of an installed extension (from its manifest).
+    func manifestPermissions(for extensionID: String) -> [String] {
+        manifests[extensionID]?.permissions ?? []
+    }
+
     // MARK: - Native bridge
 
     private func makeBridge(extensionID: String, manifest: ExtensionManifest) -> ExtensionJSRuntime.Bridge {
@@ -338,6 +343,29 @@ final class ExtensionRegistry {
             },
             requestPermission: { kind in
                 await PermissionGate.request(kind, extensionID: extensionID)
+            },
+            hasPermission: { kind in
+                manifest.permissions.contains(kind)
+            },
+            fileWrite: { path, content, _ in
+                guard manifest.permissions.contains("files") else {
+                    return ("Error: extension '\(extensionID)' needs 'files' permission", true)
+                }
+                let granted = await PermissionGate.request("files", extensionID: extensionID)
+                guard granted else { return ("Permission denied: files", true) }
+                guard let host = Self.resolveSandboxPath(path) else {
+                    return ("Error: only /var/minis/ paths are writable", true)
+                }
+                do {
+                    try FileManager.default.createDirectory(
+                        at: URL(fileURLWithPath: host).deletingLastPathComponent(),
+                        withIntermediateDirectories: true
+                    )
+                    try content.write(toFile: host, atomically: true, encoding: .utf8)
+                    return ("Wrote \(path) (\(content.count) chars)", false)
+                } catch {
+                    return ("Error: cannot write \(path): \(error.localizedDescription)", true)
+                }
             },
             postToUI: { _, _ in
                 // UI widget messaging is wired via ExtensionWebView delegate;
