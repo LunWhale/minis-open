@@ -3,6 +3,8 @@
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![Platforms](https://img.shields.io/badge/Platforms-iOS%20%7C%20Android-lightgrey.svg)](#building-from-source)
 
+**English** | [中文](README-ZH.md)
+
 **An open fork of OpenMinis. Same app, deeper agent tooling.**
 
 This repository is a fork of [OpenMinis](https://github.com/OpenMinis/OpenMinis).
