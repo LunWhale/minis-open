@@ -5254,8 +5254,10 @@ private struct ChatTrailingMenuButton: UIViewRepresentable {
             sessionGroup.append(UIAction(title: String(localized: "Memories in Session"),
                                          image: UIImage(systemName: "brain.head.profile")) { _ in coordinator.parent.onMemories() })
         }
-        sessionGroup.append(UIAction(title: String(localized: "Todos in Session"),
-                                     image: UIImage(systemName: "checklist")) { _ in coordinator.parent.onTodos() })
+        if ExtensionRegistry.shared.isBuiltinEnabled(BuiltinExtension.todoID) {
+            sessionGroup.append(UIAction(title: String(localized: "Todos in Session"),
+                                         image: UIImage(systemName: "checklist")) { _ in coordinator.parent.onTodos() })
+        }
         sessionGroup.append(UIAction(title: String(localized: "Speak Responses"),
                                      image: UIImage(systemName: "speaker.wave.2"),
                                      state: key.speakEnabled ? .on : .off) { _ in

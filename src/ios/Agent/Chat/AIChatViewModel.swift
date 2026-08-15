@@ -1860,15 +1860,19 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             + "`python3 -m http.server 8765 > /dev/null 2>&1 &`. "
             + "Without redirection the server dies silently after the command finishes.\n"
             + "- File search: when looking for user files, do NOT scan the whole filesystem. Search under /var/minis/ first (workspace/attachments/shared for the current session, mounts/* for user-provided external folders). Only widen the scope if the file is clearly not under /var/minis/.\n\n"
-            + "Todo usage:\n"
-            + "- For complex, multi-step work (3+ steps), create a todo list up front with todo_create, then update each item as you complete it (todo_update) and list what remains when starting or resuming (todo_list).\n"
-            + "- Mark items in_progress while actively working on them, done when finished, blocked when stuck on a dependency.\n"
-            + "- Keep the todo list concise — one line per step, no more than ~10 items. The user can view the list in the chat UI at any time.\n"
-            + "- Clear completed items with todo_clear status=done to keep the list focused.\n\n"
-            + "Sub-agent delegation:\n"
-            + "- Use agent_delegate for well-scoped subtasks that would bloat this conversation: research, isolated coding tasks, reviews, or planning. The sub-agent runs with its own context and returns a summary.\n"
-            + "- Pick a role (researcher/coder/reviewer/planner) or pass a custom system_prompt. Use foreground mode to wait for the result; background mode to continue while it runs.\n"
-            + "- Delegate only when it clearly helps — small tasks are faster done directly. Sub-agents cannot spawn sub-agents.\n\n"
+            + (ExtensionRegistry.shared.isBuiltinEnabled(BuiltinExtension.todoID)
+                ? "Todo usage:\n"
+                + "- For complex, multi-step work (3+ steps), create a todo list up front with todo_create, then update each item as you complete it (todo_update) and list what remains when starting or resuming (todo_list).\n"
+                + "- Mark items in_progress while actively working on them, done when finished, blocked when stuck on a dependency.\n"
+                + "- Keep the todo list concise — one line per step, no more than ~10 items. The user can view the list in the chat UI at any time.\n"
+                + "- Clear completed items with todo_clear status=done to keep the list focused.\n\n"
+                : "")
+            + (ExtensionRegistry.shared.isBuiltinEnabled(BuiltinExtension.subagentsID)
+                ? "Sub-agent delegation:\n"
+                + "- Use agent_delegate for well-scoped subtasks that would bloat this conversation: research, isolated coding tasks, reviews, or planning. The sub-agent runs with its own context and returns a summary.\n"
+                + "- Pick a role (researcher/coder/reviewer/planner) or pass a custom system_prompt. Use foreground mode to wait for the result; background mode to continue while it runs.\n"
+                + "- Delegate only when it clearly helps — small tasks are faster done directly. Sub-agents cannot spawn sub-agents.\n\n"
+                : "")
             + "Coding workflow (for code/script projects in /var/minis/workspace):\n"
             + "- Read before you write: always file_read the relevant file first; for large files use file_edit with exact string replacement and file_read to locate the snippet before editing.\n"
             + "- One concern per file: keep new files small and focused; split big scripts into modules under a project directory (e.g. /var/minis/workspace/myapp/src/).\n"
