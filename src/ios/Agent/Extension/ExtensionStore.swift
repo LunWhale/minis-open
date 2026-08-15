@@ -9,6 +9,7 @@ import SQLite3
 /// flags (mirrors the SkillStore pattern).
 actor ExtensionStore {
     static let shared = ExtensionStore()
+    private nonisolated static let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
     private var db: OpaquePointer?
     private let dbURL: URL
@@ -57,14 +58,44 @@ actor ExtensionStore {
                 installed_at REAL NOT NULL
             )
         """)
+        // Seed built-in default extensions (todo + sub-agents) as first-class
+        // plugins. They are native capabilities, so there is no zip bundle;
+        // the enabled flag gates their agent tools and UI panels.
+        seedBuiltins()
     }
+
+    /// Insert built-in extensions if absent (idempotent).
+    private func seedBuiltins() {
+        for id in BuiltinExtension.all {
+            let exists = list().contains { $0.id == id }
+            if !exists {
+                let manifest = ExtensionManifest(
+                    id: id,
+                    name: BuiltinExtension.displayName(id: id),
+                    version: "1.0.0",
+                    description: BuiltinExtension.summary(id: id),
+                    author: "OpenMinis",
+                    kinds: BuiltinExtension.kinds(id: id),
+                    permissions: BuiltinExtension.permissions(id: id),
+                    tools: nil,
+                    commands: nil,
+                    hooks: nil,
+                    ui: nil,
+                    theme: nil,
+                    settings: nil
+                )
+                try? register(manifest: manifest, enabled: true)
+            }
+        }
+    }
+
 
     @discardableResult
     private func exec(_ sql: String) -> Bool {
         var err: UnsafeMutablePointer<CChar>?
         let rc = sqlite3_exec(db, sql, nil, nil, &err)
         if rc != SQLITE_OK {
-            AppLogger(category: "ExtensionStore").error("SQL: \(String(cString: err ?? "?"))")
+            AppLogger(category: "ExtensionStore").error("SQL: \(err.map { String(cString: $0) } ?? "?")")
             sqlite3_free(err)
             return false
         }
@@ -88,11 +119,11 @@ actor ExtensionStore {
         """
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { throw ExtensionError.runtime("prepare failed") }
-        sqlite3_bind_text(stmt, 1, (manifest.id as NSString).utf8String, -1, SQLITE_TRANSIENT)
-        sqlite3_bind_text(stmt, 2, (manifest.name as NSString).utf8String, -1, SQLITE_TRANSIENT)
-        sqlite3_bind_text(stmt, 3, (manifest.version as NSString).utf8String, -1, SQLITE_TRANSIENT)
-        sqlite3_bind_text(stmt, 4, (String(data: kinds, encoding: .utf8)! as NSString).utf8String, -1, SQLITE_TRANSIENT)
-        sqlite3_bind_text(stmt, 5, (String(data: perms, encoding: .utf8)! as NSString).utf8String, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 1, (manifest.id as NSString).utf8String, -1, Self.SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 2, (manifest.name as NSString).utf8String, -1, Self.SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 3, (manifest.version as NSString).utf8String, -1, Self.SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 4, (String(data: kinds, encoding: .utf8)! as NSString).utf8String, -1, Self.SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 5, (String(data: perms, encoding: .utf8)! as NSString).utf8String, -1, Self.SQLITE_TRANSIENT)
         sqlite3_bind_int(stmt, 6, enabled ? 1 : 0)
         sqlite3_bind_double(stmt, 7, Date().timeIntervalSince1970)
         let rc = sqlite3_step(stmt)
@@ -131,16 +162,21 @@ actor ExtensionStore {
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { throw ExtensionError.notFound(id) }
         sqlite3_bind_int(stmt, 1, enabled ? 1 : 0)
-        sqlite3_bind_text(stmt, 2, (id as NSString).utf8String, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 2, (id as NSString).utf8String, -1, Self.SQLITE_TRANSIENT)
         sqlite3_step(stmt)
         sqlite3_finalize(stmt)
+        // Keep the UserDefaults mirror in sync so the sync (non-actor)
+        // isBuiltinEnabled() path sees the same switch.
+        if BuiltinExtension.isBuiltin(id) {
+            UserDefaults.standard.set(enabled, forKey: "builtin.enabled.\(id)")
+        }
     }
 
     func uninstall(id: String) throws {
         let sql = "DELETE FROM extensions WHERE id = ?"
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { throw ExtensionError.notFound(id) }
-        sqlite3_bind_text(stmt, 1, (id as NSString).utf8String, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 1, (id as NSString).utf8String, -1, Self.SQLITE_TRANSIENT)
         sqlite3_step(stmt)
         sqlite3_finalize(stmt)
         // Remove bundle dir.

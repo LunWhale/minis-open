@@ -69,6 +69,7 @@ struct Skill: Identifiable {
 @MainActor
 final class SkillStore: ObservableObject {
     static let shared = SkillStore()
+    private static let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
     @Published private(set) var skills: [Skill] = []
 
@@ -2380,7 +2381,7 @@ extension SkillStore {
         let data: Data
     }
 
-    static func readZipEntries(data: Data) throws -> [ZipEntry] {
+    nonisolated static func readZipEntries(data: Data) throws -> [ZipEntry] {
         guard data.count >= 22 else { throw SkillError.invalidArchive }
 
         var eocdOffset = -1
@@ -2445,18 +2446,18 @@ extension SkillStore {
         return entries
     }
 
-    private static func readU16(_ data: Data, at offset: Int) -> UInt16 {
+    private nonisolated static func readU16(_ data: Data, at offset: Int) -> UInt16 {
         UInt16(data[offset]) | (UInt16(data[offset + 1]) << 8)
     }
 
-    private static func readU32(_ data: Data, at offset: Int) -> UInt32 {
+    private nonisolated static func readU32(_ data: Data, at offset: Int) -> UInt32 {
         UInt32(data[offset]) |
         (UInt32(data[offset + 1]) << 8) |
         (UInt32(data[offset + 2]) << 16) |
         (UInt32(data[offset + 3]) << 24)
     }
 
-    private static func decompress(_ data: Data, expectedSize: Int) -> Data? {
+    private nonisolated static func decompress(_ data: Data, expectedSize: Int) -> Data? {
         guard expectedSize > 0 else { return Data() }
         var decompressed = Data(count: expectedSize)
         let result = decompressed.withUnsafeMutableBytes { destPtr -> Int in

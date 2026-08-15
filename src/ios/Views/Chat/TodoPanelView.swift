@@ -30,11 +30,19 @@ struct TodoPanelView: View {
                     ProgressView("Loading todos…")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if items.isEmpty {
-                    ContentUnavailableView(
-                        "No todos",
-                        systemImage: "checklist",
-                        description: Text("Ask the agent to break a task into steps and it will track them here.")
-                    )
+                    VStack(spacing: 10) {
+                        Image(systemName: "checklist")
+                            .font(.system(size: 34))
+                            .foregroundStyle(.secondary)
+                        Text("No todos")
+                            .font(.headline)
+                        Text("Ask the agent to break a task into steps and it will track them here.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(24)
                 } else {
                     List {
                         ForEach(statusOrder, id: \.self) { status in

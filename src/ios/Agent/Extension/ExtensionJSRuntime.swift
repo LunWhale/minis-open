@@ -36,6 +36,12 @@ final class ExtensionJSRuntime {
         var hasPermission: @Sendable (String) -> Bool
         var postToUI: @Sendable (String, [String: Any]) -> Void
         var emitEvent: @Sendable (String, [String: Any]) -> Void
+        /// Read one declared setting value (or its default).
+        var settingsGet: @Sendable (String, String) -> Any?
+        /// Persist one declared setting value.
+        var settingsSet: @Sendable (String, String, Any) -> Void
+        /// All declared settings with current values.
+        var settingsAll: @Sendable (String) -> [String: Any]
     }
 
     init(extensionID: String, bridge: Bridge) {
@@ -132,7 +138,7 @@ final class ExtensionJSRuntime {
             let name = def.objectForKeyedSubscript("name").toString() ?? ""
             let desc = def.objectForKeyedSubscript("description").toString() ?? ""
             let execute = def.objectForKeyedSubscript("execute")
-            guard !name.isEmpty, !execute.isUndefined else { return }
+            guard !name.isEmpty, let execute, !execute.isUndefined else { return }
             self.registeredTools.append(RegisteredTool(name: name, description: desc, execute: execute))
         }
         minis.setObject(registerTool, forKeyedSubscript: "registerTool" as NSString)
@@ -142,7 +148,7 @@ final class ExtensionJSRuntime {
             guard let self else { return }
             let name = def.objectForKeyedSubscript("name").toString() ?? ""
             let handler = def.objectForKeyedSubscript("handler")
-            guard !name.isEmpty, !handler.isUndefined else { return }
+            guard !name.isEmpty, let handler, !handler.isUndefined else { return }
             self.registeredCommands.append(RegisteredCommand(name: name, handler: handler))
         }
         minis.setObject(registerCommand, forKeyedSubscript: "registerCommand" as NSString)
@@ -174,6 +180,10 @@ final class ExtensionJSRuntime {
         api.setObject(makeEventBridge(), forKeyedSubscript: "event" as NSString)
         api.setObject(makeOffloadBridge(), forKeyedSubscript: "offload" as NSString)
         api.setObject(makeUIBridge(), forKeyedSubscript: "ui" as NSString)
+        let settingsObj = JSValue(newObjectIn: context)!
+        settingsObj.setObject(makeSettingsGetBridge(), forKeyedSubscript: "get" as NSString)
+        settingsObj.setObject(makeSettingsSetBridge(), forKeyedSubscript: "set" as NSString)
+        api.setObject(settingsObj, forKeyedSubscript: "settings" as NSString)
         minis.setObject(api, forKeyedSubscript: "api" as NSString)
 
         // minis.store = { get, set } — small KV persistence scoped to the
@@ -208,7 +218,7 @@ final class ExtensionJSRuntime {
                     }
                 }
             }
-            return promise
+            return promise ?? JSValue(undefinedIn: context)
         }
     }
 
@@ -223,7 +233,7 @@ final class ExtensionJSRuntime {
                     if isErr { reject?.call(withArguments: [out]) } else { resolve?.call(withArguments: [out]) }
                 }
             }
-            return promise
+            return promise ?? JSValue(undefinedIn: context)
         }
     }
 
@@ -239,7 +249,7 @@ final class ExtensionJSRuntime {
                     if isErr { reject?.call(withArguments: [out]) } else { resolve?.call(withArguments: [out]) }
                 }
             }
-            return promise
+            return promise ?? JSValue(undefinedIn: context)
         }
     }
 
@@ -258,15 +268,39 @@ final class ExtensionJSRuntime {
                     if isErr { reject?.call(withArguments: [out]) } else { resolve?.call(withArguments: [out]) }
                 }
             }
-            return promise
+            return promise ?? JSValue(undefinedIn: context)
         }
     }
 
     private func makeUIBridge() -> @convention(block) (JSValue) -> Void {
         let bridge = self.bridge
+        let extID = self.extensionID
         return { dataVal in
             let payload = dataVal.toObject() as? [String: Any] ?? [:]
-            bridge.postToUI(extensionID, payload)
+            bridge.postToUI(extID, payload)
+        }
+    }
+
+    private func makeSettingsGetBridge() -> @convention(block) (JSValue) -> JSValue {
+        let bridge = self.bridge
+        let extID = self.extensionID
+        return { keyVal in
+            let key = keyVal.toString() ?? ""
+            let value = bridge.settingsGet(extID, key)
+            if let value {
+                return JSValue(object: value, in: self.context) ?? JSValue(undefinedIn: self.context)
+            }
+            return JSValue(undefinedIn: self.context)
+        }
+    }
+
+    private func makeSettingsSetBridge() -> @convention(block) (JSValue, JSValue) -> Void {
+        let bridge = self.bridge
+        let extID = self.extensionID
+        return { keyVal, valueVal in
+            let key = keyVal.toString() ?? ""
+            let value = valueVal.toObject()
+            bridge.settingsSet(extID, key, value as Any)
         }
     }
 
@@ -303,7 +337,7 @@ final class ExtensionJSRuntime {
                 let promise = JSValue(newPromiseIn: context) { _, reject in
                     reject?.call(withArguments: ["Error: extension needs 'network' permission (declare it in manifest.json)"])
                 }
-                return promise
+                return promise ?? JSValue(undefinedIn: context)
             }
             let method = (optsVal.objectForKeyedSubscript("method").toString() ?? "GET").uppercased()
             let body = optsVal.objectForKeyedSubscript("body").toString()
@@ -329,7 +363,7 @@ final class ExtensionJSRuntime {
                     }
                 }
             }
-            return promise
+            return promise ?? JSValue(undefinedIn: context)
         }
     }
 
@@ -344,7 +378,7 @@ final class ExtensionJSRuntime {
                     resolve?.call(withArguments: [granted])
                 }
             }
-            return promise
+            return promise ?? JSValue(undefinedIn: context)
         }
     }
 

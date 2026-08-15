@@ -6,6 +6,31 @@
   "author": "Minis Example",
   "kinds": ["agent-tool", "command", "event-hook", "ui-widget", "theme"],
   "permissions": ["files", "ui"],
+  "settings": [
+    {
+      "key": "greetingPrefix",
+      "label": "Greeting prefix",
+      "type": "text",
+      "default": "Hello",
+      "placeholder": "e.g. Hey / 你好",
+      "description": "Prefix used by the ext-hello command and hello_world tool."
+    },
+    {
+      "key": "uppercase",
+      "label": "Uppercase output",
+      "type": "boolean",
+      "default": false,
+      "description": "When on, the greeting is uppercased."
+    },
+    {
+      "key": "replyMode",
+      "label": "Reply mode",
+      "type": "select",
+      "default": "friendly",
+      "options": ["friendly", "formal", "laconic"],
+      "description": "Tone of the extension's replies."
+    }
+  ],
   "tools": [
     {
       "file": "agent/tools/hello.js",

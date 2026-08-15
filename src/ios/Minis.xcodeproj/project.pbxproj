@@ -1055,6 +1055,9 @@
 		E5EXTR01 /* ExtensionJSRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionJSRuntime.swift; sourceTree = "<group>"; };
 		E5LUASW1 /* ExtensionLuaRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionLuaRuntime.swift; sourceTree = "<group>"; };
 		E5LUASW1B /* ExtensionLuaRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5LUASW1 /* ExtensionLuaRuntime.swift */; };
+		E5LUA031B /* loadlib.c in Sources */ = {isa = PBXBuildFile; fileRef = E5LUA031 /* loadlib.c */; };
+		E5LUA032B /* lua_compat.c in Sources */ = {isa = PBXBuildFile; fileRef = E5LUA032 /* lua_compat.c */; };
+		E5LUA033B /* lutf8lib.c in Sources */ = {isa = PBXBuildFile; fileRef = E5LUA033 /* lutf8lib.c */; };
 		E5LUAH000 /* lapi.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = lapi.h; sourceTree = "<group>"; };
 		E5LUAH001 /* lauxlib.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = lauxlib.h; sourceTree = "<group>"; };
 		E5LUAH002 /* lcode.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = lcode.h; sourceTree = "<group>"; };
@@ -1113,6 +1116,8 @@
 		E5LUA028 /* lutf8lib.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = lutf8lib.c; sourceTree = "<group>"; };
 		E5LUA029 /* lvm.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = lvm.c; sourceTree = "<group>"; };
 		E5LUA030 /* lzio.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = lzio.c; sourceTree = "<group>"; };
+		E5LUA031 /* loadlib.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = loadlib.c; sourceTree = "<group>"; };
+		E5LUA032 /* lua_compat.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = lua_compat.c; sourceTree = "<group>"; };
 		E5LUA000B /* lapi.c in Sources */ = {isa = PBXBuildFile; fileRef = E5LUA000 /* lapi.c */; };
 		E5LUA001B /* lauxlib.c in Sources */ = {isa = PBXBuildFile; fileRef = E5LUA001 /* lauxlib.c */; };
 		E5LUA002B /* lbaselib.c in Sources */ = {isa = PBXBuildFile; fileRef = E5LUA002 /* lbaselib.c */; };
@@ -1146,6 +1151,9 @@
 		E5LUA030B /* lzio.c in Sources */ = {isa = PBXBuildFile; fileRef = E5LUA030 /* lzio.c */; };
 
 		E5EXTRG1 /* ExtensionRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionRegistry.swift; sourceTree = "<group>"; };
+		E5NEW02 /* ExtensionSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionSettingsView.swift; sourceTree = "<group>"; };
+		E5NEW01 /* ExtensionSettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionSettingsStore.swift; sourceTree = "<group>"; };
+		E5NEW00 /* BuiltinExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BuiltinExtension.swift; sourceTree = "<group>"; };
 		E5EXTT01 /* ThemeToken.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeToken.swift; sourceTree = "<group>"; };
 		E5EXTT01B /* ThemeToken.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5EXTT01 /* ThemeToken.swift */; };
 		E5EXTM01B /* ExtensionManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5EXTM01 /* ExtensionManifest.swift */; };
@@ -1153,6 +1161,9 @@
 		E5EXTI01B /* ExtensionInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5EXTI01 /* ExtensionInstaller.swift */; };
 		E5EXTR01B /* ExtensionJSRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5EXTR01 /* ExtensionJSRuntime.swift */; };
 		E5EXTRG1B /* ExtensionRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5EXTRG1 /* ExtensionRegistry.swift */; };
+		E5NEW02B /* ExtensionSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5NEW02 /* ExtensionSettingsView.swift */; };
+		E5NEW01B /* ExtensionSettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5NEW01 /* ExtensionSettingsStore.swift */; };
+		E5NEW00B /* BuiltinExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5NEW00 /* BuiltinExtension.swift */; };
 
 		E5SUBAT1 /* AIChatViewModel+SubagentTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+SubagentTools.swift"; sourceTree = "<group>"; };
 		E5VMA0016 /* AIChatViewModel+ProviderFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+ProviderFactory.swift"; sourceTree = "<group>"; };
@@ -1623,6 +1634,8 @@
 				E5LUA028 /* lutf8lib.c */,
 				E5LUA029 /* lvm.c */,
 				E5LUA030 /* lzio.c */,
+				E5LUA031 /* loadlib.c */,
+				E5LUA032 /* lua_compat.c */,
 				E5LUAH000 /* lapi.h */,
 				E5LUAH001 /* lauxlib.h */,
 				E5LUAH002 /* lcode.h */,
@@ -1665,6 +1678,8 @@
 				E5EXTR01 /* ExtensionJSRuntime.swift */,
 				E5LUASW1 /* ExtensionLuaRuntime.swift */,
 				E5EXTRG1 /* ExtensionRegistry.swift */,
+				E5NEW01 /* ExtensionSettingsStore.swift */,
+				E5NEW00 /* BuiltinExtension.swift */,
 				E5EXTT01 /* ThemeToken.swift */,
 				E5LUAG01 /* Lua */,
 			);
@@ -1813,17 +1828,6 @@
 		};
 		E5D000030 /* Views */ = {
 			isa = PBXGroup;
-		E5EXTWG1 /* Extensions */ = {
-			isa = PBXGroup;
-			children = (
-				E5EXTWV1 /* ExtensionWebView.swift */,
-				E5EXTMC1 /* ExtensionWidgetMessageCenter.swift */,
-				E5EXTDV1 /* ExtensionDebugView.swift */,
-				E5EXTWP1 /* ExtensionWidgetsPanelView.swift */,
-			);
-			path = Extensions;
-			sourceTree = "<group>";
-		};
 			children = (
 				E51000012 /* ContentView.swift */,
 				F1V00014 /* Alarms */,
@@ -1838,6 +1842,18 @@
 				EAB000060 /* Sync */,
 			);
 			path = Views;
+			sourceTree = "<group>";
+		};
+		E5EXTWG1 /* Extensions */ = {
+			isa = PBXGroup;
+			children = (
+				E5EXTWV1 /* ExtensionWebView.swift */,
+				E5EXTMC1 /* ExtensionWidgetMessageCenter.swift */,
+				E5EXTDV1 /* ExtensionDebugView.swift */,
+				E5EXTWP1 /* ExtensionWidgetsPanelView.swift */,
+				E5NEW02 /* ExtensionSettingsView.swift */,
+			);
+			path = Extensions;
 			sourceTree = "<group>";
 		};
 		E5E000030 /* ShareExtension */ = {
@@ -2840,6 +2856,9 @@
 				E5EXTR01B /* ExtensionJSRuntime.swift in Sources */,
 				E5LUASW1B /* ExtensionLuaRuntime.swift in Sources */,
 				E5EXTRG1B /* ExtensionRegistry.swift in Sources */,
+				E5NEW02B /* ExtensionSettingsView.swift in Sources */,
+				E5NEW01B /* ExtensionSettingsStore.swift in Sources */,
+				E5NEW00B /* BuiltinExtension.swift in Sources */,
 				E5EXTT01B /* ThemeToken.swift in Sources */,
 				E5LUA000B /* lapi.c in Sources */,
 				E5LUA001B /* lauxlib.c in Sources */,
@@ -2872,6 +2891,8 @@
 				E5LUA028B /* lutf8lib.c in Sources */,
 				E5LUA029B /* lvm.c in Sources */,
 				E5LUA030B /* lzio.c in Sources */,
+				E5LUA031B /* loadlib.c in Sources */,
+				E5LUA032B /* lua_compat.c in Sources */,
 
 
 				E5SUBAT1B /* AIChatViewModel+SubagentTools.swift in Sources */,
