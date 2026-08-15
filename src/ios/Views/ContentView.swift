@@ -4884,17 +4884,19 @@ private struct SettingsSheet: View {
                                 .background(.pink, in: Circle())
                         }
                     }
-                    NavigationLink {
-                        SubagentRolesView()
-                    } label: {
-                        Label {
-                            Text("Sub-agent Roles")
-                        } icon: {
-                            Image(systemName: "person.2.fill")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.white)
-                                .frame(width: 21, height: 21)
-                                .background(.purple, in: Circle())
+                    if ExtensionRegistry.shared.isBuiltinEnabled(BuiltinExtension.subagentsID) {
+                        NavigationLink {
+                            SubagentRolesView()
+                        } label: {
+                            Label {
+                                Text("Sub-agent Roles")
+                            } icon: {
+                                Image(systemName: "person.2.fill")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 21, height: 21)
+                                    .background(.purple, in: Circle())
+                            }
                         }
                     }
                     NavigationLink {
