@@ -2910,6 +2910,7 @@ struct AIChatView: View {
         .help(String(localized: "Open iSH terminal"))
     }
 
+    @ViewBuilder
     private var attachmentMenuButton: some View {
         let icon = Image(systemName: "plus")
             .font(.system(size: 18, weight: .medium))
@@ -4743,12 +4744,16 @@ private struct ChatTrailingMenu: View, Equatable {
                 }
             }
 
-            Button { onTodos() } label: {
-                Label(String(localized: "Todos in Session"), systemImage: "checklist")
+            if ExtensionRegistry.shared.isBuiltinEnabled(BuiltinExtension.todoID) {
+                Button { onTodos() } label: {
+                    Label(String(localized: "Todos in Session"), systemImage: "checklist")
+                }
             }
 
-            Button { onSubagents() } label: {
-                Label(String(localized: "Sub-agent Runs"), systemImage: "person.2")
+            if ExtensionRegistry.shared.isBuiltinEnabled(BuiltinExtension.subagentsID) {
+                Button { onSubagents() } label: {
+                    Label(String(localized: "Sub-agent Runs"), systemImage: "person.2")
+                }
             }
 
             Button { onWidgets() } label: {

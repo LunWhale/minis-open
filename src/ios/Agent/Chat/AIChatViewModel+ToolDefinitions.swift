@@ -138,12 +138,9 @@ extension AIChatViewModel {
             ))
         }
 
-        // Todo tools — always available for complex multi-step work.
-        tools.append(contentsOf: Self.makeTodoToolDefinitions())
-
-        // Sub-agent delegation.
-        tools.append(Self.makeSubagentToolDefinition())
-        tools.append(Self.makeAgentStatusToolDefinition())
+        // Built-in default plugins (todo + sub-agents): tool definitions are
+        // gated on each plugin's enable switch in the extension manager.
+        tools.append(contentsOf: ExtensionRegistry.shared.builtinToolDefinitions())
 
         // Extension tools (from installed .minisx extensions).
         tools.append(contentsOf: ExtensionRegistry.shared.extensionToolDefinitions())

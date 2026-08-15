@@ -19,7 +19,7 @@ enum SubagentCoordinator {
         let id: String
         let roleName: String
         let task: String
-        let status: String          // running / done / error / cancelled
+        var status: String          // running / done / error / cancelled
         let startedAt: Date
         var finishedAt: Date?
         var summary: String?
@@ -94,7 +94,8 @@ enum SubagentCoordinator {
             return await AIChatViewModel.makeAgentProvider(for: activeEntry)
         }
         let store = ProviderConfigStore.shared
-        guard let entry = store.resolvedAgentLoopEntries.first else { return nil }
+        let entries = await MainActor.run { store.resolvedAgentLoopEntries }
+        guard let entry = entries.first else { return nil }
         return await AIChatViewModel.makeAgentProvider(for: entry)
     }
 
@@ -126,11 +127,14 @@ enum SubagentCoordinator {
         var tools = toolDefinitions(role: role)
         tools.append(contentsOf: extraTools)
 
+        let subExecutor = Executor(sessionId: sessionId)
         let runner = AgentRunner(
             provider: provider,
             systemPrompt: role.systemPrompt(for: task),
             tools: tools,
-            executor: Executor(sessionId: sessionId),
+            executor: AgentRunner.Executor(execute: { name, args in
+                await subExecutor.execute(name, args)
+            }),
             config: AgentRunner.Config(
                 maxTurns: role.maxTurns,
                 timeoutSeconds: TimeInterval(role.timeoutSeconds)
@@ -246,7 +250,7 @@ extension SubagentCoordinator {
     /// Executor that routes tool calls to the sandbox (shell) and filesystem.
     /// Todo tools route to TodoStore so sub-agent tracking lands in the
     /// parent session's todo list.
-    private struct Executor: AgentRunner.Executor {
+    private struct Executor: Sendable {
         let sessionId: String?
 
         func execute(_ name: String, _ args: [String: Any]) async -> (String, Bool) {

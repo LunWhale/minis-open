@@ -16,6 +16,8 @@ struct ExtensionManagerView: View {
     @State private var isInstalling = false
     @State private var errorMessage: String?
     @State private var showInfo: ExtensionStore.Record?
+    @State private var showSettings: ExtensionStore.Record?
+    @State private var settingsDefs: [String: [ExtensionManifest.SettingDef]] = [:]
     @State private var showDebugLog = false
     @Environment(\.dismiss) private var dismiss
 
@@ -98,6 +100,14 @@ struct ExtensionManagerView: View {
                     Text("v\(record.version)")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                    if BuiltinExtension.isBuiltin(record.id) {
+                        Text("Built-in")
+                            .font(.caption2)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Color.orange.opacity(0.15))
+                            .clipShape(Capsule())
+                    }
                 }
                 Text(record.id)
                     .font(.caption2)
@@ -114,6 +124,17 @@ struct ExtensionManagerView: View {
                 }
             }
             Spacer()
+            if hasSettings(record) {
+                Button {
+                    showSettings = record
+                } label: {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 15))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("\(record.name) Settings")
+            }
             Toggle("", isOn: Binding(
                 get: { record.enabled },
                 set: { newValue in
@@ -132,22 +153,46 @@ struct ExtensionManagerView: View {
             } label: {
                 Label("Details", systemImage: "info.circle")
             }
-            Button(role: .destructive) {
-                uninstall(record)
-            } label: {
-                Label("Uninstall", systemImage: "trash")
+            if hasSettings(record) {
+                Button {
+                    showSettings = record
+                } label: {
+                    Label("Settings", systemImage: "gearshape")
+                }
+            }
+            if !BuiltinExtension.isBuiltin(record.id) {
+                Button(role: .destructive) {
+                    uninstall(record)
+                } label: {
+                    Label("Uninstall", systemImage: "trash")
+                }
             }
         }
         .swipeActions {
-            Button(role: .destructive) {
-                uninstall(record)
-            } label: {
-                Label("Delete", systemImage: "trash")
+            if !BuiltinExtension.isBuiltin(record.id) {
+                Button(role: .destructive) {
+                    uninstall(record)
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
             }
         }
         .sheet(item: $showInfo) { record in
             ExtensionDetailView(record: record)
         }
+        .sheet(item: $showSettings) { record in
+            ExtensionSettingsView(
+                extensionID: record.id,
+                name: record.name,
+                settings: settingsDefs[record.id] ?? []
+            )
+        }
+    }
+
+    /// Whether this extension declares any author settings (manifest
+    /// `settings` array) — controls the ⚙️ button visibility.
+    private func hasSettings(_ record: ExtensionStore.Record) -> Bool {
+        !(settingsDefs[record.id] ?? []).isEmpty
     }
 
     // MARK: - Actions
@@ -204,6 +249,23 @@ struct ExtensionManagerView: View {
 
     private func reload() async {
         records = await ExtensionStore.shared.list()
+        // Load settings schemas for the ⚙️ buttons (reads each bundle's
+        // manifest.json; built-ins have no bundle so they declare none).
+        var defs: [String: [ExtensionManifest.SettingDef]] = [:]
+        for record in records {
+            if BuiltinExtension.isBuiltin(record.id) {
+                defs[record.id] = []
+                continue
+            }
+            let url = record.bundleURL.appendingPathComponent("manifest.json")
+            if let data = try? Data(contentsOf: url),
+               let manifest = try? ExtensionManifest.parse(data: data) {
+                defs[record.id] = manifest.settings ?? []
+            } else {
+                defs[record.id] = []
+            }
+        }
+        settingsDefs = defs
     }
 }
 
@@ -259,5 +321,3 @@ private struct ExtensionDetailView: View {
         }
     }
 }
-
-extension ExtensionStore.Record: Identifiable {}

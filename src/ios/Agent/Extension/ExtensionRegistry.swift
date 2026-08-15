@@ -144,6 +144,35 @@ final class ExtensionRegistry {
 
     // MARK: - Tool surface for the agent
 
+    /// Built-in default plugins (todo / sub-agents) are native capabilities
+    /// registered like extensions. This returns their tool definitions when
+    /// the corresponding built-in plugin is enabled. (MainActor because the
+    /// todo/sub-agent tool builders live in @MainActor AIChatViewModel.)
+    @MainActor
+    func builtinToolDefinitions() -> [AgentToolDefinition] {
+        var defs: [AgentToolDefinition] = []
+        if isBuiltinEnabled(BuiltinExtension.todoID) {
+            defs.append(contentsOf: AIChatViewModel.makeTodoToolDefinitions())
+        }
+        if isBuiltinEnabled(BuiltinExtension.subagentsID) {
+            defs.append(AIChatViewModel.makeSubagentToolDefinition())
+            defs.append(AIChatViewModel.makeAgentStatusToolDefinition())
+        }
+        return defs
+    }
+
+    /// Whether a built-in default plugin is enabled (falls back to true on
+    /// store errors so disabling is a deliberate opt-out). Backed by a
+    /// UserDefaults mirror kept in sync by ExtensionStore.setEnabled.
+    func isBuiltinEnabled(_ id: String) -> Bool {
+        guard BuiltinExtension.isBuiltin(id) else { return false }
+        // default true unless explicitly disabled
+        if UserDefaults.standard.object(forKey: "builtin.enabled.\(id)") == nil {
+            return true
+        }
+        return UserDefaults.standard.bool(forKey: "builtin.enabled.\(id)")
+    }
+
     /// `AgentToolDefinition`s for all registered extension tools, namespaced
     /// as `extension_<id>_<name>` so collisions across extensions are avoided.
     func extensionToolDefinitions() -> [AgentToolDefinition] {
@@ -310,7 +339,7 @@ final class ExtensionRegistry {
                 guard granted else {
                     return ("Permission denied: shell", true)
                 }
-                guard let sessionID = await ActiveSession.shared.id() else {
+                guard let sessionID = await ActiveSession.id() else {
                     return ("Error: no active session", true)
                 }
                 do {
@@ -342,12 +371,6 @@ final class ExtensionRegistry {
                 }
                 return (text, false)
             },
-            requestPermission: { kind in
-                await PermissionGate.request(kind, extensionID: extensionID)
-            },
-            hasPermission: { kind in
-                manifest.permissions.contains(kind)
-            },
             fileWrite: { path, content, _ in
                 guard manifest.permissions.contains("files") else {
                     return ("Error: extension '\(extensionID)' needs 'files' permission", true)
@@ -368,6 +391,12 @@ final class ExtensionRegistry {
                     return ("Error: cannot write \(path): \(error.localizedDescription)", true)
                 }
             },
+            requestPermission: { kind in
+                await PermissionGate.request(kind, extensionID: extensionID)
+            },
+            hasPermission: { kind in
+                manifest.permissions.contains(kind)
+            },
             postToUI: { extID, payload in
                 // Route agent-side minis.api.ui.postMessage to the rendered
                 // widgets of this extension (see ExtensionWidgetMessageCenter).
@@ -377,6 +406,19 @@ final class ExtensionRegistry {
                 // Cross-extension events via the event bus (routes to every
                 // extension runtime with a matching handler).
                 ExtensionRegistry.shared.emitExtensionEvent(name, data: data)
+            },
+            settingsGet: { extID, key in
+                let defs = manifest.settings ?? []
+                guard let def = defs.first(where: { $0.key == key }) else { return nil }
+                return ExtensionSettingsStore.shared.get(extensionID: extID, key: key, settings: defs)
+            },
+            settingsSet: { extID, key, value in
+                let defs = manifest.settings ?? []
+                guard defs.contains(where: { $0.key == key }) else { return }
+                ExtensionSettingsStore.shared.set(extensionID: extID, key: key, value: value)
+            },
+            settingsAll: { extID in
+                ExtensionSettingsStore.shared.values(extensionID: extID, settings: manifest.settings ?? [])
             }
         )
     }

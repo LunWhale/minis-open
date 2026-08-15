@@ -629,6 +629,11 @@ extension AIChatViewModel {
             toolSuccess = memResult.success
 
         case "todo_create":
+            guard ExtensionRegistry.shared.isBuiltinEnabled(BuiltinExtension.todoID) else {
+                toolOutput = "Error: the Todo plugin is disabled. Enable it in Settings → Extensions."
+                toolSuccess = false
+                break
+            }
             let todoResult = await executeTodoCreate(from: argsJson)
             if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
                 messages[msgIdx].blocks[blockIdx].content = todoResult.output
@@ -637,6 +642,11 @@ extension AIChatViewModel {
             toolSuccess = todoResult.success
 
         case "todo_update":
+            guard ExtensionRegistry.shared.isBuiltinEnabled(BuiltinExtension.todoID) else {
+                toolOutput = "Error: the Todo plugin is disabled. Enable it in Settings → Extensions."
+                toolSuccess = false
+                break
+            }
             let todoResult = await executeTodoUpdate(from: argsJson)
             if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
                 messages[msgIdx].blocks[blockIdx].content = todoResult.output
@@ -645,6 +655,11 @@ extension AIChatViewModel {
             toolSuccess = todoResult.success
 
         case "todo_list":
+            guard ExtensionRegistry.shared.isBuiltinEnabled(BuiltinExtension.todoID) else {
+                toolOutput = "Error: the Todo plugin is disabled. Enable it in Settings → Extensions."
+                toolSuccess = false
+                break
+            }
             let todoResult = await executeTodoList(from: argsJson)
             if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
                 messages[msgIdx].blocks[blockIdx].content = todoResult.output
@@ -653,6 +668,11 @@ extension AIChatViewModel {
             toolSuccess = todoResult.success
 
         case "todo_clear":
+            guard ExtensionRegistry.shared.isBuiltinEnabled(BuiltinExtension.todoID) else {
+                toolOutput = "Error: the Todo plugin is disabled. Enable it in Settings → Extensions."
+                toolSuccess = false
+                break
+            }
             let todoResult = await executeTodoClear(from: argsJson)
             if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
                 messages[msgIdx].blocks[blockIdx].content = todoResult.output
@@ -661,6 +681,11 @@ extension AIChatViewModel {
             toolSuccess = todoResult.success
 
         case "agent_delegate":
+            guard ExtensionRegistry.shared.isBuiltinEnabled(BuiltinExtension.subagentsID) else {
+                toolOutput = "Error: the Sub-agent plugin is disabled. Enable it in Settings → Extensions."
+                toolSuccess = false
+                break
+            }
             let subResult = await executeAgentDelegate(from: argsJson)
             if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
                 messages[msgIdx].blocks[blockIdx].content = subResult.output
@@ -669,6 +694,11 @@ extension AIChatViewModel {
             toolSuccess = subResult.success
 
         case "agent_status":
+            guard ExtensionRegistry.shared.isBuiltinEnabled(BuiltinExtension.subagentsID) else {
+                toolOutput = "Error: the Sub-agent plugin is disabled. Enable it in Settings → Extensions."
+                toolSuccess = false
+                break
+            }
             let statusResult = await executeAgentStatus(from: argsJson)
             toolOutput = statusResult.output
             toolSuccess = statusResult.success

@@ -26,10 +26,14 @@ import Foundation
 
 private let LUA_REGISTRYINDEX: Int32 = -1001000
 private let LUA_TFUNCTION: Int32 = 6
+private let LUA_TNUMBER: Int32 = 3
+private let LUA_TSTRING: Int32 = 4
+private let LUA_TBOOLEAN: Int32 = 1
+private let LUA_TNIL: Int32 = 0
 
 @_silgen_name("luaL_newstate") private func luaL_newstate() -> OpaquePointer?
 @_silgen_name("luaL_openlibs") private func luaL_openlibs(_ L: OpaquePointer?)
-@_silgen_name("luaL_loadbuffer") private func luaL_loadbuffer(_ L: OpaquePointer?, _ buff: UnsafePointer<CChar>?, _ size: Int, _ name: UnsafePointer<CChar>?) -> Int32
+@_silgen_name("luaL_loadbufferx") private func luaL_loadbuffer(_ L: OpaquePointer?, _ buff: UnsafePointer<CChar>?, _ size: Int, _ name: UnsafePointer<CChar>?, _ mode: UnsafePointer<CChar>?) -> Int32
 @_silgen_name("lua_pcall") private func lua_pcall(_ L: OpaquePointer?, _ nargs: Int32, _ nresults: Int32, _ errfunc: Int32) -> Int32
 @_silgen_name("lua_getglobal") private func lua_getglobal(_ L: OpaquePointer?, _ name: UnsafePointer<CChar>?)
 @_silgen_name("lua_setglobal") private func lua_setglobal(_ L: OpaquePointer?, _ name: UnsafePointer<CChar>?)
@@ -40,7 +44,7 @@ private let LUA_TFUNCTION: Int32 = 6
 @_silgen_name("lua_pushcclosure") private func lua_pushcclosure(_ L: OpaquePointer?, _ f: @convention(c) (OpaquePointer?) -> Int32, _ n: Int32)
 @_silgen_name("lua_settable") private func lua_settable(_ L: OpaquePointer?, _ idx: Int32)
 @_silgen_name("lua_gettable") private func lua_gettable(_ L: OpaquePointer?, _ idx: Int32)
-@_silgen_name("lua_createtable") private func lua_createtable(_ L: OpaquePointer?, _ narr: Int32, _ nrec: Int32)
+@_silgen_name("lua_createtable") private func lua_createtable(_ L: OpaquePointer?, _ narr: Int32, _ nrec: Int32) -> Int32
 @_silgen_name("lua_setfield") private func lua_setfield(_ L: OpaquePointer?, _ idx: Int32, _ k: UnsafePointer<CChar>?)
 @_silgen_name("lua_getfield") private func lua_getfield(_ L: OpaquePointer?, _ idx: Int32, _ k: UnsafePointer<CChar>?)
 @_silgen_name("lua_close") private func lua_close(_ L: OpaquePointer?)
@@ -49,6 +53,8 @@ private let LUA_TFUNCTION: Int32 = 6
 @_silgen_name("lua_pushinteger") private func lua_pushinteger(_ L: OpaquePointer?, _ n: Int)
 @_silgen_name("lua_tointeger") private func lua_tointeger(_ L: OpaquePointer?, _ idx: Int32) -> Int
 @_silgen_name("lua_pushboolean") private func lua_pushboolean(_ L: OpaquePointer?, _ b: Int32)
+@_silgen_name("lua_pushnil") private func lua_pushnil(_ L: OpaquePointer?)
+@_silgen_name("lua_pushnumber") private func lua_pushnumber(_ L: OpaquePointer?, _ n: Double)
 @_silgen_name("lua_toboolean") private func lua_toboolean(_ L: OpaquePointer?, _ idx: Int32) -> Int32
 @_silgen_name("lua_rawgeti") private func lua_rawgeti(_ L: OpaquePointer?, _ idx: Int32, _ n: Int)
 @_silgen_name("lua_rawseti") private func lua_rawseti(_ L: OpaquePointer?, _ idx: Int32, _ n: Int)
@@ -84,7 +90,7 @@ final class ExtensionLuaRuntime {
 
     private(set) var registeredTools: [RegisteredTool] = []
     private(set) var registeredCommands: [RegisteredCommand] = []
-    private var eventHandlers: [String: [Int32]] = [:]
+    private(set) var eventHandlers: [String: [Int32]] = [:]
 
     init(extensionID: String) {
         self.extensionID = extensionID
@@ -112,7 +118,7 @@ final class ExtensionLuaRuntime {
     func evaluate(_ source: String, chunkName: String = "chunk") throws {
         let bytes = Array(source.utf8)
         let rc = bytes.withUnsafeBufferPointer { buf in
-            luaL_loadbuffer(L, buf.baseAddress.map { UnsafePointer<CChar>($0) }, buf.count, chunkName)
+            luaL_loadbuffer(L, buf.baseAddress.map { UnsafeRawPointer($0).assumingMemoryBound(to: CChar.self) }, buf.count, chunkName, nil)
         }
         if rc != 0 {
             let err = currentError()
@@ -432,10 +438,85 @@ final class ExtensionLuaRuntime {
         lua_pushlightuserdata(L, selfPtr)
         lua_pushcclosure(L, permission, 1)
         lua_setfield(L, -2, "permission")
+
+        // api.settings = { get, set } — per-extension settings declared in
+        // manifest.json and editable from the extension's Settings page.
+        _ = lua_createtable(L, 0, 2)
+        // settings.get(key) → value | nil
+        let settingsGet: @convention(c) (OpaquePointer?) -> Int32 = { L in
+            guard let L else { return 1 }
+            let upval = LUA_REGISTRYINDEX - 1
+            guard let ud = lua_touserdata(L, upval),
+                  let runtime = Unmanaged<ExtensionLuaRuntime>.fromOpaque(ud).takeUnretainedValue().optionalSelf else {
+                return 1
+            }
+            let state = runtime.L
+            lua_getfield(state, 1, "key")
+            let key = lua_tostring(state, -1).map { String(cString: $0) } ?? ""
+            lua_pop(state, 1)
+            if let bridge = runtime.bridge, let value = bridge.settingsGet(runtime.extensionID, key) {
+                runtime.pushNativeValue(value, into: state)
+            } else {
+                lua_pushnil(state)
+            }
+            return 1
+        }
+        lua_pushlightuserdata(L, selfPtr)
+        lua_pushcclosure(L, settingsGet, 1)
+        lua_setfield(L, -2, "get")
+        // settings.set(key, value)
+        let settingsSet: @convention(c) (OpaquePointer?) -> Int32 = { L in
+            guard let L else { return 0 }
+            let upval = LUA_REGISTRYINDEX - 1
+            guard let ud = lua_touserdata(L, upval),
+                  let runtime = Unmanaged<ExtensionLuaRuntime>.fromOpaque(ud).takeUnretainedValue().optionalSelf else {
+                return 0
+            }
+            let state = runtime.L
+            lua_getfield(state, 1, "key")
+            let key = lua_tostring(state, -1).map { String(cString: $0) } ?? ""
+            lua_pop(state, 1)
+            lua_getfield(state, 1, "value")
+            let value: Any?
+            if lua_type(state, -1) == LUA_TBOOLEAN {
+                value = lua_toboolean(state, -1) != 0
+            } else if lua_type(state, -1) == LUA_TNUMBER {
+                value = lua_tonumber(state, -1)
+            } else if let s = lua_tostring(state, -1) {
+                value = String(cString: s)
+            } else {
+                value = nil
+            }
+            lua_pop(state, 1)
+            if let bridge = runtime.bridge, let value {
+                bridge.settingsSet(runtime.extensionID, key, value)
+            }
+            return 0
+        }
+        lua_pushlightuserdata(L, selfPtr)
+        lua_pushcclosure(L, settingsSet, 1)
+        lua_setfield(L, -2, "set")
+        lua_setfield(L, -2, "settings")
         lua_setfield(L, -2, "api")
 
         // globals.minis = minis
         lua_setglobal(L, "minis")
+    }
+
+    /// Push a Swift value onto the Lua stack (String/Int/Double/Bool).
+    private func pushNativeValue(_ value: Any, into L: OpaquePointer) {
+        switch value {
+        case let s as String:
+            lua_pushstring(L, s)
+        case let i as Int:
+            lua_pushinteger(L, i)
+        case let d as Double:
+            lua_pushnumber(L, d)
+        case let b as Bool:
+            lua_pushboolean(L, b ? 1 : 0)
+        default:
+            lua_pushnil(L)
+        }
     }
 }
 

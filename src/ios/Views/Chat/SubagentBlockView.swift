@@ -121,7 +121,3 @@ struct SubagentBlockView: View {
         }
     }
 }
-
-extension SubagentCoordinator.RunRecord: Identifiable {
-    var idValue: String { id }
-}

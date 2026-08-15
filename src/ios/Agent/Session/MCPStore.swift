@@ -77,6 +77,7 @@ struct MCPServerConfig: Codable, Identifiable, Hashable {
 @MainActor
 final class MCPStore: ObservableObject {
     static let shared = MCPStore()
+    private static let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
     @Published private(set) var servers: [MCPServerConfig] = []
 

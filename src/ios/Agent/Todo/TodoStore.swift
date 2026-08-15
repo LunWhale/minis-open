@@ -11,6 +11,7 @@ import SQLite3
 /// stay untouched and todo data can evolve independently.
 actor TodoStore {
     static let shared = TodoStore()
+    private nonisolated static let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
     private var db: OpaquePointer?
     private let dbURL: URL
@@ -58,7 +59,7 @@ actor TodoStore {
         var errMsg: UnsafeMutablePointer<CChar>?
         let rc = sqlite3_exec(db, sql, nil, nil, &errMsg)
         if rc != SQLITE_OK {
-            AppLogger(category: "TodoStore").error("SQL error: \(String(cString: errMsg ?? "?"))")
+            AppLogger(category: "TodoStore").error("SQL error: \(errMsg.map { String(cString: $0) } ?? "?")")
             sqlite3_free(errMsg)
             return false
         }
@@ -91,18 +92,18 @@ actor TodoStore {
             """
             var stmt: OpaquePointer?
             guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { continue }
-            sqlite3_bind_text(stmt, 1, (item.id as NSString).utf8String, -1, SQLITE_TRANSIENT)
-            sqlite3_bind_text(stmt, 2, (sessionId as NSString).utf8String, -1, SQLITE_TRANSIENT)
-            sqlite3_bind_text(stmt, 3, (item.title as NSString).utf8String, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_text(stmt, 1, (item.id as NSString).utf8String, -1, Self.SQLITE_TRANSIENT)
+            sqlite3_bind_text(stmt, 2, (sessionId as NSString).utf8String, -1, Self.SQLITE_TRANSIENT)
+            sqlite3_bind_text(stmt, 3, (item.title as NSString).utf8String, -1, Self.SQLITE_TRANSIENT)
             if let d = item.detail {
-                sqlite3_bind_text(stmt, 4, (d as NSString).utf8String, -1, SQLITE_TRANSIENT)
+                sqlite3_bind_text(stmt, 4, (d as NSString).utf8String, -1, Self.SQLITE_TRANSIENT)
             } else {
                 sqlite3_bind_null(stmt, 4)
             }
-            sqlite3_bind_text(stmt, 5, (item.status.rawValue as NSString).utf8String, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_text(stmt, 5, (item.status.rawValue as NSString).utf8String, -1, Self.SQLITE_TRANSIENT)
             sqlite3_bind_int(stmt, 6, Int32(item.order))
             if let p = item.parentId {
-                sqlite3_bind_text(stmt, 7, (p as NSString).utf8String, -1, SQLITE_TRANSIENT)
+                sqlite3_bind_text(stmt, 7, (p as NSString).utf8String, -1, Self.SQLITE_TRANSIENT)
             } else {
                 sqlite3_bind_null(stmt, 7)
             }
@@ -130,16 +131,16 @@ actor TodoStore {
         """
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
-        sqlite3_bind_text(stmt, 1, (newTitle as NSString).utf8String, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 1, (newTitle as NSString).utf8String, -1, Self.SQLITE_TRANSIENT)
         if let d = newDetail {
-            sqlite3_bind_text(stmt, 2, (d as NSString).utf8String, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_text(stmt, 2, (d as NSString).utf8String, -1, Self.SQLITE_TRANSIENT)
         } else {
             sqlite3_bind_null(stmt, 2)
         }
-        sqlite3_bind_text(stmt, 3, (newStatus.rawValue as NSString).utf8String, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 3, (newStatus.rawValue as NSString).utf8String, -1, Self.SQLITE_TRANSIENT)
         sqlite3_bind_double(stmt, 4, now())
-        sqlite3_bind_text(stmt, 5, (id as NSString).utf8String, -1, SQLITE_TRANSIENT)
-        sqlite3_bind_text(stmt, 6, (sessionId as NSString).utf8String, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 5, (id as NSString).utf8String, -1, Self.SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 6, (sessionId as NSString).utf8String, -1, Self.SQLITE_TRANSIENT)
         let ok = sqlite3_step(stmt) == SQLITE_DONE
         sqlite3_finalize(stmt)
         return ok ? get(sessionId: sessionId, id: id) : nil
@@ -156,7 +157,7 @@ actor TodoStore {
 
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
-        sqlite3_bind_text(stmt, 1, (sessionId as NSString).utf8String, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 1, (sessionId as NSString).utf8String, -1, Self.SQLITE_TRANSIENT)
 
         while sqlite3_step(stmt) == SQLITE_ROW {
             items.append(row(stmt))
@@ -177,11 +178,11 @@ actor TodoStore {
         }
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return 0 }
-        sqlite3_bind_text(stmt, 1, (sessionId as NSString).utf8String, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 1, (sessionId as NSString).utf8String, -1, Self.SQLITE_TRANSIENT)
         if let id {
-            sqlite3_bind_text(stmt, 2, (id as NSString).utf8String, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_text(stmt, 2, (id as NSString).utf8String, -1, Self.SQLITE_TRANSIENT)
         } else if let status {
-            sqlite3_bind_text(stmt, 2, (status.rawValue as NSString).utf8String, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_text(stmt, 2, (status.rawValue as NSString).utf8String, -1, Self.SQLITE_TRANSIENT)
         }
         let rc = sqlite3_step(stmt)
         sqlite3_finalize(stmt)
@@ -194,8 +195,8 @@ actor TodoStore {
         let sql = "SELECT id, session_id, title, detail, status, sort_order, parent_id, created_at, updated_at FROM todos WHERE id = ? AND session_id = ?"
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
-        sqlite3_bind_text(stmt, 1, (id as NSString).utf8String, -1, SQLITE_TRANSIENT)
-        sqlite3_bind_text(stmt, 2, (sessionId as NSString).utf8String, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 1, (id as NSString).utf8String, -1, Self.SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 2, (sessionId as NSString).utf8String, -1, Self.SQLITE_TRANSIENT)
         var item: TodoItem?
         if sqlite3_step(stmt) == SQLITE_ROW {
             item = row(stmt)
@@ -208,7 +209,7 @@ actor TodoStore {
         let sql = "SELECT MAX(sort_order) FROM todos WHERE session_id = ?"
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return 0 }
-        sqlite3_bind_text(stmt, 1, (sessionId as NSString).utf8String, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 1, (sessionId as NSString).utf8String, -1, Self.SQLITE_TRANSIENT)
         var maxVal: Int = 0
         if sqlite3_step(stmt) == SQLITE_ROW {
             maxVal = Int(sqlite3_column_int64(stmt, 0))
@@ -217,7 +218,7 @@ actor TodoStore {
         return maxVal
     }
 
-    private func row(_ stmt: OpaquePointer) -> TodoItem {
+    private func row(_ stmt: OpaquePointer?) -> TodoItem {
         let id = String(cString: sqlite3_column_text(stmt, 0))
         let sessionId = String(cString: sqlite3_column_text(stmt, 1))
         let title = String(cString: sqlite3_column_text(stmt, 2))

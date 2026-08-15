@@ -40,6 +40,22 @@ struct ExtensionManifest: Codable, Equatable, Sendable {
     var ui: [UIDef]?
     /// Theme file.
     var theme: ThemeDef?
+    /// Per-extension settings the author declares; rendered as a form on the
+    /// extension's Settings page (see ExtensionSettingsView). Agents read
+    /// them via `minis.api.settings.get`.
+    var settings: [SettingDef]?
+
+    struct SettingDef: Codable, Equatable, Sendable {
+        var key: String
+        var label: String
+        /// "text", "boolean", "number", "select" (options required).
+        var type: String
+        var `default`: AnyCodable?
+        /// Options for "select".
+        var options: [String]?
+        var placeholder: String?
+        var description: String?
+    }
 
     struct ToolDef: Codable, Equatable, Sendable {
         /// Script file relative to the extension root, e.g. "agent/tools/my_tool.js"

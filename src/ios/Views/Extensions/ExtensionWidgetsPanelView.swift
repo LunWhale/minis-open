@@ -34,7 +34,7 @@ struct ExtensionWidgetsPanelView: View {
                     }
                 } else {
                     ForEach(Array(widgets.enumerated()), id: \.offset) { idx, entry in
-                        widgetSection(idx, entry)
+                        widgetSection(idx, entry: entry)
                     }
                 }
             }
@@ -78,7 +78,7 @@ struct ExtensionWidgetsPanelView: View {
                     )
                     .frame(height: 220)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.separator.opacity(0.4), lineWidth: 0.5))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(.separator).opacity(0.4), lineWidth: 0.5))
                     if let msg = widgetMessages[key] {
                         Text("widget → native: \(msg)")
                             .font(.caption2)
