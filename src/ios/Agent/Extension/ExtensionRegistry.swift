@@ -35,7 +35,12 @@ final class ExtensionRegistry {
     /// (Re)load all enabled extensions from the store. Call after any
     /// install/uninstall/enable/disable change.
     func reload() async {
-        let records = await ExtensionStore.shared.list().filter(\.enabled)
+        // Built-in plugins (todo / sub-agents) have no zip bundle — their
+        // capabilities are native and served via builtinToolDefinitions();
+        // skip them here so reload doesn't try to read a missing manifest.
+        let records = await ExtensionStore.shared.list()
+            .filter(\.enabled)
+            .filter { !BuiltinExtension.isBuiltin($0.id) }
         runtimes.removeAll()
         luaRuntimes.removeAll()
         toolIndex.removeAll()
