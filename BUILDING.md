@@ -18,7 +18,7 @@ Clone with submodules — the iSH and PRoot forks are submodules, and a clone
 without them will fail at the native build step:
 
 ```sh
-git clone --recurse-submodules https://github.com/OpenMinis/OpenMinis.git
+git clone --recurse-submodules https://github.com/LunWhale/minis-open.git
 cd OpenMinis
 
 # Already cloned without --recurse-submodules?

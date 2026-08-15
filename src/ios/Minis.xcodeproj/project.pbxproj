@@ -3517,6 +3517,7 @@
 					"$(SRCROOT)/Vendor/cppjieba/include",
 				);
 				INFOPLIST_FILE = "$(SRCROOT)/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Minis Open";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "VM requires network access for SLIRP networking";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -3571,6 +3572,7 @@
 					"$(SRCROOT)/Vendor/cppjieba/include",
 				);
 				INFOPLIST_FILE = "$(SRCROOT)/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Minis Open";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "VM requires network access for SLIRP networking";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -3608,7 +3610,7 @@
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ShareExtension/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Share to Minis";
+				INFOPLIST_KEY_CFBundleDisplayName = "Share to Minis Open";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -3635,7 +3637,7 @@
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ShareExtension/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Share to Minis";
+				INFOPLIST_KEY_CFBundleDisplayName = "Share to Minis Open";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -3662,7 +3664,7 @@
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = FileProvider/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Minis Files";
+				INFOPLIST_KEY_CFBundleDisplayName = "Minis Open Files";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -3689,7 +3691,7 @@
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = FileProvider/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Minis Files";
+				INFOPLIST_KEY_CFBundleDisplayName = "Minis Open Files";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
