@@ -1,21 +1,14 @@
 <!--
-  Please read before submitting.
+  Thanks for opening a PR against minis-open.
 
-  This repository does not accept pull requests. It is a mirror: development
-  happens in a private tree and is published here on each release, so there is
-  nowhere for a PR to land — it would be overwritten by the next sync.
+  Before submitting:
+  - Keep the change focused on one concern.
+  - If it touches the sandbox or native toolchain (iSH, FFmpeg, LAME,
+    Alpine rootfs), note what you built and ran — see BUILDING.md.
+  - Mention the model/provider the change was tested with, if relevant.
 
-  This is not about the quality of your work. If you open one anyway, we will
-  close it with a link to CONTRIBUTING.md.
-
-  What helps instead:
-
-    • Bugs and feature requests → open an issue
-      https://github.com/OpenMinis/OpenMinis/issues
-
-    • Use cases and workflows   → OpenMinis/AwesomeMinis  (accepts PRs)
-    • Skills                    → OpenMinis/MinisSkills   (accepts PRs)
-    • Questions and discussion  → the Telegram group, linked in the README
+  If the change fixes an issue, link it:
+  https://github.com/LunWhale/minis-open/issues
 
   See CONTRIBUTING.md for the full picture.
 -->

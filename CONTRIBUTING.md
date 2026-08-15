@@ -1,48 +1,35 @@
 # Contributing
 
-Thanks for your interest in Minis.
+This is a fork of [OpenMinis](https://github.com/OpenMinis/OpenMinis). It is
+a normal GitHub repository: issues and pull requests are both welcome.
 
-## We do not accept pull requests
+## Opening a PR
 
-This repository is a **mirror**. Development happens in a private tree and is
-published here on each release, so a pull request opened against this
-repository has nowhere to land — merging it would be overwritten by the next
-sync, and we cannot merge it upstream either.
+1. Fork this repository (or use a branch if you have push access).
+2. Make your change, add a test where it makes sense.
+3. Open a PR against `main`. Keep it focused — one concern per PR.
 
-Please do not spend your time preparing one. If you have already opened a PR,
-we will close it with a pointer back to this document; that is not a judgement
-on the work.
+The build is unusual (it compiles iSH, FFmpeg, LAME and an Alpine rootfs from
+source), so if your change touches the sandbox or the native toolchain, read
+[BUILDING.md](BUILDING.md) first and note in the PR what you actually ran.
 
-## What we do want
+## Filing an issue
 
-Everything else. The product is shaped by what people report:
+- **Bug**: platform and version (Settings → About), what you expected, what
+  happened instead, steps to reproduce, and the model/provider if relevant.
+- **Feature**: describe the workflow you want, not the implementation. The
+  extension system (`.minisx` bundles) may already cover it without touching
+  the app — check `docs/extensions.md` first.
 
-- **[Open an issue](https://github.com/OpenMinis/OpenMinis/issues)** — bugs,
-  crashes, papercuts, feature requests, questions about behaviour. A clear
-  report is worth more to us than a patch, because it tells us what to build.
-- **Share what you have built** — real workflows and use cases go in
-  **[AwesomeMinis](https://github.com/OpenMinis/AwesomeMinis)**, which does
-  take contributions.
-- **Write a skill** — **[MinisSkills](https://github.com/OpenMinis/MinisSkills)**
-  also takes contributions, and skills are how most people extend Minis
-  without touching the app at all.
-- **Talk to us** — the [Telegram group](https://t.me/+2NzhOJuzRyI1YmM1) is
-  where most day-to-day discussion happens.
+## Provenance note
 
-## Filing a good issue
+This fork was almost entirely built by **deepseek-v4-flash** (a third-party
+model accessed through a relay/proxy) driving the **pi-agent** coding harness.
+If you contribute, your changes will sit alongside that history — see
+[CHANGELOG.md](CHANGELOG.md) for the record.
 
-The more of this you can give us, the faster it gets fixed:
+## License
 
-- Platform and version (Settings → About shows both)
-- What you expected, what happened instead
-- Steps to reproduce, or the prompt that triggered it
-- Which model / provider was selected, if relevant
-- Logs, if the app produced any (Settings → Logs)
-
-## Using the source
-
-The code is GPLv3. You are free to fork it, modify it and run your own build —
-see [BUILDING.md](BUILDING.md). The licence obliges you to publish the source
-of anything you distribute, and to keep it under GPLv3.
-
-We simply do not merge changes back through this repository.
+GPLv3. Fork it, modify it, run your own build — see
+[BUILDING.md](BUILDING.md). If you distribute a build, you must publish its
+source under GPLv3.

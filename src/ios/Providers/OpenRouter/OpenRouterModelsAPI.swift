@@ -17,7 +17,7 @@ enum OpenRouterModelsAPI {
         var request = URLRequest(url: URL(string: URLBuilding.join(baseURL, "/models"))!)
         request.httpMethod = "GET"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("https://github.com/OpenMinis/OpenMinis", forHTTPHeaderField: "HTTP-Referer")
+        request.setValue("https://github.com/LunWhale/minis-open", forHTTPHeaderField: "HTTP-Referer")
         request.setValue("Minis App", forHTTPHeaderField: "X-Title")
         logger.info("Fetching OpenRouter models")
 
