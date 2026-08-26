@@ -1,7 +1,29 @@
 # Changelog
 
 All fork commits are listed here, newest first. The base is upstream
-OpenMinis v1.10 (`9cf3a85`).
+OpenMinis v1.10 (`9cf3a85`), rebased onto upstream v1.12 (`09fc199`).
+
+## [0.3.0] - 2026-08-26
+
+### Rebase onto upstream v1.12
+
+- `e76904d` chore(ish): update submodule pin to `6d53973c` (untrack
+  build-ios artifacts so a fresh clone is clean).
+- `3b99464` fix(ish): restore the `make_fp_vec_cmp_zero` macro header that
+a lost during the FCVT merge (build fix).
+- `f5618c9` chore(ish): update `deps/ish` pin to `602e4e17` — a merge of
+  upstream v1.12's fork-guard + FCVTL work and our FCVTN/proc-mem-seek.
+- `bac5dad` docs: add `README-ZH.md`.
+- Rebased the full fork history onto upstream v1.12 (`09fc199`), bringing
+  in: iCloud backup/restore surface, memory-pressure fork guard (stalls
+  guest fork under real memory pressure, bounded wait, fallback allows),
+  ASIMD FCVTN/FCVTL/FCVTXN lane gadgets (numpy float casts), waitid
+  `si_uid`, pids_lock release on malloc failure, skill empty-description
+  refresh fix (GH#215), SessionBadgeStore, MemoryWriteRevoker, thinking
+  rules, provider group slots, and 343 files of upstream improvements.
+- `deps/ish` submodule now points at `LunWhale/ish-arm64`
+  `feature/fcvt-arm64` (our fork of the upstream ish-arm64 fork), which
+  carries both our FCVTN/proc-mem-seek and upstream's fork-guard/FCVTL.
 
 ## [0.2.0] - 2026-08-15
 
