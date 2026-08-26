@@ -23,7 +23,7 @@ first-class extension system, and a coding toolchain inside the sandbox.
 
 ## What this fork adds
 
-Compared to upstream v1.10, this fork ships:
+Compared to upstream v1.12, this fork ships:
 
 | Piece | What it does |
 |---|---|
