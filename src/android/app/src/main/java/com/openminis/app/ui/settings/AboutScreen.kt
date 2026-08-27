@@ -100,6 +100,22 @@ fun AboutScreen(onBack: () -> Unit) {
             SettingsRow(
                 icon = Icons.Outlined.Code,
                 iconColor = tileBlue,
+                title = stringResource(R.string.about_original_repository),
+                onClick = { openExternalUrl(context, "https://github.com/OpenMinis/OpenMinis") },
+                trailing = { ExternalLinkIcon() },
+                showDivider = false,
+            )
+            SettingsRow(
+                icon = Icons.Outlined.Code,
+                iconColor = tileBlue,
+                title = stringResource(R.string.about_fork_repository),
+                onClick = { openExternalUrl(context, "https://github.com/LunWhale/minis-open") },
+                trailing = { ExternalLinkIcon() },
+                showDivider = false,
+            )
+            SettingsRow(
+                icon = Icons.Outlined.Code,
+                iconColor = tileBlue,
                 title = stringResource(R.string.about_github_repository),
                 // Settings → ABOUT siblings (Privacy Policy / Submit GitHub
                 // Issues) all use openExternalUrl directly. The

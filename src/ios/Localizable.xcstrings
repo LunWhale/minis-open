@@ -4074,7 +4074,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "About Minis"
+            "value" : "About minis-open"
           }
         },
         "fr" : {
@@ -4104,13 +4104,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "关于 Minis"
+            "value" : "关于 minis-open"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "關於 Minis"
+            "value" : "關於 minis-open"
           }
         }
       }

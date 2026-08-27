@@ -317,6 +317,7 @@ private struct ExtensionDetailView: View {
         case "event-hook": return "bolt"
         case "ui-widget": return "rectangle.inset.filled.and.person.filled"
         case "theme": return "paintpalette"
+        case "prompt": return "text.bubble"
         default: return "puzzlepiece"
         }
     }

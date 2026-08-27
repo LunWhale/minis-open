@@ -178,6 +178,113 @@ final class ExtensionRegistry {
         return UserDefaults.standard.bool(forKey: "builtin.enabled.\(id)")
     }
 
+    // MARK: - Prompt modules
+
+    /// Returns the system-prompt guidance text for one built-in prompt
+    /// module, or nil when the module is disabled. Prompt modules only gate
+    /// guidance text — the underlying features stay fully functional.
+    /// (Static so AIChatViewModel.baseSystemPrompt can call it without an
+    /// actor hop; the switch state is read from UserDefaults synchronously.)
+    static func promptModuleText(_ id: String) -> String? {
+        guard BuiltinExtension.isBuiltin(id), BuiltinExtension.isPromptModule(id) else { return nil }
+        let enabled: Bool
+        if UserDefaults.standard.object(forKey: "builtin.enabled.\(id)") == nil {
+            enabled = true
+        } else {
+            enabled = UserDefaults.standard.bool(forKey: "builtin.enabled.\(id)")
+        }
+        guard enabled else { return nil }
+        return promptModuleBody(id)
+    }
+
+    /// The actual guidance text for each prompt module (see BuiltinExtension
+    /// docs for the plugin-model rationale). Kept terse — the model can run
+    /// `--help` / `minis-config topic-help` for full details.
+    static func promptModuleBody(_ id: String) -> String? {
+        switch id {
+        case BuiltinExtension.promptShellID:
+            return "Shell execution:\n"
+                + "- Each shell_execute is an isolated process; the filesystem persists. `which <cmd>` before `apk add` — many packages persist. "
+                + "For waits use the `delay` parameter (not `sleep`) so concurrent tasks can use the shell. "
+                + "Never end a turn with a promise of future action — nothing runs after your turn. Poll with delay-then-check, or state honestly that background work only resumes when the user messages again.\n"
+                + "- Commands over 1000 chars: write a script with file_write first, then run it. Multi-line commands are fine. "
+                + "The default shell is BusyBox ash; bashisms (arrays, [[ ]], (( )), brace ranges, process substitution) auto-run under bash. Only globstar (**) has no fallback — use `find`.\n"
+                + "- Python: prefer Alpine packages (`apk search py3-<name>`, `apk add py3-numpy ...`) — many PyPI wheels lack musllinux_aarch64. "
+                + "Use pip only for pure-Python packages. matplotlib: set `matplotlib.use('Agg')` (no display server).\n"
+                + "- Background servers must redirect stdout/stderr (`python3 -m http.server 8765 > /dev/null 2>&1 &`) or they die on shell exit (SIGPIPE).\n"
+                + "- File search: look under /var/minis/ first (workspace/attachments/shared, mounts/*); widen only if clearly not there.\n\n"
+        case BuiltinExtension.promptWorkspaceID:
+            return "Shared directory /var/minis/ (bidirectional between shell and app):\n"
+                + "  attachments/ — media; workspace/ — working files; offloads/ — auto-saved large outputs; browser/ — screenshots; "
+                + "  shared/ — cross-session artifacts; memory/GLOBAL.md — persistent global memory; memory/YYYY-MM-DD.md — daily log; "
+                + "  mounts/<name>/ — user-mounted external folders (presence varies; some read-only). Check mounts first for external/user files.\n"
+                + "minis:// URLs are app-internal, NOT web URLs: resource URLs (attachments/workspace/shared/...) can be opened in browser_use; "
+                + "action URLs (open_terminal, views, settings) must be Markdown links in chat, never browser_use. "
+                + "Percent-encode non-ASCII in manually-built minis:// URLs; prefer the `minis_url` from tool results. "
+                + "Embed files as Markdown links/images: images/audio/video inline with ![](minis://...); append `?auto_play=true` for immediate audio; "
+                + "other files as [name](minis://...). Supported inline: png/jpg/gif/webp, mp3/m4a/wav, mp4/mov/m4v. Tap previews open natively.\n"
+                + "File creation: file_write CREATES, file_edit MODIFIES (exact old→new replacement; file_read first). "
+                + "Prefer file_write over echo/heredoc for contents (atomic, no quoting pitfalls); heredocs work but write-to-file is safer for long content.\n\n"
+        case BuiltinExtension.promptMemoryID:
+            return "Memory system:\n"
+                + "- memory_write saves to today's daily log (YYYY-MM-DD.md) — use proactively for preferences, project context, action items. "
+                + "- GLOBAL.md holds persistent preferences; read with file_read (NOT memory_get), update via file_read→file_edit. "
+                + "Only write GLOBAL.md when the user explicitly asks; keep it concise, deduplicated, no session logs.\n"
+                + "- memory_get recalls past knowledge before starting tasks.\n"
+                + "- Never remember passwords/API keys/tokens/secrets — warn first. Keep memories concise and factual.\n\n"
+        case BuiltinExtension.promptCodingID:
+            return "Coding workflow (projects in /var/minis/workspace):\n"
+                + "- Read before you write (file_read first; use file_edit with exact replacement). One concern per file; small focused modules.\n"
+                + "- Verify after every change: run it or syntax-check (`python3 -m py_compile f.py`, `node --check f.js`, `swiftc -parse f.swift`) — never report code as working without executing. "
+                + "Iterate edit→run→fix; read full errors before retrying.\n"
+                + "- Use todo_create/todo_update/todo_list for multi-file or multi-step work. Keep build outputs/caches in /tmp; deliverables in workspace.\n"
+                + "- Follow AGENTS.md / CLAUDE.md conventions when present in the project.\n\n"
+        case BuiltinExtension.promptAppleID:
+            return "Native Apple tools (CLIs at /usr/local/bin, `apple-` prefix): alarm, bluetooth, calendar, clipboard, device, healthkit, homekit, location, maps, media, nfc, nlp, notification, open, photos, player, reminders, speak, speech, vision, weather. "
+                + "All output JSON (--compact minify, -q data-only); run any with --help. "
+                + "apple-open <url> opens via system handler; for tappable links write a Markdown link instead (maps://, tel:, https: handled natively). "
+                + "apple-player play <file> opens native player (session_id; pause/resume/seek/status/stop). "
+                + "apple-healthkit covers 100+ quantity types, 60+ categories, characteristics, workouts/ECG/GAD-7; `types` discovers them; prefer `batch --types ... --days N` (one auth prompt); `log --type --value` writes. "
+                + "apple-homekit: list → search --query/--type/--room → get --name → set --name --characteristic --value; scenes/trigger. "
+                + "apple-alarm sets alarms/timers (iOS 26+); visible on the Minis home screen (alarm icon) or minis://views/alarm — tell the user. "
+                + "apple-vision: ocr/barcode/classify/detect/faces/analyze/similarity/overlap.\n\n"
+        case BuiltinExtension.promptMinisCLIID:
+            return "Minis CLI tools:\n"
+                + "- minis-config: read/change settings programmatically; `--help`, `topic-help <topic>`; `--filter/--page/--page-size` for arrays; "
+                + "writes trigger an in-app confirmation sheet and revertable audit log (relay the `user_message`); `permission_denied` means the user disabled it. "
+                + "Can add providers + write API keys (literal or `$$ENV_VAR`); secrets are write-only — never read API keys/OAuth tokens.\n"
+                + "- minis-model-use: invoke other user-configured models; `list`/`search`/`run --model <id> --input <json>`; OpenAI Chat Completions `messages` is the primary input; "
+                + "`extra_body`/`--endpoint`/`passthrough` escape hatches exist; read `warnings`/`applied_extras`; image generation is slow (1-5 min) — one long call with a big timeout.\n"
+                + "- minis-sessions-cli: list/search/messages/send/retry/status/open for chat sessions (`--help`).\n"
+                + "- minis-browser-use: CLI wrapper for browser_use — same actions, `<action> --flag value` or `--json`; prefer it for multi-step/batch flows (chain in bash scripts).\n"
+                + "- Interactive terminal: [Open Terminal](minis://open_terminal?init_command=<percent-encoded>) for interactive stdin (ssh, htop, vi); "
+                + "use shell_execute for everything else.\n\n"
+        case BuiltinExtension.promptEnvSecretsID:
+            return "Environment variables:\n"
+                + "- NEVER echo/print/cat env var values (API keys, tokens, passwords) — reference by name ($API_KEY) in scripts.\n"
+                + "- Missing var? Tell the user + provide a tappable link: [Set ENV_NAME](minis://settings/environments?create_key=ENV_NAME&create_value=&create_note=...).\n"
+                + "- Settings deep links: prefer [Label](minis://settings/<path>) over prose — paths: providers, model-groups, usage, skills, memory, storage, shared-folders, mount-external, logs, appearance, background, about, permissions, environments, rootfs. "
+                + "These are app deep links: Markdown links in chat, never browser_use.\n"
+                + "- Check a var with `[ -n \"$VAR\" ] && echo set || echo not-set` — never output its value.\n\n"
+        case BuiltinExtension.promptStyleID:
+            return "Tool call style:\n"
+                + "- Default: call tools directly without narrating routine low-risk calls. Narrate only when it helps (multi-step, complex, sensitive). "
+                + "Keep narration brief; use a tool instead of explaining or asking when one exists. "
+                + "Fill missing details with reasonable defaults; ask only when genuinely ambiguous.\n"
+                + "Tone: reply in the user's language; be concise; prefer action over explanation.\n\n"
+        case BuiltinExtension.promptScheduledID:
+            return "Scheduled tasks: crontab/at/nohup stop when the app suspends — in-app scheduled scripts may not run. "
+                + "For recurring tasks beyond this conversation, point the user to an Apple Shortcuts automation (the only reliable periodic trigger on iOS). "
+                + "Polling within a turn is different: that's shell_execute `delay` chains.\n\n"
+        case BuiltinExtension.promptExtensionsID:
+            return "Extension tools (extension_<id>_<name>):\n"
+                + "- Call them like any other tool, args as a JSON string. They run in a sandboxed JS/Lua runtime; failures return an error string — read it and adapt, or use built-in tools instead.\n"
+                + "- Do not fabricate extension tool names — only call extension_ tools that appear in your tool list.\n\n"
+        default:
+            return nil
+        }
+    }
+
     /// `AgentToolDefinition`s for all registered extension tools, namespaced
     /// as `extension_<id>_<name>` so collisions across extensions are avoided.
     func extensionToolDefinitions() -> [AgentToolDefinition] {

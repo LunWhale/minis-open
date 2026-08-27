@@ -23,12 +23,12 @@ struct AboutView: View {
                                     .stroke(Color(UIColor.separator), lineWidth: 0.5)
                             )
                     }
-                    Text("Minis")
+                    Text("minis-open")
                         .font(.title2.bold())
                     Text("Version \(appVersion)")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                    Text("Minis is Your Fully Local, Fully Private On-Device Agent.")
+                    Text("An open fork of OpenMinis — same app, deeper agent tooling.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -39,10 +39,24 @@ struct AboutView: View {
 
             // MARK: - Links
             Section("Links") {
-                Link(destination: URL(string: "https://github.com/OpenMinis")!) {
+                Link(destination: URL(string: "https://github.com/OpenMinis/OpenMinis")!) {
                     Label {
                         HStack {
-                            Text("GitHub Repository")
+                            Text("Original Repository (OpenMinis)")
+                                .foregroundStyle(Color(UIColor.label))
+                            Spacer()
+                            Image(systemName: "arrow.up.right.square")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "link.circle.fill")
+                    }
+                }
+                Link(destination: URL(string: "https://github.com/LunWhale/minis-open")!) {
+                    Label {
+                        HStack {
+                            Text("Fork Repository (LunWhale/minis-open)")
                                 .foregroundStyle(Color(UIColor.label))
                             Spacer()
                             Image(systemName: "arrow.up.right.square")
@@ -69,7 +83,7 @@ struct AboutView: View {
                 }
             }
         }
-        .navigationTitle("About")
+        .navigationTitle("关于 minis-open")
         .navigationBarTitleDisplayMode(.inline)
     }
 }

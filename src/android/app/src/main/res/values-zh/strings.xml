@@ -174,7 +174,7 @@
     <string name="settings_section_logs">日志</string>
     <string name="settings_logs_subtitle">查看与导出应用日志</string>
     <string name="settings_section_about">关于</string>
-    <string name="settings_about_minis">关于 Minis</string>
+    <string name="settings_about_minis">关于 minis-open</string>
     <string name="settings_about_subtitle">版本与项目信息</string>
     <string name="settings_privacy_policy">隐私政策</string>
     <string name="settings_feedback">反馈问题</string>
@@ -184,6 +184,8 @@
     <string name="about_title">关于</string>
     <string name="about_minis_tagline">Minis 是完全本地、完全私密的设备端 Agent。</string>
     <string name="about_links">链接</string>
+    <string name="about_original_repository">原仓库（OpenMinis）</string>
+    <string name="about_fork_repository">分支仓库（LunWhale/minis-open）</string>
     <string name="about_github_repository">GitHub 仓库</string>
     <string name="about_version_format">版本 %1$s (%2$s)</string>
 

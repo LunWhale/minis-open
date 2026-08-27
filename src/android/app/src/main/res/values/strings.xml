@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Minis Open</string>
+    <string name="app_name">minis-open</string>
     <string name="new_chat">New Chat</string>
     <string name="settings">Settings</string>
     <string name="providers">Providers</string>
@@ -306,7 +306,7 @@
     <string name="settings_section_logs">Logs</string>
     <string name="settings_logs_subtitle">View and export app logs</string>
     <string name="settings_section_about">About</string>
-    <string name="settings_about_minis">About Minis</string>
+    <string name="settings_about_minis">About minis-open</string>
     <string name="settings_about_subtitle">Version and project info</string>
     <string name="settings_privacy_policy">Privacy Policy</string>
     <string name="settings_feedback">Feedback</string>
@@ -316,6 +316,8 @@
     <string name="about_title">About</string>
     <string name="about_minis_tagline">Minis is Your Fully Local, Fully Private On-Device Agent.</string>
     <string name="about_links">Links</string>
+    <string name="about_original_repository">Original Repository (OpenMinis)</string>
+    <string name="about_fork_repository">Fork Repository (LunWhale/minis-open)</string>
     <string name="about_github_repository">GitHub Repository</string>
     <string name="about_version_format">Version %1$s (%2$s)</string>
 
