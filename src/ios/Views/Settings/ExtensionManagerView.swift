@@ -122,6 +122,12 @@ struct ExtensionManagerView: View {
                             .clipShape(Capsule())
                     }
                 }
+                if !record.description.isEmpty {
+                    Text(record.description)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
             }
             Spacer()
             if hasSettings(record) {
@@ -249,12 +255,13 @@ struct ExtensionManagerView: View {
 
     private func reload() async {
         records = await ExtensionStore.shared.list()
-        // Load settings schemas for the ⚙️ buttons (reads each bundle's
-        // manifest.json; built-ins have no bundle so they declare none).
+        // Load settings schemas for the ⚙️ buttons. Built-in plugins declare
+        // their settings via BuiltinExtension.settings(id:) (native code);
+        // .minisx bundles declare them in their manifest.json.
         var defs: [String: [ExtensionManifest.SettingDef]] = [:]
         for record in records {
             if BuiltinExtension.isBuiltin(record.id) {
-                defs[record.id] = []
+                defs[record.id] = BuiltinExtension.settings(id: record.id)
                 continue
             }
             let url = record.bundleURL.appendingPathComponent("manifest.json")
@@ -283,6 +290,15 @@ private struct ExtensionDetailView: View {
                     LabeledContent("ID", value: record.id)
                     LabeledContent("Version", value: record.version)
                     LabeledContent("Installed", value: record.installedAt.formatted(date: .abbreviated, time: .shortened))
+                    if !record.description.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("What it does")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(record.description)
+                                .font(.body)
+                        }
+                    }
                 }
                 Section("Capabilities") {
                     ForEach(record.kinds, id: \.self) { kind in

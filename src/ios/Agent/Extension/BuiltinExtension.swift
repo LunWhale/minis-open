@@ -118,4 +118,56 @@ enum BuiltinExtension {
     static func isPromptModule(_ id: String) -> Bool {
         id.hasPrefix("builtin.prompt.")
     }
+
+    /// Declared settings schema for each built-in plugin. Prompt modules
+    /// (and todo/sub-agents, whose guidance lives in baseSystemPrompt) expose
+    /// a `promptText` textarea so the user can freely edit the injected
+    /// system-prompt guidance. The default value is the built-in text (via
+    /// ExtensionRegistry.promptModuleBody / the hardcoded todo+subagents
+    /// sections); editing stores an override in ExtensionSettingsStore.
+    static func settings(id: String) -> [ExtensionManifest.SettingDef] {
+        let promptTextDef = ExtensionManifest.SettingDef(
+            key: "promptText",
+            label: "System-prompt guidance",
+            type: "textarea",
+            default: AnyCodable(defaultPromptText(id)),
+            options: nil,
+            placeholder: "Guidance text injected into the system prompt when this plugin is enabled.",
+            description: "Edit the text the model sees for this capability. Empty string removes this section from the prompt. Restore default reverts to the built-in wording."
+        )
+        switch id {
+        case todoID, subagentsID,
+             promptShellID, promptWorkspaceID, promptMemoryID, promptCodingID,
+             promptAppleID, promptMinisCLIID, promptEnvSecretsID, promptStyleID,
+             promptScheduledID, promptExtensionsID:
+            return [promptTextDef]
+        default:
+            return []
+        }
+    }
+
+    /// The default guidance text for a built-in plugin's `promptText`
+    /// setting. For prompt modules this delegates to the registry's default
+    /// body; for todo/sub-agents it returns the section built into
+    /// baseSystemPrompt.
+    static func defaultPromptText(_ id: String) -> String {
+        if isPromptModule(id) {
+            return ExtensionRegistry.promptModuleBody(id) ?? ""
+        }
+        switch id {
+        case todoID:
+            return "Todo usage:\n"
+                + "- For complex, multi-step work (3+ steps), create a todo list up front with todo_create, then update each item as you complete it (todo_update) and list what remains when starting or resuming (todo_list).\n"
+                + "- Mark items in_progress while actively working on them, done when finished, blocked when stuck on a dependency.\n"
+                + "- Keep the todo list concise — one line per step, no more than ~10 items. The user can view the list in the chat UI at any time.\n"
+                + "- Clear completed items with todo_clear status=done to keep the list focused.\n\n"
+        case subagentsID:
+            return "Sub-agent delegation:\n"
+                + "- Use agent_delegate for well-scoped subtasks that would bloat this conversation: research, isolated coding tasks, reviews, or planning. The sub-agent runs with its own context and returns a summary.\n"
+                + "- Pick a role (researcher/coder/reviewer/planner) or pass a custom system_prompt. Use foreground mode to wait for the result; background mode to continue while it runs.\n"
+                + "- Delegate only when it clearly helps — small tasks are faster done directly. Sub-agents cannot spawn sub-agents.\n\n"
+        default:
+            return ""
+        }
+    }
 }

@@ -1792,19 +1792,8 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             + "  attachments/ — media; workspace/ — working files; offloads/ — large outputs; browser/ — screenshots; "
             + "shared/ — cross-session artifacts; memory/GLOBAL.md — global memory; memory/YYYY-MM-DD.md — daily log; "
             + "mounts/<name>/ — user-mounted external folders. Check mounts first for external/user files.\n\n"
-            + (ExtensionRegistry.shared.isBuiltinEnabled(BuiltinExtension.todoID)
-                ? "Todo usage:\n"
-                + "- For complex, multi-step work (3+ steps), create a todo list up front with todo_create, then update each item as you complete it (todo_update) and list what remains when starting or resuming (todo_list).\n"
-                + "- Mark items in_progress while actively working on them, done when finished, blocked when stuck on a dependency.\n"
-                + "- Keep the todo list concise — one line per step, no more than ~10 items. The user can view the list in the chat UI at any time.\n"
-                + "- Clear completed items with todo_clear status=done to keep the list focused.\n\n"
-                : "")
-            + (ExtensionRegistry.shared.isBuiltinEnabled(BuiltinExtension.subagentsID)
-                ? "Sub-agent delegation:\n"
-                + "- Use agent_delegate for well-scoped subtasks that would bloat this conversation: research, isolated coding tasks, reviews, or planning. The sub-agent runs with its own context and returns a summary.\n"
-                + "- Pick a role (researcher/coder/reviewer/planner) or pass a custom system_prompt. Use foreground mode to wait for the result; background mode to continue while it runs.\n"
-                + "- Delegate only when it clearly helps — small tasks are faster done directly. Sub-agents cannot spawn sub-agents.\n\n"
-                : "")
+            + (ExtensionRegistry.builtinGuidanceText(BuiltinExtension.todoID) ?? "")
+            + (ExtensionRegistry.builtinGuidanceText(BuiltinExtension.subagentsID) ?? "")
             + (ExtensionRegistry.promptModuleText(BuiltinExtension.promptShellID) ?? "")
             + (ExtensionRegistry.promptModuleText(BuiltinExtension.promptWorkspaceID) ?? "")
             + (ExtensionRegistry.promptModuleText(BuiltinExtension.promptMemoryID) ?? "")

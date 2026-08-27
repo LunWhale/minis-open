@@ -86,10 +86,30 @@ struct ExtensionSettingsView: View {
                     Text(d).font(.caption2).foregroundStyle(.secondary)
                 }
             }
-        default: // "text"
+        default: // "text" or "textarea"
             Section {
-                TextField(def.placeholder ?? def.label, text: textBinding(def))
-                    .textInputAutocapitalization(.never)
+                if def.type == "textarea" {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text(def.label)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Button("Restore default") {
+                                ExtensionSettingsStore.shared.reset(extensionID: extensionID, key: def.key)
+                                load()
+                            }
+                            .font(.caption)
+                        }
+                        TextEditor(text: textBinding(def))
+                            .frame(minHeight: 140)
+                            .font(.system(.body, design: .monospaced))
+                            .scrollContentBackground(.hidden)
+                    }
+                } else {
+                    TextField(def.placeholder ?? def.label, text: textBinding(def))
+                        .textInputAutocapitalization(.never)
+                }
                 if let d = def.description {
                     Text(d).font(.caption2).foregroundStyle(.secondary)
                 }

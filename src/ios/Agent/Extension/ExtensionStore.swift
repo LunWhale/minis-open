@@ -24,6 +24,11 @@ actor ExtensionStore {
         let permissions: [String]
         let enabled: Bool
         let installedAt: Date
+        /// Short description of what this extension does. For built-ins this
+        /// comes from BuiltinExtension.summary; for .minisx bundles it comes
+        /// from manifest.json `description`. Not stored in the DB — resolved
+        /// at list() time so new built-in summaries appear without migration.
+        let description: String
         /// Absolute URL of the unpacked bundle root.
         let bundleURL: URL
     }
@@ -147,7 +152,20 @@ actor ExtensionStore {
             let kinds = (try? JSONDecoder().decode([String].self, from: Data(kindsJSON.utf8))) ?? []
             let perms = (try? JSONDecoder().decode([String].self, from: Data(permsJSON.utf8))) ?? []
             let bundle = extensionsDir.appendingPathComponent(id, isDirectory: true)
-            out.append(Record(id: id, name: name, version: version, kinds: kinds, permissions: perms, enabled: enabled, installedAt: installedAt, bundleURL: bundle))
+            // Resolve the description without touching the DB schema.
+            let description: String
+            if BuiltinExtension.isBuiltin(id) {
+                description = BuiltinExtension.summary(id: id)
+            } else {
+                let manifestURL = bundle.appendingPathComponent("manifest.json")
+                if let data = try? Data(contentsOf: manifestURL),
+                   let manifest = try? ExtensionManifest.parse(data: data) {
+                    description = manifest.description ?? ""
+                } else {
+                    description = ""
+                }
+            }
+            out.append(Record(id: id, name: name, version: version, kinds: kinds, permissions: perms, enabled: enabled, installedAt: installedAt, description: description, bundleURL: bundle))
         }
         sqlite3_finalize(stmt)
         return out

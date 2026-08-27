@@ -53,4 +53,19 @@ final class ExtensionSettingsStore {
         let keys = defaults.dictionaryRepresentation().keys.filter { $0.hasPrefix("\(domain).") }
         for k in keys { defaults.removeObject(forKey: k) }
     }
+
+    /// Remove a single key override so the declared default takes effect
+    /// again (used by the per-field "Restore default" action in settings).
+    func reset(extensionID: String, key: String) {
+        let domain = domain(for: extensionID)
+        defaults.removeObject(forKey: "\(domain).\(key)")
+    }
+
+    /// Raw string value for a single key, or nil when no override is stored.
+    /// Used by ExtensionRegistry.builtinPromptText to read the user-edited
+    /// system-prompt guidance without going through the full values() path.
+    func stringValue(extensionID: String, key: String) -> String? {
+        let domain = domain(for: extensionID)
+        return defaults.string(forKey: "\(domain).\(key)")
+    }
 }

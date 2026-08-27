@@ -180,13 +180,15 @@ final class ExtensionRegistry {
 
     // MARK: - Prompt modules
 
-    /// Returns the system-prompt guidance text for one built-in prompt
-    /// module, or nil when the module is disabled. Prompt modules only gate
-    /// guidance text — the underlying features stay fully functional.
+    /// Returns the system-prompt guidance text for one built-in plugin
+    /// (prompt module or todo/sub-agents), or nil when the plugin is
+    /// disabled. The text is user-editable: if an override is stored under
+    /// `minis.extsettings.<id>.promptText`, that is returned; otherwise the
+    /// built-in default (`BuiltinExtension.defaultPromptText`) is used.
     /// (Static so AIChatViewModel.baseSystemPrompt can call it without an
     /// actor hop; the switch state is read from UserDefaults synchronously.)
-    static func promptModuleText(_ id: String) -> String? {
-        guard BuiltinExtension.isBuiltin(id), BuiltinExtension.isPromptModule(id) else { return nil }
+    static func builtinGuidanceText(_ id: String) -> String? {
+        guard BuiltinExtension.isBuiltin(id) else { return nil }
         let enabled: Bool
         if UserDefaults.standard.object(forKey: "builtin.enabled.\(id)") == nil {
             enabled = true
@@ -194,7 +196,16 @@ final class ExtensionRegistry {
             enabled = UserDefaults.standard.bool(forKey: "builtin.enabled.\(id)")
         }
         guard enabled else { return nil }
-        return promptModuleBody(id)
+        if let override = ExtensionSettingsStore.shared.stringValue(extensionID: id, key: "promptText") {
+            return override
+        }
+        return BuiltinExtension.defaultPromptText(id)
+    }
+
+    /// Back-compat alias: prompt modules are served by builtinGuidanceText.
+    static func promptModuleText(_ id: String) -> String? {
+        guard BuiltinExtension.isBuiltin(id), BuiltinExtension.isPromptModule(id) else { return nil }
+        return builtinGuidanceText(id)
     }
 
     /// The actual guidance text for each prompt module (see BuiltinExtension
