@@ -21,9 +21,25 @@ struct ExtensionManagerView: View {
     @State private var showDebugLog = false
     @Environment(\.dismiss) private var dismiss
 
+    /// True when this page is pushed from the Settings list, where an
+    /// ambient NavigationStack already exists. Opening a second stack there
+    /// leaves the row sheets without a valid presentation anchor, which used
+    /// to tear down the enclosing Settings sheet instead of showing the
+    /// plugin's settings. False = sheet root, so provide the bar + Done.
+    var embedded: Bool = false
+
     var body: some View {
-        NavigationStack {
-            List {
+        Group {
+            if embedded {
+                stackContent
+            } else {
+                NavigationStack { stackContent }
+            }
+        }
+    }
+
+    private var stackContent: some View {
+        List {
                 if records.isEmpty {
                     Section {
                         VStack(alignment: .leading, spacing: 8) {
@@ -56,7 +72,9 @@ struct ExtensionManagerView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Done") { dismiss() }
+                    if !embedded {
+                        Button("Done") { dismiss() }
+                    }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     HStack(spacing: 12) {
@@ -78,6 +96,22 @@ struct ExtensionManagerView: View {
             .sheet(isPresented: $showDebugLog) {
                 ExtensionDebugView()
             }
+            // NOTE: these two sheets must stay at List level (single
+            // declaration). Attaching `.sheet(item:)` inside `extensionRow`
+            // registers one presenter per ForEach row against the same
+            // @State, so setting it made every row present at once; the
+            // conflicting presentation tore down the enclosing Settings
+            // sheet instead of showing the plugin's settings.
+            .sheet(item: $showInfo) { record in
+                ExtensionDetailView(record: record)
+            }
+            .sheet(item: $showSettings) { record in
+                ExtensionSettingsView(
+                    extensionID: record.id,
+                    name: record.name,
+                    settings: settingsDefs[record.id] ?? []
+                )
+            }
             .fileImporter(
                 isPresented: $showFilePicker,
                 allowedContentTypes: [.zip, .data],
@@ -86,7 +120,6 @@ struct ExtensionManagerView: View {
                 handleFileImport(result)
             }
             .task { await reload() }
-        }
     }
 
     // MARK: - Row
@@ -182,16 +215,6 @@ struct ExtensionManagerView: View {
                     Label("Delete", systemImage: "trash")
                 }
             }
-        }
-        .sheet(item: $showInfo) { record in
-            ExtensionDetailView(record: record)
-        }
-        .sheet(item: $showSettings) { record in
-            ExtensionSettingsView(
-                extensionID: record.id,
-                name: record.name,
-                settings: settingsDefs[record.id] ?? []
-            )
         }
     }
 

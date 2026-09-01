@@ -7334,7 +7334,8 @@ private struct SettingsSheet: View {
                         }
                     }
                     NavigationLink {
-                        ExtensionManagerView()
+                        // Pushed inside SettingsSheet's own NavigationStack.
+                        ExtensionManagerView(embedded: true)
                     } label: {
                         Label {
                             Text("Extensions")
