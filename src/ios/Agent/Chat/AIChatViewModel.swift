@@ -1768,60 +1768,113 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
         return _cachedTimeString
     }
 
+    /// The system prompt: a lean core plus every enabled built-in plugin.
+    ///
+    /// Deliberately assembled from pieces rather than one long concatenation.
+    /// The pre-pluginization literal sat at the Swift type-checker's limit
+    /// (a constraint the memory-addendum comment still refers to), which is
+    /// why individual sections were never gated here. Splitting it up lets
+    /// each surface be conditioned on its own plugin.
     private var baseSystemPrompt: String {
-        SystemPromptBuilder.identitySection()
-            + "You should proactively use shell commands to accomplish the user's tasks — installing packages (apk add), "
+        var parts: [String] = []
+
+        // ── Core: identity (rendered by the Soul plugin) ────────────────
+        parts.append(SystemPromptBuilder.identitySection())
+
+        // ── Core: the terminal premise, always available ────────────────
+        parts.append(
+            "You should proactively use shell commands to accomplish the user's tasks — installing packages (apk add), "
             + "writing and running scripts, managing files, networking, and any other operations a Linux terminal can perform.\n\n"
-            + "Available tools:\n"
-            + "- shell_execute: Run any shell command (isolated process, persistent filesystem, Linux/aarch64).\n"
-            + "- file_read: Read file contents (faster than cat).\n"
-            + "- file_write: Create new files (atomic, no quoting pitfalls).\n"
-            + "- file_edit: Edit existing files with exact string replacement (old_string → new_string). file_read first.\n"
-            + "- browser_use: Web browsing (navigate, screenshot, click, type, get_text, etc.). Desktop Safari UA.\n"
-            + "- memory_write: Save a memory entry to today’s daily log.\n"
-            + "- memory_get: Recall memories with keyword search.\n"
-            + "- minis-open <url|path>: Open a resource in-app without leaving the chat.\n"
-            + "- minis-sessions-cli: Manage chat sessions (list, search, messages, send, retry).\n"
-            + "- minis-model-use: Invoke other LLM models configured by the user.\n"
-            + "- minis-browser-use: CLI wrapper for browser_use (multi-step / batch flows).\n"
-            + "- minis-config: Read/change settings programmatically.\n"
-            + "  (Run any of the above with --help for full usage.)\n\n"
-            + "Current time (approximate): \(approximateTimeString) (\(TimeZone.current.identifier)). "
+        )
+
+        // ── Core: always-available tools ────────────────────────────────
+        // Only tools with no plugin owner live here. The `minis-*` CLIs and
+        // the apple-* tools used to be listed *and* fully described again by
+        // `builtin.prompt.minis-cli` / `.apple`, so switching those modules
+        // off saved almost no tokens; their names now belong to the module.
+        var tools = "Available tools:\n"
+        tools += "- shell_execute: Run any shell command (isolated process, persistent filesystem, Linux/aarch64).\n"
+        tools += "- file_read: Read file contents (faster than cat).\n"
+        tools += "- file_write: Create new files (atomic, no quoting pitfalls).\n"
+        tools += "- file_edit: Edit existing files with exact string replacement (old_string → new_string). file_read first.\n"
+        tools += "- browser_use: Web browsing (navigate, screenshot, click, type, get_text, etc.). Desktop Safari UA.\n"
+        // memory_write / memory_get are advertised only while the Memory
+        // feature plugin is on. The tools are not registered otherwise, and
+        // this unconditional list is exactly what forced the "authoritative
+        // override" addendum appended at every assemble site.
+        if ExtensionRegistry.builtinEnabled(BuiltinExtension.memoryID) {
+            tools += "- memory_write: Save a memory entry to today’s daily log.\n"
+            tools += "- memory_get: Recall memories with keyword search.\n"
+        }
+        tools += "- minis-open <url|path>: Open a resource in-app without leaving the chat.\n\n"
+        parts.append(tools)
+
+        // ── Core: runtime context ───────────────────────────────────────
+        parts.append(
+            "Current time (approximate): \(approximateTimeString) (\(TimeZone.current.identifier)). "
             + "Device languages: \((UserDefaults.standard.object(forKey: "AppleLanguages") as? [String] ?? Locale.preferredLanguages).joined(separator: ", ")).\n\n"
-            + "Shared directory /var/minis/ (bidirectional read/write between shell and app):\n"
-            + "  attachments/ — media; workspace/ — working files; offloads/ — large outputs; browser/ — screenshots; "
-            + "shared/ — cross-session artifacts; memory/GLOBAL.md — global memory; memory/YYYY-MM-DD.md — daily log; "
-            + "mounts/<name>/ — user-mounted external folders. Check mounts first for external/user files.\n\n"
-            + (ExtensionRegistry.builtinGuidanceText(BuiltinExtension.todoID) ?? "")
-            + (ExtensionRegistry.builtinGuidanceText(BuiltinExtension.subagentsID) ?? "")
-            + (ExtensionRegistry.promptModuleText(BuiltinExtension.promptShellID) ?? "")
-            + (ExtensionRegistry.promptModuleText(BuiltinExtension.promptWorkspaceID) ?? "")
-            + (ExtensionRegistry.promptModuleText(BuiltinExtension.promptMemoryID) ?? "")
-            + (ExtensionRegistry.promptModuleText(BuiltinExtension.promptCodingID) ?? "")
-            + (ExtensionRegistry.promptModuleText(BuiltinExtension.promptAppleID) ?? "")
-            + (ExtensionRegistry.promptModuleText(BuiltinExtension.promptMinisCLIID) ?? "")
-            + (ExtensionRegistry.promptModuleText(BuiltinExtension.promptEnvSecretsID) ?? "")
-            + (ExtensionRegistry.promptModuleText(BuiltinExtension.promptStyleID) ?? "")
-            + (ExtensionRegistry.promptModuleText(BuiltinExtension.promptScheduledID) ?? "")
-            + (ExtensionRegistry.promptModuleText(BuiltinExtension.promptExtensionsID) ?? "")
+        )
+
+        // ── Plugin-owned guidance ───────────────────────────────────────
+        // The `/var/minis/` layout (including `mounts/<name>/`) was duplicated
+        // here verbatim *and* inside `builtin.prompt.workspace`; the module is
+        // now its single source, so the mount sentence follows the Mount
+        // External Folders plugin like the rest of what that plugin owns.
+        parts.append(ExtensionRegistry.builtinGuidanceText(BuiltinExtension.todoID) ?? "")
+        parts.append(ExtensionRegistry.builtinGuidanceText(BuiltinExtension.subagentsID) ?? "")
+        parts.append(ExtensionRegistry.promptModuleText(BuiltinExtension.promptShellID) ?? "")
+        parts.append(ExtensionRegistry.promptModuleText(BuiltinExtension.promptWorkspaceID) ?? "")
+        parts.append(ExtensionRegistry.promptModuleText(BuiltinExtension.promptMemoryID) ?? "")
+        parts.append(ExtensionRegistry.promptModuleText(BuiltinExtension.promptCodingID) ?? "")
+        parts.append(ExtensionRegistry.promptModuleText(BuiltinExtension.promptAppleID) ?? "")
+        parts.append(ExtensionRegistry.promptModuleText(BuiltinExtension.promptMinisCLIID) ?? "")
+        parts.append(ExtensionRegistry.promptModuleText(BuiltinExtension.promptEnvSecretsID) ?? "")
+        parts.append(ExtensionRegistry.promptModuleText(BuiltinExtension.promptStyleID) ?? "")
+        parts.append(ExtensionRegistry.promptModuleText(BuiltinExtension.promptScheduledID) ?? "")
+        parts.append(ExtensionRegistry.promptModuleText(BuiltinExtension.promptExtensionsID) ?? "")
+
+        // Free-text guidance the user typed into a feature plugin's own
+        // settings sheet (empty by default, so normally contributes nothing).
+        parts.append(ExtensionRegistry.featureExtraGuidance())
+
+        return parts.joined()
     }
 
     /// [T-memory-toggle-gates-injection-and-tools-ios]
-    /// One-paragraph addendum that tells the model the current memory
-    /// gate state. Appended to baseSystemPrompt at every assemble site.
+    /// Footer that states the current memory gate state. Appended to
+    /// baseSystemPrompt at every assemble site.
     ///
-    /// When memory is OFF, the earlier "Available tools" and "Memory system"
-    /// sections in baseSystemPrompt still describe memory_get / memory_write
-    /// as if they existed. We don't surgically rewrite those (a giant
-    /// string concat that's already on the type-checker's edge); instead
-    /// we land an authoritative override at the end of the prompt so the
-    /// model knows the tools won't be registered, the memory files won't
-    /// be injected, and what to tell the user if they ask about memory.
+    /// This used to be the only defence against baseSystemPrompt lying: the
+    /// hardcoded "Available tools" block listed memory_write / memory_get
+    /// unconditionally, so an authoritative override at the end of the prompt
+    /// was needed to take them back. baseSystemPrompt is now assembled from
+    /// pieces and omits those lines when the Memory System plugin is off, and
+    /// makeAgentTools() drops the registrations the same way — so the footer
+    /// is no longer a correction, just a status line that tells the model
+    /// which switch to point the user at. Kept appended at the end because a
+    /// late, explicit status beats relying on the model parsing a list.
     private var memoryStatusFragment: String {
-        if memoryEnabled {
+        // Three switches can silence memory: the global Memory System plugin,
+        // the per-session /memory toggle, and (narrowly) the plugin's
+        // injectFiles sub-switch. The footer has to name the one the user
+        // actually has to touch, so it branches on the plugin first.
+        guard ExtensionRegistry.builtinEnabled(BuiltinExtension.memoryID) else {
+            return "\n\nMemory status: DISABLED — the Memory System plugin is switched off in Settings → Extensions. "
+                + "Despite any earlier mentions in this prompt:\n"
+                + "- GLOBAL.md and daily logs have NOT been injected — you have no access to past memories.\n"
+                + "- The memory_get and memory_write tools are NOT registered — they will not appear in your tool list.\n"
+                + "- If the user asks about memories, tell them the Memory System plugin is disabled and can be re-enabled in Settings → Extensions.\n"
+        }
+        let injecting = ExtensionRegistry.featureToggle(BuiltinExtension.memoryID, "injectFiles")
+        if memoryEnabled && injecting {
             return "\n\nMemory status: ENABLED for this session. GLOBAL.md and recent daily logs have been injected above (if non-empty), and memory_get / memory_write are available in the tool list."
-        } else {
-            return "\n\nMemory status: DISABLED for this session. "
+        }
+        if memoryEnabled && !injecting {
+            return "\n\nMemory status: ENABLED for this session, but file injection is switched off in the Memory System plugin's settings. "
+                + "No memory files were prepended to this prompt — read memory/GLOBAL.md with file_read, or use memory_get to recall past memories. "
+                + "memory_get / memory_write remain available in the tool list."
+        }
+        return "\n\nMemory status: DISABLED for this session. "
                 + "The user has turned off memory for this conversation. "
                 + "Despite any earlier mentions in this prompt:\n"
                 + "- GLOBAL.md and daily logs have NOT been injected — you do not have access to past memories.\n"
@@ -1829,7 +1882,6 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                 + "- If the user asks you to recall memories, save a memory, or wonders why earlier memories aren't visible, tell them memory is currently disabled for this session and they can re-enable it via the /memory slash command or in Settings.\n"
                 + "- This toggle is per-session. Other sessions may still have memory enabled.\n"
                 + "- SOUL.md (your persona / identity) is unaffected and remains active above."
-        }
     }
 
     /// Session ID for persistence integration. Set by the view on appear.
@@ -4336,29 +4388,45 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             userSystemPrompt += "\n\n" + behaviorFragment
         }
 
-        // Inject enabled skill metadata into system prompt
+        // Inject enabled skill metadata into system prompt.
+        // Owned by the Skills feature plugin: switch it off and the Settings
+        // → Skills manager goes away *and* the catalogue stops being
+        // advertised. `listInPrompt` lets a user keep the manager open while
+        // opting out of the advertisement alone.
         if let sid = sessionId,
+           ExtensionRegistry.builtinEnabled(BuiltinExtension.skillsID),
+           ExtensionRegistry.featureToggle(BuiltinExtension.skillsID, "listInPrompt"),
            let skillFragment = SkillStore.shared.skillPromptFragment(for: sid) {
             userSystemPrompt += "\n\n" + skillFragment
         }
 
         // [T-mcp-integration-ios] Inject Top-20 enabled MCP server metadata.
+        // Owned by the MCP Integrations feature plugin (+ its `injectServerList`
+        // sub-switch). The servers, their OAuth state and minis-mcp-cli all
+        // stay on disk; this only stops the prompt from advertising them.
         if let sid = sessionId,
+           ExtensionRegistry.builtinEnabled(BuiltinExtension.mcpID),
+           ExtensionRegistry.featureToggle(BuiltinExtension.mcpID, "injectServerList"),
            let mcpFragment = MCPStore.shared.systemPromptSnippet(for: sid) {
             userSystemPrompt += "\n\n" + mcpFragment
         }
 
         // [T-memory-toggle-gates-injection-and-tools-ios] Memory injection
         // (GLOBAL.md + recent daily logs) is gated by the per-session
-        // memoryEnabled toggle. SOUL.md (identity / persona) is rendered
-        // by SystemPromptBuilder.identitySection() above and is NOT
-        // affected by this toggle.
+        // memoryEnabled toggle *and* by the global Memory System plugin, which
+        // is the deliberate opt-out for the whole feature. `injectFiles` is a
+        // third, narrower switch: keep the browser + tools, skip the injection.
+        // SOUL.md (identity / persona) is rendered by
+        // SystemPromptBuilder.identitySection() above and is NOT affected by
+        // any of these.
         // [T-memory-enabled-new-session-bug DIAG] vm.memoryEnabled is the
         // value the injection actually keys off. Trace it against the
         // session so a repro shows whether loadSession seeded it from the
         // global default.
         AppLogger(category: "MemDiag").info("[MemDiag] inject-decision sid=\(self.sessionId?.prefix(8) ?? "nil") vm.memoryEnabled=\(self.memoryEnabled)")
-        if memoryEnabled {
+        if memoryEnabled,
+           ExtensionRegistry.builtinEnabled(BuiltinExtension.memoryID),
+           ExtensionRegistry.featureToggle(BuiltinExtension.memoryID, "injectFiles") {
             if let memoryFragment = Self.loadGlobalMemoryFragment() {
                 userSystemPrompt += "\n\n" + memoryFragment
             }
@@ -4758,19 +4826,27 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                     userSystemPrompt += "\n\n" + behaviorFragment
                 }
                 if let sid = sessionId,
+                   ExtensionRegistry.builtinEnabled(BuiltinExtension.skillsID),
+                   ExtensionRegistry.featureToggle(BuiltinExtension.skillsID, "listInPrompt"),
                    let skillFragment = SkillStore.shared.skillPromptFragment(for: sid) {
                     userSystemPrompt += "\n\n" + skillFragment
                 }
                 // [T-mcp-integration-ios] Inject Top-20 enabled MCP metadata.
+                // Plugin-gated, mirroring the first injection site.
                 if let sid = sessionId,
+                   ExtensionRegistry.builtinEnabled(BuiltinExtension.mcpID),
+                   ExtensionRegistry.featureToggle(BuiltinExtension.mcpID, "injectServerList"),
                    let mcpFragment = MCPStore.shared.systemPromptSnippet(for: sid) {
                     userSystemPrompt += "\n\n" + mcpFragment
                 }
                 // [T-memory-toggle-gates-injection-and-tools-ios] Mirror
                 // the gate from the first injection site — fallback to a
                 // new provider must respect the per-session memoryEnabled
-                // toggle the same way the initial system prompt did.
-                if memoryEnabled {
+                // toggle and the global Memory System plugin the same way the
+                // initial system prompt did.
+                if memoryEnabled,
+                   ExtensionRegistry.builtinEnabled(BuiltinExtension.memoryID),
+                   ExtensionRegistry.featureToggle(BuiltinExtension.memoryID, "injectFiles") {
                     if let memoryFragment = Self.loadGlobalMemoryFragment() {
                         userSystemPrompt += "\n\n" + memoryFragment
                     }

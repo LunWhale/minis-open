@@ -949,9 +949,13 @@ struct ContentView: View {
     /// when `sessions` changes (see .onChange below).
     @State private var sessionsByIdCache: [String: ChatSession] = [:]
     /// Soul name shown as the sidebar title. Sourced from SOUL.md, falls
-    /// back to "Minis". Refreshed whenever SoulStore posts .soulMdChanged.
-    @State private var soulName: String = SoulStore.cachedMetadata.name.isEmpty
-        ? "Minis" : SoulStore.cachedMetadata.name
+    /// back to "Minis". Refreshed whenever SoulStore posts .soulMdChanged,
+    /// and whenever the Soul feature plugin is flipped (see `soulPluginOn`).
+    @State private var soulName: String = SoulStore.activeDisplayName
+    /// Mirror of the Soul feature-plugin switch, so switching the plugin off
+    /// in Settings → Extensions also stops the sidebar showing a persona name
+    /// the agent is no longer being told about.
+    @AppStorage(ExtensionRegistry.builtinSwitchKey(BuiltinExtension.soulID)) private var soulPluginOn = true
     /// Subtitle state shown under the "Minis" sidebar title. nil hides the
     /// row; otherwise it renders as small capsules per type or a single
     /// status string. Refreshed by a 5s timer.
@@ -2643,8 +2647,12 @@ struct ContentView: View {
         // across the sidebar's life, so the sink is never torn down mid-transaction
         // and can't drop a .soulMdChanged notification arriving during reconstruction.
         .onReceive(NotificationCenter.default.publisher(for: .soulMdChanged)) { _ in
-            let n = SoulStore.cachedMetadata.name
-            soulName = n.isEmpty ? "Minis" : n
+            soulName = SoulStore.activeDisplayName
+        }
+        // The plugin flip is a UserDefaults write, not a .soulMdChanged
+        // notification, so the sidebar needs its own edge.
+        .onChange(of: soulPluginOn) { _ in
+            soulName = SoulStore.activeDisplayName
         }
     }
 
@@ -7236,6 +7244,20 @@ private enum SettingsDestination: Hashable {
     case mcpServerDetail(serverId: String)
 }
 
+/// Conditionally renders a view. Used to make a Settings row appear or vanish
+/// with a built-in feature plugin.
+///
+/// A plain `if` inside the `List` would work too (Sub-agent Roles below uses
+/// one, pre-dating this helper); wrapping the row instead keeps untouched row
+/// bodies readable. When hidden, this collapses to `EmptyView`, which `List`
+/// renders as no row at all — the entry genuinely disappears rather than
+/// leaving an empty tappable gap.
+private extension View {
+    @ViewBuilder func shown(_ visible: Bool) -> some View {
+        if visible { self }
+    }
+}
+
 private struct SettingsSheet: View {
     @Binding var showTerminal: Bool
     @AppStorage("appearanceMode") private var appearanceMode: Int = 0
@@ -7243,6 +7265,26 @@ private struct SettingsSheet: View {
     @ObservedObject private var deepLink = DeepLinkCoordinator.shared
     @State private var navPath = NavigationPath()
     @State private var showFeedbackDialog = false
+
+    // [plugin] Mirrors of the built-in feature-plugin switches, read from the
+    // same UserDefaults keys that ExtensionStore.setEnabled writes alongside
+    // the DB row. They are here so a row vanishes *the instant* the user flips
+    // the switch in Settings → Extensions: calling
+    // ExtensionRegistry.builtinEnabled() directly would only be re-evaluated
+    // whenever this view happened to rebuild for some other reason.
+    //
+    // Deliberately NOT gated: Appearance, LLM Providers, Model Groups,
+    // Extensions itself, Storage, Permissions, Logs, About, iCloud Sync. Those
+    // are app settings, not agent capabilities — and keeping Extensions always
+    // reachable means a plugin can never lock its own owner out.
+    @AppStorage(ExtensionRegistry.builtinSwitchKey(BuiltinExtension.skillsID)) private var skillsOn = true
+    @AppStorage(ExtensionRegistry.builtinSwitchKey(BuiltinExtension.soulID)) private var soulOn = true
+    @AppStorage(ExtensionRegistry.builtinSwitchKey(BuiltinExtension.subagentsID)) private var subagentsOn = true
+    @AppStorage(ExtensionRegistry.builtinSwitchKey(BuiltinExtension.memoryID)) private var memoryOn = true
+    @AppStorage(ExtensionRegistry.builtinSwitchKey(BuiltinExtension.mcpID)) private var mcpOn = true
+    @AppStorage(ExtensionRegistry.builtinSwitchKey(BuiltinExtension.envVarsID)) private var envVarsOn = true
+    @AppStorage(ExtensionRegistry.builtinSwitchKey(BuiltinExtension.sharedFoldersID)) private var sharedFoldersOn = true
+    @AppStorage(ExtensionRegistry.builtinSwitchKey(BuiltinExtension.mountsID)) private var mountsOn = true
 
     var body: some View {
         NavigationStack(path: $navPath) {
@@ -7304,7 +7346,8 @@ private struct SettingsSheet: View {
                                 .frame(width: 21, height: 21)
                                 .background(.blue, in: Circle())
                         }
-                    }
+                    } // plugin-gated: Settings → Extensions
+                        .shown(skillsOn)
                     NavigationLink {
                         SoulSettingsView()
                     } label: {
@@ -7317,8 +7360,9 @@ private struct SettingsSheet: View {
                                 .frame(width: 21, height: 21)
                                 .background(.pink, in: Circle())
                         }
-                    }
-                    if ExtensionRegistry.shared.isBuiltinEnabled(BuiltinExtension.subagentsID) {
+                    } // plugin-gated: Settings → Extensions
+                        .shown(soulOn)
+                    if subagentsOn {
                         NavigationLink {
                             SubagentRolesView()
                         } label: {
@@ -7359,7 +7403,8 @@ private struct SettingsSheet: View {
                                 .frame(width: 21, height: 21)
                                 .background(.purple, in: Circle())
                         }
-                    }
+                    } // plugin-gated: Settings → Extensions
+                        .shown(memoryOn)
                     NavigationLink {
                         MCPIntegrationsView()
                     } label: {
@@ -7372,7 +7417,8 @@ private struct SettingsSheet: View {
                                 .frame(width: 21, height: 21)
                                 .background(.teal, in: Circle())
                         }
-                    }
+                    } // plugin-gated: Settings → Extensions
+                        .shown(mcpOn)
                     NavigationLink {
                         EnvironmentVariablesView()
                     } label: {
@@ -7385,7 +7431,8 @@ private struct SettingsSheet: View {
                                 .frame(width: 21, height: 21)
                                 .background(.green, in: Circle())
                         }
-                    }
+                    } // plugin-gated: Settings → Extensions
+                        .shown(envVarsOn)
                 }
 
                 Section("Storage") {
@@ -7414,7 +7461,8 @@ private struct SettingsSheet: View {
                                 .frame(width: 21, height: 21)
                                 .background(.green, in: Circle())
                         }
-                    }
+                    } // plugin-gated: Settings → Extensions
+                        .shown(sharedFoldersOn)
                     NavigationLink {
                         MountedFoldersSettingsView()
                     } label: {
@@ -7427,7 +7475,8 @@ private struct SettingsSheet: View {
                                 .frame(width: 21, height: 21)
                                 .background(.orange, in: Circle())
                         }
-                    }
+                    } // plugin-gated: Settings → Extensions
+                        .shown(mountsOn)
                     if #available(iOS 17.0, *) {
                         NavigationLink {
                             // v2 is the default sync engine; legacy v1

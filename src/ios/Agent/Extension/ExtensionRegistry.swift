@@ -166,16 +166,43 @@ final class ExtensionRegistry {
         return defs
     }
 
-    /// Whether a built-in default plugin is enabled (falls back to true on
-    /// store errors so disabling is a deliberate opt-out). Backed by a
-    /// UserDefaults mirror kept in sync by ExtensionStore.setEnabled.
-    func isBuiltinEnabled(_ id: String) -> Bool {
+    /// The UserDefaults key holding a built-in plugin's on/off switch. Also
+    /// the key SwiftUI `@AppStorage` observes, so a UI gated on it refreshes
+    /// the moment the switch flips — no notification plumbing needed.
+    static func builtinSwitchKey(_ id: String) -> String { "builtin.enabled.\(id)" }
+
+    /// Canonical built-in plugin switch read — the single source of truth.
+    /// Backed by the UserDefaults mirror `ExtensionStore.setEnabled` maintains
+    /// alongside the DB row, and defaults to true when the key is absent, so
+    /// disabling is always a deliberate opt-out. Static so synchronous call
+    /// sites (prompt assembly) and `@AppStorage` share one implementation
+    /// instead of re-deriving the fallback rule.
+    static func builtinEnabled(_ id: String) -> Bool {
         guard BuiltinExtension.isBuiltin(id) else { return false }
-        // default true unless explicitly disabled
-        if UserDefaults.standard.object(forKey: "builtin.enabled.\(id)") == nil {
-            return true
-        }
-        return UserDefaults.standard.bool(forKey: "builtin.enabled.\(id)")
+        let key = builtinSwitchKey(id)
+        guard UserDefaults.standard.object(forKey: key) != nil else { return true }
+        return UserDefaults.standard.bool(forKey: key)
+    }
+
+    /// Instance accessor for `builtinEnabled` (kept for existing call sites).
+    func isBuiltinEnabled(_ id: String) -> Bool { Self.builtinEnabled(id) }
+
+    /// A feature plugin's `boolean` sub-switch (see
+    /// `BuiltinExtension.featureToggles`), read straight from the settings
+    /// store so the plugin's settings sheet is the only editor. Falls back to
+    /// the schema default when the user has not touched it.
+    static func featureToggle(_ id: String, _ key: String, default def: Bool = true) -> Bool {
+        guard BuiltinExtension.isFeaturePlugin(id) else { return false }
+        return ExtensionSettingsStore.shared.boolValue(extensionID: id, key: key, default: def)
+    }
+
+    /// True when at least one external (.minisx) extension currently exposes
+    /// a tool or command. `builtin.prompt.extensions` is suppressed when this
+    /// is false: with nothing registered, teaching the model about
+    /// `extension_<id>_<name>` only burns tokens.
+    var hasRegisteredExtensionSurface: Bool {
+        !toolIndex.isEmpty || !luaToolIndex.isEmpty
+            || !commandIndex.isEmpty || !luaCommandIndex.isEmpty
     }
 
     // MARK: - Prompt modules
@@ -188,18 +215,44 @@ final class ExtensionRegistry {
     /// (Static so AIChatViewModel.baseSystemPrompt can call it without an
     /// actor hop; the switch state is read from UserDefaults synchronously.)
     static func builtinGuidanceText(_ id: String) -> String? {
-        guard BuiltinExtension.isBuiltin(id) else { return nil }
-        let enabled: Bool
-        if UserDefaults.standard.object(forKey: "builtin.enabled.\(id)") == nil {
-            enabled = true
-        } else {
-            enabled = UserDefaults.standard.bool(forKey: "builtin.enabled.\(id)")
-        }
-        guard enabled else { return nil }
+        guard builtinEnabled(id) else { return nil }
         if let override = ExtensionSettingsStore.shared.stringValue(extensionID: id, key: "promptText") {
             return override
         }
+        // No override: the built-in default applies — except for the
+        // extensions module, whose default text is pointless while zero
+        // external extensions expose anything. An explicit override above
+        // is still honoured, because that text is the user's own.
+        if id == BuiltinExtension.promptExtensionsID,
+           !ExtensionRegistry.shared.hasRegisteredExtensionSurface {
+            return nil
+        }
+        // A guidance module whose subject feature is switched off would
+        // describe tools the model does not have. Suppressed the same way,
+        // and again only for the built-in default.
+        if let feature = BuiltinExtension.describedFeature(ofModule: id),
+           !builtinEnabled(feature) {
+            return nil
+        }
         return BuiltinExtension.defaultPromptText(id)
+    }
+
+    /// Additive guidance for feature plugins (`builtin.soul`, `builtin.mcp`,
+    /// …). Their `promptText` defaults to empty, so any stored/typed text is
+    /// appended to the system prompt while the plugin is enabled. Prompt
+    /// modules and todo/sub-agents own their sections and are excluded.
+    static func featureExtraGuidance() -> String {
+        var out = ""
+        for id in BuiltinExtension.all {
+            guard BuiltinExtension.isFeaturePlugin(id),
+                  !BuiltinExtension.ownedPromptTextIDs.contains(id)
+            else { continue }
+            guard let text = builtinGuidanceText(id) else { continue }
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            out += trimmed + "\n\n"
+        }
+        return out
     }
 
     /// Back-compat alias: prompt modules are served by builtinGuidanceText.
@@ -207,7 +260,6 @@ final class ExtensionRegistry {
         guard BuiltinExtension.isBuiltin(id), BuiltinExtension.isPromptModule(id) else { return nil }
         return builtinGuidanceText(id)
     }
-
     /// The actual guidance text for each prompt module (see BuiltinExtension
     /// docs for the plugin-model rationale). Kept terse — the model can run
     /// `--help` / `minis-config topic-help` for full details.
@@ -225,10 +277,17 @@ final class ExtensionRegistry {
                 + "- Background servers must redirect stdout/stderr (`python3 -m http.server 8765 > /dev/null 2>&1 &`) or they die on shell exit (SIGPIPE).\n"
                 + "- File search: look under /var/minis/ first (workspace/attachments/shared, mounts/*); widen only if clearly not there.\n\n"
         case BuiltinExtension.promptWorkspaceID:
+            // The mounts clause is owned by the Mount External Folders feature
+            // plugin. With that plugin off — or its `mentionInPrompt` sub-switch
+            // off — mounted folders still work, they are simply not advertised.
+            let mountsClause = (builtinEnabled(BuiltinExtension.mountsID)
+                && featureToggle(BuiltinExtension.mountsID, "mentionInPrompt"))
+                ? "; mounts/<name>/ — user-mounted external folders (presence varies; some read-only). Check mounts first for external/user files.\n"
+                : ".\n"
             return "Shared directory /var/minis/ (bidirectional between shell and app):\n"
                 + "  attachments/ — media; workspace/ — working files; offloads/ — auto-saved large outputs; browser/ — screenshots; "
-                + "  shared/ — cross-session artifacts; memory/GLOBAL.md — persistent global memory; memory/YYYY-MM-DD.md — daily log; "
-                + "  mounts/<name>/ — user-mounted external folders (presence varies; some read-only). Check mounts first for external/user files.\n"
+                + "  shared/ — cross-session artifacts; memory/GLOBAL.md — persistent global memory; memory/YYYY-MM-DD.md — daily log"
+                + mountsClause
                 + "minis:// URLs are app-internal, NOT web URLs: resource URLs (attachments/workspace/shared/...) can be opened in browser_use; "
                 + "action URLs (open_terminal, views, settings) must be Markdown links in chat, never browser_use. "
                 + "Percent-encode non-ASCII in manually-built minis:// URLs; prefer the `minis_url` from tool results. "

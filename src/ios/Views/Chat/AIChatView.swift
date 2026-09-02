@@ -5005,15 +5005,27 @@ private struct ChatTrailingMenu: View, Equatable {
 
             Divider()
 
-            Button { onSkills() } label: {
-                Label(String(localized: "Skills in Session"), systemImage: "puzzlepiece.extension")
+            // [plugin] The Skills and MCP Integrations feature plugins own
+            // these entries: with a plugin off its Settings page is gone, the
+            // prompt no longer advertises the catalogue, and its slash rows are
+            // filtered out — so the chat menu must not be the one place that
+            // still offers them. Matching the todo/sub-agent gates below.
+            if ExtensionRegistry.builtinEnabled(BuiltinExtension.skillsID) {
+                Button { onSkills() } label: {
+                    Label(String(localized: "Skills in Session"), systemImage: "puzzlepiece.extension")
+                }
             }
 
-            Button { onMCPs() } label: {
-                Label(String(localized: "MCPs in Session"), systemImage: "wrench.and.screwdriver")
+            if ExtensionRegistry.builtinEnabled(BuiltinExtension.mcpID) {
+                Button { onMCPs() } label: {
+                    Label(String(localized: "MCPs in Session"), systemImage: "wrench.and.screwdriver")
+                }
             }
 
-            if memoryEnabled {
+            // Both switches have to be on: the plugin globally, the /memory
+            // toggle for this session. Either one off and the browser would
+            // show files the agent was told not to read.
+            if memoryEnabled && ExtensionRegistry.builtinEnabled(BuiltinExtension.memoryID) {
                 Button { onMemories() } label: {
                     Label(String(localized: "Memories in Session"), systemImage: "brain.head.profile")
                 }

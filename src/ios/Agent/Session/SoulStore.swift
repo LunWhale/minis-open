@@ -283,6 +283,22 @@ enum SoulStore {
     @MainActor
     static var cachedMetadata: SoulMetadata = .default
 
+    /// [plugin] The name the UI should show for the agent.
+    ///
+    /// Mirrors the rule in `identitySection()`: when the Soul feature plugin is
+    /// switched off the user's persona is not in effect anywhere — not in the
+    /// prompt — so the sidebar must not keep claiming a name that only SOUL.md
+    /// knows about. Shows the shipped default instead. SOUL.md is untouched,
+    /// so the name returns the moment the plugin is switched back on.
+    @MainActor
+    static var activeDisplayName: String {
+        guard ExtensionRegistry.builtinEnabled(BuiltinExtension.soulID) else {
+            return SoulMetadata.default.name
+        }
+        let n = cachedMetadata.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return n.isEmpty ? "Minis" : n
+    }
+
     /// Re-read SOUL.md into `cachedMetadata` and post a notification so
     /// observers (chat bubble header, prompt builder, etc.) can refresh.
     @MainActor
@@ -411,7 +427,19 @@ enum SystemPromptBuilder {
     /// sentence alone is the safe fallback when SOUL.md is missing or
     /// empty, matching pre-SOUL behavior.
     static func identitySection() -> String {
-        let file = SoulStore.load()
+        // [plugin] The Soul feature plugin owns this entire surface. With the
+        // plugin off (Settings → Extensions) the persona, the style line, the
+        // SOUL.md edit hint and the user-chosen name all stop reaching the
+        // model, and the identity line falls back to the shipped default name
+        // — exactly the pre-SOUL prompt. SOUL.md itself is never touched, so
+        // re-enabling restores everything. The three sub-switches let a user
+        // keep the plugin on but trim one piece of it.
+        let soulOn = ExtensionRegistry.builtinEnabled(BuiltinExtension.soulID)
+        let wantPersonality = soulOn && ExtensionRegistry.featureToggle(BuiltinExtension.soulID, "injectPersonality")
+        let wantStyle = soulOn && ExtensionRegistry.featureToggle(BuiltinExtension.soulID, "injectStyle")
+        let wantHint = soulOn && ExtensionRegistry.featureToggle(BuiltinExtension.soulID, "showEditHint")
+
+        let file = soulOn ? SoulStore.load() : nil
         let name: String = {
             let n = (file?.metadata.name ?? SoulMetadata.default.name)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -450,13 +478,17 @@ enum SystemPromptBuilder {
             return "\n\nResponse style (from SOUL.md `style` — apply to every reply unless the user explicitly asks otherwise; if it prescribes a reply language, it overrides the default match-the-user's-language rule):\n\(s)"
         }
 
-        guard let body = file?.body else {
-            return identityTrimmed + styleBlock(style) + "\n\n" + soulEditHint + "\n\n"
-        }
+        // Every branch below composes the same two optional pieces, so resolve
+        // them once. With both injections on the output is byte-identical to
+        // the previous literal concatenations.
+        let styleText = wantStyle ? styleBlock(style) : ""
+        let hintText = wantHint ? "\n\n" + soulEditHint : ""
+        func identityOnly() -> String { identityTrimmed + styleText + hintText + "\n\n" }
+
+        guard wantPersonality else { return identityOnly() }
+        guard let body = file?.body else { return identityOnly() }
         let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            return identityTrimmed + styleBlock(style) + "\n\n" + soulEditHint + "\n\n"
-        }
+        guard !trimmed.isEmpty else { return identityOnly() }
 
         // Reject (NOT truncate) bodies that exceed the language-aware
         // limit. Truncation silently dropped half the user's text and
@@ -471,7 +503,7 @@ enum SystemPromptBuilder {
         let check = SoulStore.isOverLimit(trimmed)
         guard !check.isOverLimit else {
             Self.logger.warning("[Soul] personality body is over the language-aware limit (\(check)) — falling back to identity-only system prompt.")
-            return identityTrimmed + styleBlock(style) + "\n\n" + soulEditHint + "\n\n"
+            return identityOnly()
         }
 
         let personality = scrubInjections(trimmed)
@@ -481,9 +513,8 @@ enum SystemPromptBuilder {
         return identityTrimmed
             + "\n\nPersonality (from SOUL.md — your character and voice; defer to the user's latest message when it conflicts with anything here):\n"
             + personality
-            + styleBlock(style)
-            + "\n\n"
-            + soulEditHint
+            + styleText
+            + hintText
             + "\n\n"
     }
 

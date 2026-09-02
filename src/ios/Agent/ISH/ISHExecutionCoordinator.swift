@@ -275,7 +275,15 @@ actor ISHExecutionCoordinator {
         let effectiveTimeout = timeout ?? 300 // 5 minute default
 
         // Load user-defined env vars (nonisolated, reads from disk + Keychain)
-        let customEnv = EnvVarStore.shared.allAsDict()
+        //
+        // [plugin] Gated by the Environment Variables feature plugin. With the
+        // plugin off, its Settings row is gone — and a variable the user can no
+        // longer see or edit must not keep being exported into every command.
+        // The stored values (Keychain + disk) are untouched, so switching the
+        // plugin back on restores them exactly.
+        let customEnv = ExtensionRegistry.builtinEnabled(BuiltinExtension.envVarsID)
+            ? EnvVarStore.shared.allAsDict()
+            : [:]
 
         // Feed the command as a script via stdin pipe to /bin/sh.
         // This avoids shell quoting issues with multi-line or special-char commands.

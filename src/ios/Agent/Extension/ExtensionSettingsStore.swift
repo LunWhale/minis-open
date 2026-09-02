@@ -68,4 +68,16 @@ final class ExtensionSettingsStore {
         let domain = domain(for: extensionID)
         return defaults.string(forKey: "\(domain).\(key)")
     }
+
+    /// Boolean value for a single key, falling back to `default` when the
+    /// user has not touched it. Agent-side gating (does this feature inject
+    /// its prompt fragment, expose its tools, …) reads through this so a
+    /// plugin's settings sheet is the only place its sub-switches live.
+    /// The settings sheet writes Bools with `UserDefaults.set(Bool:)`, so the
+    /// stored object is a real Bool and `object(forKey:) as? Bool` is exact.
+    func boolValue(extensionID: String, key: String, default def: Bool = true) -> Bool {
+        let domain = domain(for: extensionID)
+        guard let stored = defaults.object(forKey: "\(domain).\(key)") as? Bool else { return def }
+        return stored
+    }
 }

@@ -41,7 +41,7 @@ extension AIChatViewModel {
     static let availableSlashCommands: [SlashCommand] = [
         SlashCommand(id: "clear", icon: "trash", title: "Clear", subtitle: "Clear all messages in this session"),
         SlashCommand(id: "compact", icon: "arrow.down.right.and.arrow.up.left", title: "Compact", subtitle: "Compress conversation history into summary"),
-        SlashCommand(id: "memory", icon: "brain.head.profile", title: "Memory", subtitle: "Toggle memory writes on/off (reads unaffected)"),
+        SlashCommand(id: "memory", icon: "brain.head.profile", title: "Memory", subtitle: "Toggle memory for this session (tools + injection)"),
         SlashCommand(id: "thinking", icon: "lightbulb", title: "Thinking", subtitle: "Toggle deep thinking mode on/off"),
         SlashCommand(id: "extensions", icon: "puzzlepiece.extension.fill", title: "Extensions", subtitle: "Open the extension manager"),
     ]
@@ -171,7 +171,16 @@ extension AIChatViewModel {
     /// the install. [T-skill-slash a88ea8f9]
     var filteredSlashCommands: [SlashCommand] {
         let filter = slashFilter.lowercased()
-        var commands = Self.availableSlashCommands.map { cmd -> SlashCommand in
+        // [plugin] `/memory` is the per-session toggle for a feature that the
+        // global Memory System plugin can switch off entirely; offering the
+        // toggle when the plugin is off would only let a user flip a flag with
+        // no effect. Also fixes the old subtitle: it promised "writes off,
+        // reads unaffected", but `memoryEnabled == false` drops memory_get and
+        // memory_write from the tool list *and* stops the injection.
+        let memoryPluginOn = ExtensionRegistry.builtinEnabled(BuiltinExtension.memoryID)
+        var commands = Self.availableSlashCommands
+            .filter { !($0.id == "memory" && !memoryPluginOn) }
+            .map { cmd -> SlashCommand in
             if cmd.id == "memory" {
                 let status = memoryEnabled ? "on" : "off"
                 return SlashCommand(id: cmd.id, icon: cmd.icon, title: cmd.title, subtitle: "Writes \(status) — tap to toggle")
@@ -193,6 +202,10 @@ extension AIChatViewModel {
         let currentSessionId = self.sessionId
         let skillRows: [SlashCommand] = SkillStore.shared.skills
             .filter { skill in
+                // [plugin] Skills feature plugin off → no skill typing aids
+                // either, matching the hidden Settings page and the withdrawn
+                // prompt catalogue. Installs and per-skill toggles are untouched.
+                guard ExtensionRegistry.builtinEnabled(BuiltinExtension.skillsID) else { return false }
                 guard let sid = currentSessionId else { return skill.isEnabled }
                 return SkillStore.shared.isEnabledForSession(skill.id, sessionId: sid)
             }
@@ -228,6 +241,10 @@ extension AIChatViewModel {
         // hidden — respecting the per-session override, mirroring skill rows.
         let mcpRows: [SlashCommand] = MCPStore.shared.servers
             .filter { server in
+                // [plugin] Same for the MCP Integrations feature plugin: with
+                // it off there is no MCP Settings page and no server list in
+                // the prompt, so the picker must not imply otherwise.
+                guard ExtensionRegistry.builtinEnabled(BuiltinExtension.mcpID) else { return false }
                 guard let sid = currentSessionId else { return server.enabled }
                 return MCPStore.shared.isEnabledForSession(server.id, sessionId: sid)
             }

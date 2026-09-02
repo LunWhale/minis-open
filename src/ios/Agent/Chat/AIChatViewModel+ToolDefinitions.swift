@@ -29,12 +29,14 @@ extension AIChatViewModel {
 
     func makeAgentTools() -> [AgentToolDefinition] {
         // [T-memory-toggle-gates-injection-and-tools-ios] memory_get and
-        // memory_write are conditionally registered. When the per-session
-        // toggle is off, drop both tool definitions so the LLM never sees
-        // them. The system prompt also switches to a "memory disabled"
-        // wording (see baseSystemPrompt below) so the model can correctly
-        // tell the user to re-enable memory via /memory or Settings.
+        // memory_write are conditionally registered. Two switches silence
+        // them: the global Memory System feature plugin (Settings →
+        // Extensions, which also removes the Settings → Memory browser) and
+        // the per-session /memory toggle. When either is off, drop both
+        // definitions so the LLM never sees them; memoryStatusFragment then
+        // names the switch the user has to touch.
         let includeMemoryTools = memoryEnabled
+            && ExtensionRegistry.builtinEnabled(BuiltinExtension.memoryID)
         var tools: [AgentToolDefinition] = [
             AgentToolDefinition(
                 name: "shell_execute",

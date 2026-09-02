@@ -92,6 +92,35 @@ actor ExtensionStore {
                 try? register(manifest: manifest, enabled: true)
             }
         }
+
+        // [T-builtin-plugin-audit A7] Drop rows for built-in ids that are no
+        // longer in `BuiltinExtension.all`. `list()` iterates the DB and asks
+        // `isBuiltin(id)` whether a row is native, so a stale row left behind
+        // by a rename would come back looking like a third-party extension with
+        // no bundle on disk: no description, a dead settings sheet, and an
+        // uninstall button for a capability that cannot be uninstalled.
+        // Guarded by the `builtin.` prefix, so external extensions are never
+        // touched.
+        // [plugin] Re-sync the UserDefaults mirrors from SQLite. SwiftUI views
+        // gate their rows on the mirrored key so a flip repaints instantly, but
+        // a device that switched a plugin off in an earlier build recorded that
+        // answer only in the DB — without this pass its Settings row would show
+        // while the capability stayed off.
+        for record in list() where BuiltinExtension.isBuiltin(record.id) {
+            UserDefaults.standard.set(record.enabled,
+                                      forKey: ExtensionRegistry.builtinSwitchKey(record.id))
+            // Descriptions are only written at registration, so a reworded
+            // summary would otherwise stay stale on every existing install
+            // forever. Built-in descriptions are not user-editable, so
+            // refreshing them on launch is safe (single quotes doubled for SQL).
+            let summary = BuiltinExtension.summary(id: record.id)
+            if record.description != summary {
+                exec("UPDATE extensions SET description = '\(summary.replacingOccurrences(of: "'", with: "''"))' WHERE id = '\(record.id)'")
+            }
+        }
+
+        let live = BuiltinExtension.all.map { "'\($0)'" }.joined(separator: ",")
+        exec("DELETE FROM extensions WHERE id LIKE 'builtin.%' AND id NOT IN (\(live))")
     }
 
 
@@ -184,9 +213,10 @@ actor ExtensionStore {
         sqlite3_step(stmt)
         sqlite3_finalize(stmt)
         // Keep the UserDefaults mirror in sync so the sync (non-actor)
-        // isBuiltinEnabled() path sees the same switch.
+        // isBuiltinEnabled() path, and the @AppStorage mirrors that gate
+        // Settings rows, see the same switch.
         if BuiltinExtension.isBuiltin(id) {
-            UserDefaults.standard.set(enabled, forKey: "builtin.enabled.\(id)")
+            UserDefaults.standard.set(enabled, forKey: ExtensionRegistry.builtinSwitchKey(id))
         }
     }
 
