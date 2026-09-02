@@ -13,9 +13,12 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
 
     /// Root directory for all FileProvider-visible files in the App Group container.
     static var providerRoot: URL {
+        // Fall back to the extension sandbox when the App Group entitlement
+        // is not honored (re-signed builds) instead of crashing on nil.
         let container = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: "group.com.openminis.app"
-        )!
+        ) ?? FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("AppGroupFallback", isDirectory: true)
         let url = container.appendingPathComponent("MinisFileProvider", isDirectory: true)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url

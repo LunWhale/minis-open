@@ -5,6 +5,31 @@ import Foundation
 enum SharedContainerStore {
     static let appGroupID = "group.com.openminis.app"
 
+    /// App Group container root with a sandbox fallback.
+    ///
+    /// When the App Group entitlement is honored (App Store build, normal
+    /// sideload, LiveContainer overlay) this returns the real group
+    /// container. Under re-signing (TrollStore, changed bundle ID, stripped
+    /// entitlements) `containerURL(forSecurityApplicationGroupIdentifier:)`
+    /// returns nil — we fall back to a sandbox-local directory instead of
+    /// crashing on a force-unwrap. FileProvider/Files-app sharing degrades
+    /// gracefully in fallback mode; all in-app features keep working.
+    static var resolvedContainerRoot: URL {
+        if let url = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupID) {
+            return url
+        }
+        let lib = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        let fallback = lib.appendingPathComponent("AppGroupFallback", isDirectory: true)
+        try? FileManager.default.createDirectory(at: fallback, withIntermediateDirectories: true)
+        return fallback
+    }
+
+    /// True when the real App Group entitlement is honored.
+    static var appGroupEntitled: Bool {
+        FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupID) != nil
+    }
+
     private static let pendingShareKey = "pendingShare"
 
     static var sharedDefaults: UserDefaults? {

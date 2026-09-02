@@ -869,9 +869,12 @@ struct MinisApp: App {
     private static func migrateSharedDirToAppGroup() {
         let fm = FileManager.default
         let library = fm.urls(for: .libraryDirectory, in: .userDomainMask).first!
-        let container = fm.containerURL(forSecurityApplicationGroupIdentifier: "group.com.openminis.app")!
+        // Under re-signing (TrollStore / changed bundle ID) the App Group
+        // entitlement may not be honored → containerURL returns nil. Don't
+        // crash; just skip the legacy App Group leg of the migration.
+        let container = fm.containerURL(forSecurityApplicationGroupIdentifier: SharedContainerStore.appGroupID)
 
-        let migrations: [(source: URL, dest: URL, label: String)] = [
+        var migrations: [(source: URL, dest: URL, label: String)] = [
             // Legacy Library/MinisChat/shared → new shared
             (library.appendingPathComponent("MinisChat/shared", isDirectory: true),
              AIChatViewModel.minisSharedPersistentDir, "shared"),
@@ -881,10 +884,13 @@ struct MinisApp: App {
             // Legacy Library/MinisChat/skills → new skills
             (library.appendingPathComponent("MinisChat/skills", isDirectory: true),
              AIChatViewModel.minisSkillsPersistentDir, "skills"),
-            // Old App Group MinisShared → new shared
-            (container.appendingPathComponent("MinisShared", isDirectory: true),
-             AIChatViewModel.minisSharedPersistentDir, "MinisShared→shared"),
         ]
+        // Old App Group MinisShared → new shared (only when the real
+        // App Group container is available).
+        if let container {
+            migrations.append((container.appendingPathComponent("MinisShared", isDirectory: true),
+                               AIChatViewModel.minisSharedPersistentDir, "MinisShared→shared"))
+        }
 
         for migration in migrations {
             guard fm.fileExists(atPath: migration.source.path) else { continue }
