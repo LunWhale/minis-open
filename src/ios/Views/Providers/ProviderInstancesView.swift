@@ -6,7 +6,6 @@ import UniformTypeIdentifiers
 struct ProviderInstancesView: View {
     @ObservedObject private var store = ProviderConfigStore.shared
     @State private var showAddProvider = false
-    @State private var showImportFile = false
     @State private var importMessage: String?
     @State private var showImportResult = false
     @State private var forceSyncToast: String?
@@ -102,7 +101,7 @@ struct ProviderInstancesView: View {
                         Label(String(localized: "Add Provider"), systemImage: "plus")
                     }
                     Button {
-                        DeferredPresentation.afterMenuDismiss { showImportFile = true }
+                        presentImportPicker()
                     } label: {
                         Label(String(localized: "Import Provider"), systemImage: "square.and.arrow.down")
                     }
@@ -125,37 +124,9 @@ struct ProviderInstancesView: View {
                 AddProviderView()
             }
         }
-        .fileImporter(isPresented: $showImportFile,
-                      allowedContentTypes: [.json, .plainText, .data]) { result in
-            // [T-filepick-ingest] Two bugs lived here:
-            //   • `allowedContentTypes: [.json]` greys out anything the provider
-            //     reports as a dynamic UTI (a .json downloaded from a chat,
-            //     mailed, or exported by another app), which is the "弹窗出现但
-            //     一个都选不了" report. JSON validity is checked after the pick
-            //     anyway, so the filter only needs to keep it a file.
-            //   • requiring startAccessingSecurityScopedResource() to return true
-            //     rejected every successful pick, because .fileImporter hands back
-            //     an in-container copy that was never security-scoped.
-            switch result {
-            case .success(let url):
-                do {
-                    let json = try FilePickIngest.readText(url)
-                    if let label = store.importInstanceJSON(json) {
-                        importMessage = String(localized: "Imported provider \"\(label)\" successfully.")
-                    } else {
-                        importMessage = String(localized: "Invalid provider configuration file.")
-                    }
-                } catch {
-                    importMessage = String(localized: "Failed to read file.")
-                }
-                showImportResult = true
-            case .failure(let error):
-                if !FilePickIngest.isUserCancellation(error) {
-                    importMessage = String(localized: "Failed to read file.")
-                    showImportResult = true
-                }
-            }
-        }
+        // [T-uikit-docpicker] Import goes through the UIKit picker bridge — the
+        // SwiftUI .fileImporter that lived here presented a picker that swallowed
+        // taps, so no config could ever be imported.
         .alert(String(localized: "Import"), isPresented: $showImportResult) {
             Button("OK") {}
         } message: {
@@ -174,6 +145,28 @@ struct ProviderInstancesView: View {
             }
         }
         .animation(.spring(response: 0.3), value: forceSyncToast)
+    }
+
+    /// [T-uikit-docpicker] Present the config-import picker via UIKit. The
+    /// filter stays broad ([.json, .plainText, .data]) because exported configs
+    /// can arrive under dynamic UTIs; validity is checked after the pick
+    /// (startAccessingSecurityScopedResource() returning false is tolerated —
+    /// picked in-container copies were never security-scoped).
+    private func presentImportPicker() {
+        DocumentPickerBridge.present(allowedContentTypes: [.json, .plainText, .data]) { urls in
+            guard let url = urls.first else { return }
+            do {
+                let json = try FilePickIngest.readText(url)
+                if let label = store.importInstanceJSON(json) {
+                    importMessage = String(localized: "Imported provider \"\(label)\" successfully.")
+                } else {
+                    importMessage = String(localized: "Invalid provider configuration file.")
+                }
+            } catch {
+                importMessage = String(localized: "Failed to read file.")
+            }
+            showImportResult = true
+        }
     }
 
     @available(iOS 17.0, *)

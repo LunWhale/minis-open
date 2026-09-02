@@ -1,4 +1,6 @@
 import Foundation
+import UIKit
+import UniformTypeIdentifiers
 
 private let importLog = AppLogger(category: "Share")
 
@@ -115,6 +117,82 @@ enum FilePickIngest {
             }
         }
         throw CocoaError(.fileReadInvalidFileName)
+    }
+}
+
+/// Presents a `UIDocumentPickerViewController` from the topmost view controller.
+///
+/// [T-uikit-docpicker] `.fileImporter` broke hard on this device class: the picker
+/// window appears, but taps on files are swallowed — no dismissal, no result, no
+/// error (reported across TrollStore / Sideloadly / Xcode installs). The picker
+/// is being presented onto a presentation context SwiftUI is already tearing down,
+/// so its delegate never fires. UIKit presentation from the CURRENT topmost VC
+/// bypasses SwiftUI's coordinator entirely and restores selection.
+///
+/// The coordinator is retained statically until the picker closes (pick or
+/// cancel), and presentation is deferred one beat so it never collides with a
+/// Menu / confirmationDialog dismissal — same reason DeferredPresentation exists.
+enum DocumentPickerBridge {
+    private static var activeCoordinator: Coordinator?
+
+    @MainActor
+    static func present(
+        allowedContentTypes: [UTType],
+        allowsMultipleSelection: Bool = false,
+        handler: @escaping @MainActor ([URL]) -> Void
+    ) {
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(DeferredPresentation.menuDismissInterval * 1_000_000_000))
+            guard let presenter = Self.topPresenter() else {
+                importLog.error("[DocPicker] no presenter available")
+                return
+            }
+            let picker = UIDocumentPickerViewController(forOpeningContentTypes: allowedContentTypes, asCopy: true)
+            picker.allowsMultipleSelection = allowsMultipleSelection
+            let coordinator = Coordinator(handler: handler)
+            picker.delegate = coordinator
+            activeCoordinator = coordinator
+            if let pop = picker.popoverPresentationController {
+                pop.sourceView = presenter.view
+                pop.sourceRect = CGRect(x: presenter.view.bounds.midX, y: presenter.view.bounds.midY, width: 1, height: 1)
+            }
+            presenter.present(picker, animated: true)
+        }
+    }
+
+    @MainActor
+    private static func topPresenter() -> UIViewController? {
+        guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first,
+              let rootVC = scene.windows.first(where: { $0.isKeyWindow })?.rootViewController
+                ?? scene.windows.first?.rootViewController else {
+            return nil
+        }
+        var top = rootVC
+        while let presented = top.presentedViewController { top = presented }
+        return top
+    }
+
+    private final class Coordinator: NSObject, UIDocumentPickerDelegate {
+        private let handler: @MainActor ([URL]) -> Void
+
+        init(handler: @escaping @MainActor ([URL]) -> Void) {
+            self.handler = handler
+        }
+
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            finish(controller, urls)
+        }
+
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+            finish(controller, [])
+        }
+
+        private func finish(_ controller: UIDocumentPickerViewController, _ urls: [URL]) {
+            let handler = self.handler
+            controller.dismiss(animated: true)
+            DocumentPickerBridge.activeCoordinator = nil
+            Task { @MainActor in handler(urls) }
+        }
     }
 }
 

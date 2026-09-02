@@ -339,7 +339,6 @@ struct AIChatView: View {
     @State private var isDropTargeted = false
     @State private var showCamera = false
     @State private var showPhotoPicker = false
-    @State private var showDocumentPicker = false
     @State private var showMoveToSheet = false
     @State private var showClearChatConfirm = false
     /// [T-new-chat-menu-entry] Confirmation gate for "New Chat" from the "…"
@@ -475,7 +474,7 @@ struct AIChatView: View {
     /// True when any sheet or fullScreenCover is presented (suppress auto-focus to avoid keyboard bugs).
     private var hasOverlayPresented: Bool {
         showFileBrowser || showBrowserSheet || showTerminal || showCamera
-            || showPhotoPicker || showDocumentPicker || showModelPicker
+            || showPhotoPicker || showModelPicker
     }
 
     /// Tracks whether this ChatView is the currently visible screen.
@@ -1207,25 +1206,9 @@ struct AIChatView: View {
                 }
             }
         }
-        .fileImporter(
-            isPresented: $showDocumentPicker,
-            allowedContentTypes: [.image, .pdf, .plainText, .json, .sourceCode, .presentation, .spreadsheet, .data],
-            allowsMultipleSelection: true
-        ) { result in
-            switch result {
-            case .success(let urls):
-                for url in urls {
-                    vm.addFileAttachment(from: url)
-                }
-            case .failure(let error):
-                // Dismissing the picker is reported as a failure too; logging it
-                // as an error buried the real ones. Per-file copy failures are
-                // surfaced to the user inside addFileAttachment.
-                if !FilePickIngest.isUserCancellation(error) {
-                    minisLogger.error("File import failed: \(error.localizedDescription)")
-                }
-            }
-        }
+        // [T-uikit-docpicker] Document picks go through UIKit now (see
+        // DocumentPickerBridge): the SwiftUI .fileImporter used here presented a
+        // picker whose taps were swallowed, so files could never be attached.
         .onAppear {
             let sinceInit = (CFAbsoluteTimeGetCurrent() - AIChatViewModel.onAppearTimestamp) * 1000
             minisLogger.info("[SessionLoad] onAppear T+\(String(format: "%.0f", sinceInit))ms isNew=\(cached.isNew) msgs=\(vm.messages.count)")
@@ -3081,7 +3064,7 @@ struct AIChatView: View {
                 // see DeferredPresentation.
                 Button { DeferredPresentation.afterMenuDismiss { showCamera = true } } label: { Label("Take Photo", systemImage: "camera") }
                 Button { DeferredPresentation.afterMenuDismiss { showPhotoPicker = true } } label: { Label("Choose Photos & Videos", systemImage: "photo.on.rectangle") }
-                Button { DeferredPresentation.afterMenuDismiss { showDocumentPicker = true } } label: { Label("Add File", systemImage: "doc") }
+                Button { presentDocumentPicker { vm.addFileAttachment(from: $0) } } label: { Label("Add File", systemImage: "doc") }
             } label: {
                 icon
             }
@@ -3095,8 +3078,19 @@ struct AIChatView: View {
                 // picker can show up and still not accept a selection.
                 Button { DeferredPresentation.afterMenuDismiss { showCamera = true } } label: { Label("Take Photo", systemImage: "camera") }
                 Button { DeferredPresentation.afterMenuDismiss { showPhotoPicker = true } } label: { Label("Choose Photos & Videos", systemImage: "photo.on.rectangle") }
-                Button { DeferredPresentation.afterMenuDismiss { showDocumentPicker = true } } label: { Label("Add File", systemImage: "doc") }
+                Button { presentDocumentPicker { vm.addFileAttachment(from: $0) } } label: { Label("Add File", systemImage: "doc") }
             }
+        }
+    }
+
+    /// [T-uikit-docpicker] UIKit document picker for chat attachments. The
+    /// deferred presentation is handled inside the bridge.
+    private func presentDocumentPicker(attach: @escaping @MainActor (URL) -> Void) {
+        DocumentPickerBridge.present(
+            allowedContentTypes: [.image, .pdf, .plainText, .json, .sourceCode, .presentation, .spreadsheet, .data],
+            allowsMultipleSelection: true
+        ) { urls in
+            for url in urls { attach(url) }
         }
     }
 

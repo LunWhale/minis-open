@@ -170,7 +170,6 @@ struct AddProviderView: View {
     @State private var showKimiLogin = false
     @State private var oauthAuthTime: Date?
     @State private var showDataSharingConsent = false
-    @State private var showImportFile = false
     @State private var importMessage: String?
     @State private var showImportResult = false
     @State private var importSucceeded = false
@@ -324,10 +323,8 @@ struct AddProviderView: View {
                 }
             }
         }
-        .fileImporter(isPresented: $showImportFile,
-                      allowedContentTypes: [.json, .plainText, .data]) { result in
-            handleImport(result)
-        }
+        // [T-uikit-docpicker] Import goes through the UIKit picker bridge — the
+        // SwiftUI .fileImporter presented a picker that swallowed taps.
         .alert(String(localized: "Import"), isPresented: $showImportResult) {
             Button("OK") {
                 if importSucceeded { dismiss() }
@@ -342,31 +339,31 @@ struct AddProviderView: View {
         }
     }
 
-    private func handleImport(_ result: Result<URL, Error>) {
-        importSucceeded = false
-        switch result {
-        case .success(let url):
-            // [T-filepick-ingest] Same two bugs as ProviderInstancesView: a
-            // non-scoped (in-container) copy is not an access failure, and UTF-16
-            // exports are not "unreadable".
-            guard let json = try? FilePickIngest.readText(url) else {
-                importMessage = String(localized: "Failed to read file.")
-                showImportResult = true
-                return
-            }
-            if let label = store.importInstanceJSON(json) {
-                importMessage = String(localized: "Imported provider \"\(label)\" successfully.")
-                importSucceeded = true
-            } else {
-                importMessage = String(localized: "Invalid provider configuration file.")
-            }
-            showImportResult = true
-        case .failure(let error):
-            if !FilePickIngest.isUserCancellation(error) {
-                importMessage = String(localized: "Failed to read file.")
-                showImportResult = true
-            }
+    /// [T-uikit-docpicker] Present the config-import picker via UIKit.
+    private func presentImportPicker() {
+        DocumentPickerBridge.present(allowedContentTypes: [.json, .plainText, .data]) { urls in
+            guard let url = urls.first else { return }
+            handleImport(url)
         }
+    }
+
+    private func handleImport(_ url: URL) {
+        importSucceeded = false
+        // [T-filepick-ingest] Same two bugs as ProviderInstancesView: a
+        // non-scoped (in-container) copy is not an access failure, and UTF-16
+        // exports are not "unreadable".
+        guard let json = try? FilePickIngest.readText(url) else {
+            importMessage = String(localized: "Failed to read file.")
+            showImportResult = true
+            return
+        }
+        if let label = store.importInstanceJSON(json) {
+            importMessage = String(localized: "Imported provider \"\(label)\" successfully.")
+            importSucceeded = true
+        } else {
+            importMessage = String(localized: "Invalid provider configuration file.")
+        }
+        showImportResult = true
     }
 
     private var navigationTitle: String {
@@ -437,7 +434,7 @@ struct AddProviderView: View {
 
         Section {
             Button {
-                showImportFile = true
+                presentImportPicker()
             } label: {
                 HStack(spacing: 12) {
                     Image(systemName: "square.and.arrow.down")

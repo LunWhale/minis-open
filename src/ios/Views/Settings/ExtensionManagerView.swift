@@ -8,11 +8,11 @@
 //
 
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 struct ExtensionManagerView: View {
     @State private var records: [ExtensionStore.Record] = []
-    @State private var showFilePicker = false
     @State private var isInstalling = false
     @State private var errorMessage: String?
     @State private var showInfo: ExtensionStore.Record?
@@ -85,7 +85,7 @@ struct ExtensionManagerView: View {
                         }
                         .accessibilityLabel("Extension Debug Log")
                         Button {
-                            showFilePicker = true
+                            presentInstallPicker()
                         } label: {
                             Image(systemName: "plus")
                         }
@@ -112,13 +112,9 @@ struct ExtensionManagerView: View {
                     settings: settingsDefs[record.id] ?? []
                 )
             }
-            .fileImporter(
-                isPresented: $showFilePicker,
-                allowedContentTypes: [.zip, .data],
-                allowsMultipleSelection: false
-            ) { result in
-                handleFileImport(result)
-            }
+            // [T-uikit-docpicker] Extension install goes through the UIKit
+            // picker bridge — the SwiftUI .fileImporter presented a picker that
+            // swallowed taps.
             .task { await reload() }
     }
 
@@ -226,38 +222,40 @@ struct ExtensionManagerView: View {
 
     // MARK: - Actions
 
-    private func handleFileImport(_ result: Result<[URL], Error>) {
-        do {
-            let urls = try result.get()
-            guard let url = urls.first else { return }
-            isInstalling = true
-            errorMessage = nil
-            Task {
-                // [T-filepick-ingest] The scope bracket used to sit in the OUTER
-                // function with a `defer`, so it stopped accessing as soon as
-                // handleFileImport returned — while this Task was still reading
-                // the zip. Bundles from a document provider therefore failed with
-                // a read error that looked like a corrupt extension. The bracket
-                // now covers the read itself, and a false return is tolerated
-                // because .fileImporter usually hands back an in-container copy.
-                let accessing = url.startAccessingSecurityScopedResource()
-                defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-                do {
-                    let manifest = try await ExtensionInstaller.install(from: url)
-                    await ExtensionRegistry.shared.reload()
-                    await reload()
-                    isInstalling = false
-                    AppLogger(category: "Extension").info("Installed \(manifest.id) v\(manifest.version)")
-                } catch {
-                    errorMessage = error.localizedDescription
-                    isInstalling = false
-                }
-            }
-        } catch {
-            // Dismissing the picker arrives as a failure; don't show it as an
-            // install error.
-            if !FilePickIngest.isUserCancellation(error) {
+    /// [T-uikit-docpicker] Present the extension-bundle picker via UIKit.
+    private func presentInstallPicker() {
+        DocumentPickerBridge.present(
+            allowedContentTypes: [.zip, .data],
+            allowsMultipleSelection: false
+        ) { urls in
+            handleFileImport(urls)
+        }
+    }
+
+    private func handleFileImport(_ urls: [URL]) {
+        guard let url = urls.first else { return }
+        isInstalling = true
+        errorMessage = nil
+        Task {
+            // [T-filepick-ingest] The scope bracket used to sit in the OUTER
+            // function with a `defer`, so it stopped accessing as soon as
+            // handleFileImport returned — while this Task was still reading
+            // the zip. Bundles from a document provider therefore failed with
+            // a read error that looked like a corrupt extension. The bracket
+            // now covers the read itself, and a false return is tolerated
+            // because the UIKit picker (asCopy: true) hands back an
+            // in-container copy.
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+            do {
+                let manifest = try await ExtensionInstaller.install(from: url)
+                await ExtensionRegistry.shared.reload()
+                await reload()
+                isInstalling = false
+                AppLogger(category: "Extension").info("Installed \(manifest.id) v\(manifest.version)")
+            } catch {
                 errorMessage = error.localizedDescription
+                isInstalling = false
             }
         }
     }
