@@ -23,6 +23,15 @@ first-class extension system, and a coding toolchain inside the sandbox.
 
 ## What this fork adds
 
+> **Pluggable and token-lean.** Upstream is feature-complete, but in real-world
+> use it burns a lot of tokens per request. This fork borrows the minimalist
+> philosophy of **pi-agent** and the **deepseek harness**: the system prompt and
+> the agent's feature surface are split into pluggable modules (Todo, sub-agents,
+> Memory, Skills, MCP, Soul, mounted folders, environment variables, coding
+> toolchain…), each toggleable in the Extensions manager. Turning off what you
+> don't use — or trimming the prompt modules — can noticeably lower token
+> consumption. A single unified "minimal mode" may be added later.
+
 Compared to upstream v1.12, this fork ships:
 
 | Piece | What it does |
