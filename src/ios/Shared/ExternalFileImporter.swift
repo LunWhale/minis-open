@@ -2,6 +2,122 @@ import Foundation
 
 private let importLog = AppLogger(category: "Share")
 
+/// Presents a modal that was requested from *inside* a `Menu` or
+/// `.confirmationDialog` button, one animation cycle after the tap.
+///
+/// Both of those controls dismiss themselves when their button fires. Setting a
+/// `isPresented: true` binding in the same runloop turn makes SwiftUI present
+/// the new modal while the menu/dialog is still tearing down, and the two
+/// presentations collide on the same hosting controller. The observable
+/// failure is not "nothing happens" — the picker does appear — but it lands on
+/// a controller that is going away, so taps on rows are swallowed, or the pick
+/// completes and SwiftUI drops the result because the coordinator that asked
+/// for it no longer exists. That is the "文件管理器弹出来了，但选不了 / 选完没反应"
+/// symptom on Settings → Providers (Import), the chat `+` attachment menu, and
+/// every other menu-driven import in the app.
+///
+/// 0.25 s is not arbitrary: it is the same interval this app already uses to
+/// sequence one alert behind another (CloudSyncSettingsView), i.e. the time it
+/// takes the system dismissal animation to finish on the slowest device class.
+/// A plain `.async` is NOT enough here — the menu's own dismissal is scheduled
+/// on a later turn than the button action.
+enum DeferredPresentation {
+    /// Interval that lets a menu/dialog finish dismissing before the next modal
+    /// is presented. Kept as one named constant so every call site agrees.
+    static let menuDismissInterval: TimeInterval = 0.25
+
+    static func afterMenuDismiss(_ present: @escaping @MainActor () -> Void) {
+        let nanos = UInt64(menuDismissInterval * 1_000_000_000)
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: nanos)
+            present()
+        }
+    }
+}
+
+/// Reads/copies a file the user just picked in a document picker.
+///
+/// Two properties of picker-returned URLs break the naive implementation, and
+/// both were reported as "选了文件但没上传":
+///
+///  * `.fileImporter` hands back a copy **inside our own container** for most
+///    providers, so `startAccessingSecurityScopedResource()` returns `false`.
+///    `false` means "this URL was never scoped", NOT "access denied" — treating
+///    it as a failure rejects every working file.
+///  * A file still in iCloud (`status = not-downloaded`) cannot be read
+///    directly; an `NSFileCoordinator` *read assertion* is what asks the
+///    provider to materialize it first. This is the same recipe
+///    `ExternalFileImporter.ingest` uses.
+enum FilePickIngest {
+
+    /// Copy a picked file to `dest`. Throws only if the file genuinely could not
+    /// be read or written; the error is worth showing to the user.
+    static func copy(from src: URL, to dest: URL) throws {
+        let scoped = src.startAccessingSecurityScopedResource()
+        defer { if scoped { src.stopAccessingSecurityScopedResource() } }
+        let fm = FileManager.default
+        try? fm.createDirectory(at: dest.deletingLastPathComponent(),
+                                withIntermediateDirectories: true)
+        var coordinationError: NSError?
+        var copyError: Error?
+        NSFileCoordinator().coordinate(readingItemAt: src, options: [], error: &coordinationError) { readURL in
+            do {
+                if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
+                try fm.copyItem(at: readURL, to: dest)
+            } catch {
+                copyError = error
+            }
+        }
+        if let coordinationError { throw coordinationError }
+        guard copyError == nil else { throw copyError! }
+    }
+
+        /// Read a picked file's bytes, same tolerances as `copy`.
+    static func read(_ src: URL) throws -> Data {
+        let scoped = src.startAccessingSecurityScopedResource()
+        defer { if scoped { src.stopAccessingSecurityScopedResource() } }
+        var data: Data?
+        var readError: Error?
+        var coordinationError: NSError?
+        NSFileCoordinator().coordinate(readingItemAt: src, options: [], error: &coordinationError) { readURL in
+            do {
+                data = try Data(contentsOf: readURL, options: [.mappedIfSafe])
+            } catch {
+                readError = error
+            }
+        }
+        if let coordinationError { throw coordinationError }
+        if let data { return data }
+        throw readError ?? CocoaError(.fileReadUnknown)
+    }
+
+    /// `.fileImporter` reports a dismissed picker as a failure, so call sites must
+    /// not turn a cancel into an error dialog. Both codes are seen in the wild
+    /// depending on the iOS version.
+    static func isUserCancellation(_ error: Error) -> Bool {
+        let ns = error as NSError
+        // NSFileCancelledOperation / "user cancelled" is CocoaError 1001.
+        return (ns.domain == NSCocoaErrorDomain && ns.code == 1001)
+            || (ns.domain == NSURLErrorDomain && ns.code == URLError.cancelled.rawValue)
+    }
+
+    /// Read a picked text file, accepting the encodings an exported config
+    /// actually arrives in. `String(data:encoding:.utf8)` returns nil for UTF-16
+    /// (what TextEdit / Windows editors and some export tools write), which
+    /// surfaced as "Failed to read file" on a perfectly good JSON file.
+    static func readText(_ src: URL) throws -> String {
+        let data = try read(src)
+        for encoding: String.Encoding in [.utf8, .utf16, .utf16LittleEndian, .isoLatin1] {
+            if let s = String(data: data, encoding: encoding) {
+                // A BOM or a stray NUL in the first bytes means we guessed the
+                // wrong endianness — utf16 vs utf16LittleEndian both "decode".
+                if encoding == .utf8 || !s.contains("\0") { return s }
+            }
+        }
+        throw CocoaError(.fileReadInvalidFileName)
+    }
+}
+
 /// Ingests a `file://` URL that arrived via "Open in Minis" / "Copy to Minis"
 /// from the Files app (or any document provider) into the SAME PendingShare
 /// pipeline the Share Extension uses. The file is copied into the App Group

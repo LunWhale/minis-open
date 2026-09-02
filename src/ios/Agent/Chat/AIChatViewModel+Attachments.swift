@@ -175,10 +175,14 @@ extension AIChatViewModel {
         let fileName = sourceURL.lastPathComponent
         let destURL = dir.appendingPathComponent("\(UUID().uuidString.prefix(8))_\(fileName)")
         do {
-            // sourceURL may be security-scoped
-            let accessed = sourceURL.startAccessingSecurityScopedResource()
-            defer { if accessed { sourceURL.stopAccessingSecurityScopedResource() } }
-            try fm.copyItem(at: sourceURL, to: destURL)
+            // [T-filepick-ingest] Was: startAccessingSecurityScopedResource() as a
+            // precondition + a bare copyItem, with every failure swallowed into
+            // the log. That is the "在聊天里能选中文件，但它就是不出现" report:
+            // fileImporter's in-container copies return false from the scope call,
+            // and unmaterialized iCloud items fail a plain copyItem — in both
+            // cases the file was fine and only our read was fragile. See
+            // FilePickIngest.
+            try FilePickIngest.copy(from: sourceURL, to: destURL)
 
             if let date = originalDate {
                 try? fm.setAttributes([.creationDate: date, .modificationDate: date], ofItemAtPath: destURL.path)
@@ -210,6 +214,11 @@ extension AIChatViewModel {
             attachments.append(InputAttachment(fileName: fileName, cacheURL: destURL, kind: kind))
         } catch {
             logger.error("Failed to cache file attachment: \(error.localizedDescription)")
+            // Tell the user. An attachment that silently fails to appear is
+            // indistinguishable from "the button is broken", which is exactly how
+            // this was filed.
+            appendSystemInfo("Could not import \"\(fileName)\": \(error.localizedDescription)",
+                             icon: "exclamationmark.triangle")
         }
     }
 

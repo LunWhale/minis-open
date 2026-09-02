@@ -315,8 +315,10 @@ struct FileBrowserView: View {
                 }
                 Divider()
             }
+            // [T-menu-modal-race] Import File is the rootfs upload path; the
+            // picker it opens arrives while this menu is still dismissing.
             Button {
-                showImportPicker = true
+                DeferredPresentation.afterMenuDismiss { showImportPicker = true }
             } label: {
                 Label("Import File", systemImage: "plus")
             }
@@ -1316,8 +1318,12 @@ class FileBrowserViewModel: ObservableObject {
         let destDir = currentPath.resolvingSymlinksInPath()
         var failCount = 0
         for url in urls {
-            guard url.startAccessingSecurityScopedResource() else { failCount += 1; continue }
-            defer { url.stopAccessingSecurityScopedResource() }
+            // [T-filepick-ingest] This used to be a hard guard, so every file the
+            // picker had already copied into our container (the common case for
+            // on-device files) counted as a failed import. A false return means
+            // "this URL was never scoped", not "access denied".
+            let accessed = url.startAccessingSecurityScopedResource()
+            defer { if accessed { url.stopAccessingSecurityScopedResource() } }
             let destURL = destDir.appendingPathComponent(url.lastPathComponent)
             do {
                 if fm.fileExists(atPath: destURL.path) {

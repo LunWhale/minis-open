@@ -324,7 +324,8 @@ struct AddProviderView: View {
                 }
             }
         }
-        .fileImporter(isPresented: $showImportFile, allowedContentTypes: [.json]) { result in
+        .fileImporter(isPresented: $showImportFile,
+                      allowedContentTypes: [.json, .plainText, .data]) { result in
             handleImport(result)
         }
         .alert(String(localized: "Import"), isPresented: $showImportResult) {
@@ -345,14 +346,10 @@ struct AddProviderView: View {
         importSucceeded = false
         switch result {
         case .success(let url):
-            guard url.startAccessingSecurityScopedResource() else {
-                importMessage = String(localized: "Cannot access the selected file.")
-                showImportResult = true
-                return
-            }
-            defer { url.stopAccessingSecurityScopedResource() }
-            guard let data = try? Data(contentsOf: url),
-                  let json = String(data: data, encoding: .utf8) else {
+            // [T-filepick-ingest] Same two bugs as ProviderInstancesView: a
+            // non-scoped (in-container) copy is not an access failure, and UTF-16
+            // exports are not "unreadable".
+            guard let json = try? FilePickIngest.readText(url) else {
                 importMessage = String(localized: "Failed to read file.")
                 showImportResult = true
                 return
@@ -364,8 +361,11 @@ struct AddProviderView: View {
                 importMessage = String(localized: "Invalid provider configuration file.")
             }
             showImportResult = true
-        case .failure:
-            break
+        case .failure(let error):
+            if !FilePickIngest.isUserCancellation(error) {
+                importMessage = String(localized: "Failed to read file.")
+                showImportResult = true
+            }
         }
     }
 

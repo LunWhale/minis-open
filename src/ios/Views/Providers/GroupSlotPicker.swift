@@ -37,7 +37,7 @@ struct GroupSlotPicker: View {
 
             Divider()
             Button {
-                showCreate = true
+                DeferredPresentation.afterMenuDismiss { showCreate = true }  // [T-menu-modal-race]
             } label: {
                 Label("Create group from models…", systemImage: "plus.rectangle.on.folder")
             }

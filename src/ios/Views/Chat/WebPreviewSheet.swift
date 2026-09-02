@@ -329,7 +329,7 @@ struct WebPreviewMoreMenu: View {
                 Label(String(localized: "Print"), systemImage: "printer")
             }
             Button {
-                showShareSheet = true
+                DeferredPresentation.afterMenuDismiss { showShareSheet = true }  // [T-menu-modal-race]
             } label: {
                 Label(String(localized: "Share"), systemImage: "square.and.arrow.up")
             }
@@ -642,7 +642,7 @@ struct MinisSafariView: View {
                 Label(String(localized: "Print"), systemImage: "printer")
             }
             Button {
-                showShareSheet = true
+                DeferredPresentation.afterMenuDismiss { showShareSheet = true }  // [T-menu-modal-race]
             } label: {
                 Label(String(localized: "Share"), systemImage: "square.and.arrow.up")
             }

@@ -897,7 +897,7 @@ struct MinisTextPreviewView: View {
                             Label(String(localized: "Print"), systemImage: "printer")
                         }
                         .disabled(text.isEmpty)
-                        Button { showShareSheet = true } label: {
+                        Button { DeferredPresentation.afterMenuDismiss { showShareSheet = true } } label: {  // [T-menu-modal-race]
                             Label(String(localized: "Share"), systemImage: "square.and.arrow.up")
                         }
                     } label: {
@@ -1020,7 +1020,7 @@ struct MinisMarkdownPreviewView: View {
                             Label(String(localized: "Print"), systemImage: "printer")
                         }
                         .disabled(markdownContent.isEmpty)
-                        Button { showShareSheet = true } label: {
+                        Button { DeferredPresentation.afterMenuDismiss { showShareSheet = true } } label: {  // [T-menu-modal-race]
                             Label(String(localized: "Share"), systemImage: "square.and.arrow.up")
                         }
                         Button {

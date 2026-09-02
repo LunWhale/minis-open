@@ -93,13 +93,16 @@ struct ProviderInstancesView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
+                    // [T-menu-modal-race] Both items open a modal (sheet /
+                    // document picker). Presenting in the same turn as the menu's own
+                    // dismissal is what made "Import Provider" unusable here.
                     Button {
-                        showAddProvider = true
+                        DeferredPresentation.afterMenuDismiss { showAddProvider = true }
                     } label: {
                         Label(String(localized: "Add Provider"), systemImage: "plus")
                     }
                     Button {
-                        showImportFile = true
+                        DeferredPresentation.afterMenuDismiss { showImportFile = true }
                     } label: {
                         Label(String(localized: "Import Provider"), systemImage: "square.and.arrow.down")
                     }
@@ -122,29 +125,35 @@ struct ProviderInstancesView: View {
                 AddProviderView()
             }
         }
-        .fileImporter(isPresented: $showImportFile, allowedContentTypes: [.json]) { result in
+        .fileImporter(isPresented: $showImportFile,
+                      allowedContentTypes: [.json, .plainText, .data]) { result in
+            // [T-filepick-ingest] Two bugs lived here:
+            //   • `allowedContentTypes: [.json]` greys out anything the provider
+            //     reports as a dynamic UTI (a .json downloaded from a chat,
+            //     mailed, or exported by another app), which is the "弹窗出现但
+            //     一个都选不了" report. JSON validity is checked after the pick
+            //     anyway, so the filter only needs to keep it a file.
+            //   • requiring startAccessingSecurityScopedResource() to return true
+            //     rejected every successful pick, because .fileImporter hands back
+            //     an in-container copy that was never security-scoped.
             switch result {
             case .success(let url):
-                guard url.startAccessingSecurityScopedResource() else {
-                    importMessage = String(localized: "Cannot access the selected file.")
-                    showImportResult = true
-                    return
-                }
-                defer { url.stopAccessingSecurityScopedResource() }
-                guard let data = try? Data(contentsOf: url),
-                      let json = String(data: data, encoding: .utf8) else {
+                do {
+                    let json = try FilePickIngest.readText(url)
+                    if let label = store.importInstanceJSON(json) {
+                        importMessage = String(localized: "Imported provider \"\(label)\" successfully.")
+                    } else {
+                        importMessage = String(localized: "Invalid provider configuration file.")
+                    }
+                } catch {
                     importMessage = String(localized: "Failed to read file.")
-                    showImportResult = true
-                    return
-                }
-                if let label = store.importInstanceJSON(json) {
-                    importMessage = String(localized: "Imported provider \"\(label)\" successfully.")
-                } else {
-                    importMessage = String(localized: "Invalid provider configuration file.")
                 }
                 showImportResult = true
-            case .failure:
-                break
+            case .failure(let error):
+                if !FilePickIngest.isUserCancellation(error) {
+                    importMessage = String(localized: "Failed to read file.")
+                    showImportResult = true
+                }
             }
         }
         .alert(String(localized: "Import"), isPresented: $showImportResult) {

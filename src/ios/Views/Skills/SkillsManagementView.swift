@@ -131,13 +131,14 @@ struct SkillsManagementView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
+                    // [T-menu-modal-race] see DeferredPresentation
                     Button {
-                        showImportSheet = true
+                        DeferredPresentation.afterMenuDismiss { showImportSheet = true }
                     } label: {
                         Label(String(localized: "Import Skill"), systemImage: "square.and.arrow.down")
                     }
                     Button {
-                        showSkillsBrowser = true
+                        DeferredPresentation.afterMenuDismiss { showSkillsBrowser = true }
                     } label: {
                         Label(String(localized: "Minis Skills"), systemImage: "globe")
                     }

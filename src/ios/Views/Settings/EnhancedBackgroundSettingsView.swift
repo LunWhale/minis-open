@@ -145,6 +145,15 @@ struct EnhancedBackgroundSettingsView: View {
                     }
             } footer: {
                 Text("Lets the agent keep working in the background and keeps the task Live Activity refreshing in real time. Uses coarse, low-accuracy location only as a background heartbeat — it does not track or store your precise location.")
+                // [T-bg-location-os-floor] The heartbeat is implemented with
+                // CLBackgroundActivitySession + CLLocationUpdate.liveUpdates
+                // (iOS 17+) and has no iOS 16 fallback, so on iOS 16 this switch
+                // genuinely does nothing. Say it here rather than let the
+                // Keep-Alive tier below imply otherwise.
+                if !BackgroundKeepAliveManager.backgroundLocationLegAvailable {
+                    Text(String(localized: "Requires iOS 17 or later. On this device the location heartbeat cannot run — background keep-alive relies on the audio leg only.", comment: "Keep-alive"))
+                        .foregroundColor(.secondary)
+                }
             }
 
             Section {

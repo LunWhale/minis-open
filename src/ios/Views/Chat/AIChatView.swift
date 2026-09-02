@@ -465,8 +465,12 @@ struct AIChatView: View {
     @State private var titlePillEditSession: ChatSession?
     /// Default chat title for sessions without a generated title. Sourced
     /// from SOUL.md (`name`), falls back to "Minis". Refreshed on .soulMdChanged.
-    @State private var soulName: String = SoulStore.cachedMetadata.name.isEmpty
-        ? "Minis" : SoulStore.cachedMetadata.name
+    @State private var soulName: String = SoulStore.activeDisplayName
+    /// Mirror of the Soul feature-plugin switch, so the title reacts immediately
+    /// when Soul is toggled in Settings (no .soulMdChanged is posted for that).
+    /// [T-builtin-features]
+    @AppStorage(ExtensionRegistry.builtinSwitchKey(BuiltinExtension.soulID))
+    private var soulPluginOn = true
 
     /// True when any sheet or fullScreenCover is presented (suppress auto-focus to avoid keyboard bugs).
     private var hasOverlayPresented: Bool {
@@ -1214,7 +1218,12 @@ struct AIChatView: View {
                     vm.addFileAttachment(from: url)
                 }
             case .failure(let error):
-                minisLogger.error("File import failed: \(error.localizedDescription)")
+                // Dismissing the picker is reported as a failure too; logging it
+                // as an error buried the real ones. Per-file copy failures are
+                // surfaced to the user inside addFileAttachment.
+                if !FilePickIngest.isUserCancellation(error) {
+                    minisLogger.error("File import failed: \(error.localizedDescription)")
+                }
             }
         }
         .onAppear {
@@ -2112,8 +2121,10 @@ struct AIChatView: View {
                     // re-introducing the top crop.
                     .padding(.top, legacyLayout ? 0 : 2)
                     .onReceive(NotificationCenter.default.publisher(for: .soulMdChanged)) { _ in
-                        let n = SoulStore.cachedMetadata.name
-                        soulName = n.isEmpty ? "Minis" : n
+                        soulName = SoulStore.activeDisplayName
+                    }
+                    .onChange(of: soulPluginOn) { _ in
+                        soulName = SoulStore.activeDisplayName
                     }
             }
             .buttonStyle(.plain)
@@ -3064,9 +3075,13 @@ struct AIChatView: View {
 
         if #available(iOS 17, *) {
             Menu {
-                Button { showCamera = true } label: { Label("Take Photo", systemImage: "camera") }
-                Button { showPhotoPicker = true } label: { Label("Choose Photos & Videos", systemImage: "photo.on.rectangle") }
-                Button { showDocumentPicker = true } label: { Label("Add File", systemImage: "doc") }
+                // [T-menu-modal-race] Every one of these opens a system modal
+                // (camera / photo library / document picker). Firing them in the
+                // same turn as the menu's own dismissal loses the pick result —
+                // see DeferredPresentation.
+                Button { DeferredPresentation.afterMenuDismiss { showCamera = true } } label: { Label("Take Photo", systemImage: "camera") }
+                Button { DeferredPresentation.afterMenuDismiss { showPhotoPicker = true } } label: { Label("Choose Photos & Videos", systemImage: "photo.on.rectangle") }
+                Button { DeferredPresentation.afterMenuDismiss { showDocumentPicker = true } } label: { Label("Add File", systemImage: "doc") }
             } label: {
                 icon
             }
@@ -3075,9 +3090,12 @@ struct AIChatView: View {
                 icon
             }
             .confirmationDialog("Add Attachment", isPresented: $showAttachmentMenu) {
-                Button { showCamera = true } label: { Label("Take Photo", systemImage: "camera") }
-                Button { showPhotoPicker = true } label: { Label("Choose Photos & Videos", systemImage: "photo.on.rectangle") }
-                Button { showDocumentPicker = true } label: { Label("Add File", systemImage: "doc") }
+                // Same race on iOS 16, and worse: a dialog dismiss and a picker
+                // present collide on one hosting controller, which is why the
+                // picker can show up and still not accept a selection.
+                Button { DeferredPresentation.afterMenuDismiss { showCamera = true } } label: { Label("Take Photo", systemImage: "camera") }
+                Button { DeferredPresentation.afterMenuDismiss { showPhotoPicker = true } } label: { Label("Choose Photos & Videos", systemImage: "photo.on.rectangle") }
+                Button { DeferredPresentation.afterMenuDismiss { showDocumentPicker = true } } label: { Label("Add File", systemImage: "doc") }
             }
         }
     }

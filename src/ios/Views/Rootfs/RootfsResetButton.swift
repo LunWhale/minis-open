@@ -59,12 +59,12 @@ struct RootfsResetButton: View {
 
     private var compactButton: some View {
         Menu {
-            Button(action: { showResetAlert = true }) {
+            Button(action: { DeferredPresentation.afterMenuDismiss { showResetAlert = true } }) {
                 Label("Reset All", systemImage: "trash")
             }
 
             if showBackupOption {
-                Button(action: { showBackupAlert = true }) {
+                Button(action: { DeferredPresentation.afterMenuDismiss { showBackupAlert = true } }) {
                     Label("Reset & Backup", systemImage: "archivebox")
                 }
             }
@@ -77,12 +77,12 @@ struct RootfsResetButton: View {
 
     private var normalButton: some View {
         Menu {
-            Button(action: { showResetAlert = true }) {
+            Button(action: { DeferredPresentation.afterMenuDismiss { showResetAlert = true } }) {
                 Label("Reset All", systemImage: "trash")
             }
 
             if showBackupOption {
-                Button(action: { showBackupAlert = true }) {
+                Button(action: { DeferredPresentation.afterMenuDismiss { showBackupAlert = true } }) {
                     Label("Reset & Backup", systemImage: "archivebox")
                 }
             }

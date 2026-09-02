@@ -121,8 +121,11 @@ struct ModelGroupsView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button {
-                        showCreateGroup = true
-                        newGroupName = ""
+                        // [T-menu-modal-race]
+                        DeferredPresentation.afterMenuDismiss {
+                            showCreateGroup = true
+                            newGroupName = ""
+                        }
                     } label: {
                         Label(String(localized: "New Group"), systemImage: "plus")
                     }

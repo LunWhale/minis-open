@@ -85,13 +85,16 @@ struct MCPIntegrationsView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
+                    // [T-menu-modal-race] Menu item that opens a sheet / document
+                    // picker: presenting it the same turn as the menu's dismissal
+                    // loses the pick (Import JSON appeared to do nothing).
                     Button {
-                        showAddForm = true
+                        DeferredPresentation.afterMenuDismiss { showAddForm = true }
                     } label: {
                         Label(String(localized: "Add Server"), systemImage: "plus")
                     }
                     Button {
-                        showJSONImport = true
+                        DeferredPresentation.afterMenuDismiss { showJSONImport = true }
                     } label: {
                         Label(String(localized: "Import JSON"), systemImage: "doc.text")
                     }

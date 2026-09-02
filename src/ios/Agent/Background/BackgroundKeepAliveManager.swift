@@ -33,10 +33,27 @@ final class BackgroundKeepAliveManager: NSObject, ObservableObject, CLLocationMa
         case extended(location: Bool, audio: Bool)
     }
 
+    /// Whether the background-location leg can run at all on this OS.
+    ///
+    /// [T-bg-location-os-floor] The leg is implemented with
+    /// `CLBackgroundActivitySession` + `CLLocationUpdate.liveUpdates`, both
+    /// iOS 17+, and there is deliberately no iOS 16 fallback (the classic
+    /// `startUpdatingLocation` path was removed rather than left half-working).
+    /// Before this existed, `survivalTier` still reported
+    /// `.extended(location: true)` on iOS 16 whenever the toggles + permission
+    /// looked right — a green "Extended (Location)" badge over a leg that
+    /// cannot start, i.e. a false success signal in exactly the screen users
+    /// go to when background execution seems broken.
+    static var backgroundLocationLegAvailable: Bool {
+        if #available(iOS 17.0, *) { return true }
+        return false
+    }
+
     /// Reactive: all inputs are @Published on this ObservableObject, so the
     /// Settings row re-renders on toggle/permission changes automatically.
     var survivalTier: BackgroundSurvivalTier {
         let locationLeg = enhancedBackgroundEnabled
+            && Self.backgroundLocationLegAvailable
             && (locationAuthStatus == .authorizedAlways || locationAuthStatus == .authorizedWhenInUse)
         let audioLeg = backgroundSpeakEnabled
         if locationLeg || audioLeg {
@@ -1083,6 +1100,11 @@ final class BackgroundKeepAliveManager: NSObject, ObservableObject, CLLocationMa
                 self.liveUpdatesTask = nil
             }
             logger.info("[BKA][LocationLA] liveUpdates stream started")
+        } else {
+            // [T-bg-location-os-floor] No iOS 16 implementation exists, so say so
+            // in the log the user is told to send us when background execution
+            // "doesn't work" — previously the arm path fell through silently.
+            logger.warning("[BKA][LocationLA] background location leg requested but unavailable: iOS 17+ required (CLBackgroundActivitySession/liveUpdates), no fallback — silent-audio and Live Activity legs are unaffected")
         }
     }
 

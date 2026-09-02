@@ -230,12 +230,18 @@ struct ExtensionManagerView: View {
         do {
             let urls = try result.get()
             guard let url = urls.first else { return }
-            // fileImporter gives a security-scoped URL.
-            let accessing = url.startAccessingSecurityScopedResource()
-            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             isInstalling = true
             errorMessage = nil
             Task {
+                // [T-filepick-ingest] The scope bracket used to sit in the OUTER
+                // function with a `defer`, so it stopped accessing as soon as
+                // handleFileImport returned — while this Task was still reading
+                // the zip. Bundles from a document provider therefore failed with
+                // a read error that looked like a corrupt extension. The bracket
+                // now covers the read itself, and a false return is tolerated
+                // because .fileImporter usually hands back an in-container copy.
+                let accessing = url.startAccessingSecurityScopedResource()
+                defer { if accessing { url.stopAccessingSecurityScopedResource() } }
                 do {
                     let manifest = try await ExtensionInstaller.install(from: url)
                     await ExtensionRegistry.shared.reload()
@@ -248,7 +254,11 @@ struct ExtensionManagerView: View {
                 }
             }
         } catch {
-            errorMessage = error.localizedDescription
+            // Dismissing the picker arrives as a failure; don't show it as an
+            // install error.
+            if !FilePickIngest.isUserCancellation(error) {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 

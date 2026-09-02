@@ -42,13 +42,13 @@ struct AgentLoopModelsSection: View {
 
             Menu {
                 Button {
-                    showAddModels = true
+                    DeferredPresentation.afterMenuDismiss { showAddModels = true }  // [T-menu-modal-race]
                 } label: {
                     Label("Add Models", systemImage: "cpu")
                 }
                 if !availableGroups.isEmpty {
                     Button {
-                        showAddGroups = true
+                        DeferredPresentation.afterMenuDismiss { showAddGroups = true }  // [T-menu-modal-race]
                     } label: {
                         Label("Add Group", systemImage: "square.stack.3d.up")
                     }
