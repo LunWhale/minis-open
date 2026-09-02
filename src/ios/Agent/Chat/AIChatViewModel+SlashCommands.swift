@@ -387,6 +387,15 @@ extension AIChatViewModel {
         guard let cmd = Self.availableSlashCommands.first(where: { $0.title.lowercased() == name }) else {
             return false
         }
+        // [plugin] Typed execution must honour the same gates as the slash
+        // menu: `/memory` is withdrawn when the Memory System feature plugin
+        // is off (filteredSlashCommands already drops it), but a user who
+        // types it by hand would otherwise still flip the per-session flag.
+        // Returning false lets the text flow to the model as a normal
+        // message, which is the honest behaviour for a withdrawn command.
+        if cmd.id == "memory" && !ExtensionRegistry.builtinEnabled(BuiltinExtension.memoryID) {
+            return false
+        }
         executeSlashCommand(cmd)
         return true
     }
