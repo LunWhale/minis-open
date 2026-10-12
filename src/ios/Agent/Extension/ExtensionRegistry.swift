@@ -57,6 +57,7 @@ final class ExtensionRegistry {
                 ExtensionLogStore.shared.log("Failed to load \(record.id): \(error.localizedDescription)", level: .error)
             }
         }
+        refreshInterceptorFlag()
     }
 
     private func load(_ record: ExtensionStore.Record) async throws {
@@ -357,40 +358,72 @@ final class ExtensionRegistry {
 
     /// `AgentToolDefinition`s for all registered extension tools, namespaced
     /// as `extension_<id>_<name>` so collisions across extensions are avoided.
+    /// The author-written description (runtime registration first, manifest
+    /// fallback) and the manifest's JSON schema are surfaced so the model can
+    /// see what the tool does and which arguments it accepts.
     func extensionToolDefinitions() -> [AgentToolDefinition] {
         var defs: [AgentToolDefinition] = []
         for (extID, tools) in toolIndex {
             guard let manifest = manifests[extID] else { continue }
-            for (toolName, _) in tools {
-                let apiName = "extension_\(extID)_\(toolName)"
-                defs.append(AgentToolDefinition(
-                    name: apiName,
-                    description: "Extension tool '\(toolName)' from '\(manifest.name)'. Executes JavaScript in the extension's sandboxed runtime.",
-                    parameters: [
-                        "tool_title": AgentToolParam(type: .string, description: "Concise summary shown to the user."),
-                        "args": AgentToolParam(type: .string, description: "JSON object of arguments to pass to the extension tool."),
-                    ],
-                    required: ["tool_title", "args"]
+            for (toolName, tool) in tools {
+                defs.append(Self.extensionToolDefinition(
+                    extID: extID,
+                    manifestName: manifest.name,
+                    toolName: toolName,
+                    runtimeDescription: tool.description,
+                    schema: manifest.tools?.first(where: { $0.name == toolName })?.schema,
+                    runtime: "JavaScript"
                 ))
             }
         }
         // Lua tools.
         for (extID, tools) in luaToolIndex {
             guard let manifest = manifests[extID] else { continue }
-            for (toolName, _) in tools {
-                let apiName = "extension_\(extID)_\(toolName)"
-                defs.append(AgentToolDefinition(
-                    name: apiName,
-                    description: "Extension tool '\(toolName)' from '\(manifest.name)'. Executes Lua in the extension's sandboxed runtime.",
-                    parameters: [
-                        "tool_title": AgentToolParam(type: .string, description: "Concise summary shown to the user."),
-                        "args": AgentToolParam(type: .string, description: "JSON object of arguments to pass to the extension tool."),
-                    ],
-                    required: ["tool_title", "args"]
+            for (toolName, tool) in tools {
+                defs.append(Self.extensionToolDefinition(
+                    extID: extID,
+                    manifestName: manifest.name,
+                    toolName: toolName,
+                    runtimeDescription: tool.description,
+                    schema: manifest.tools?.first(where: { $0.name == toolName })?.schema,
+                    runtime: "Lua"
                 ))
             }
         }
         return defs
+    }
+
+    private static func extensionToolDefinition(
+        extID: String,
+        manifestName: String,
+        toolName: String,
+        runtimeDescription: String,
+        schema: [String: AnyCodable]?,
+        runtime: String
+    ) -> AgentToolDefinition {
+        let apiName = "extension_\(extID)_\(toolName)"
+        var description = runtimeDescription.isEmpty
+            ? "Extension tool '\(toolName)' from '\(manifestName)'."
+            : runtimeDescription
+        description += " (extension '\(manifestName)', runs \(runtime) in a sandboxed runtime)"
+        var argsDescription = "JSON object of arguments to pass to the extension tool."
+        if let schema,
+           !schema.isEmpty,
+           let data = try? JSONSerialization.data(
+               withJSONObject: schema.mapValues { $0.value }, options: [.sortedKeys]
+           ),
+           let json = String(data: data, encoding: .utf8) {
+            argsDescription += " Arguments schema: \(json)"
+        }
+        return AgentToolDefinition(
+            name: apiName,
+            description: description,
+            parameters: [
+                "tool_title": AgentToolParam(type: .string, description: "Concise summary shown to the user."),
+                "args": AgentToolParam(type: .string, description: argsDescription),
+            ],
+            required: ["tool_title", "args"]
+        )
     }
 
     /// Execute an extension tool by its namespaced API name
@@ -418,16 +451,17 @@ final class ExtensionRegistry {
             return ("Error: extension tool '\(apiName)' not found", true)
         }
 
-        // Parse args JSON.
+        // Parse the model-facing call payload and unwrap it back to the
+        // extension's own arguments ({tool_title, args} → args).
         var args: [String: Any] = [:]
         if let data = argsJSON.data(using: .utf8),
            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            args = obj
+            args = ExtensionJSRuntime.unwrapToolCallArgs(obj)
         }
 
         // JS runtime first, then Lua runtime.
         if let runtime = runtimes[extID], let tool = toolIndex[extID]?[toolName] {
-            return runtime.callTool(tool, args: args)
+            return await runtime.callTool(tool, args: args)
         }
         if let luaRuntime = luaRuntimes[extID], let luaTool = luaToolIndex[extID]?[toolName] {
             return luaRuntime.callTool(luaTool, args: args)
@@ -455,10 +489,11 @@ final class ExtensionRegistry {
     }
 
     /// Execute a registered extension command by name. Returns (output, isError).
+    /// JS handlers may return a value or a Promise (awaited).
     func executeExtensionCommand(name: String, args: [String]) async -> (String, Bool) {
         for (extID, cmds) in commandIndex {
             if let cmd = cmds[name], let runtime = runtimes[extID] {
-                return runtime.callCommand(cmd, args: args)
+                return await runtime.callCommand(cmd, args: args)
             }
         }
         for (extID, cmds) in luaCommandIndex {
@@ -507,6 +542,69 @@ final class ExtensionRegistry {
         manifests[extensionID]?.permissions ?? []
     }
 
+    // MARK: - Provider request interception
+
+    /// Thread-safe fast-path flag for network hot paths (Anthropic
+    /// URLProtocols): true when at least one loaded runtime has registered a
+    /// request interceptor. Avoids an actor hop on every request when no
+    /// extension participates.
+    private let interceptorFlagLock = NSLock()
+    private var _hasAnyRequestInterceptors = false
+
+    var hasAnyRequestInterceptors: Bool {
+        interceptorFlagLock.lock()
+        defer { interceptorFlagLock.unlock() }
+        return _hasAnyRequestInterceptors
+    }
+
+    /// Recompute the request-interceptor fast flag. Called after reload and
+    /// after JS-side intercept/unintercept/clear registrations.
+    func refreshInterceptorFlag() {
+        let value = runtimes.values.contains { !$0.requestInterceptors.isEmpty }
+        interceptorFlagLock.lock()
+        _hasAnyRequestInterceptors = value
+        interceptorFlagLock.unlock()
+    }
+
+    /// Apply every enabled extension's provider-request interceptors to an
+    /// outgoing model request, in extension-id order. Extensions must declare
+    /// the `requests` permission; the first actual use prompts via the
+    /// standard dialog and grants persist across launches. Runs on the main
+    /// actor because JSContext is not thread-safe.
+    @MainActor
+    func applyProviderRequestInterceptors(
+        to request: URLRequest,
+        provider: String,
+        model: String
+    ) async -> URLRequest {
+        let active = runtimes.filter { !$0.value.requestInterceptors.isEmpty }
+        guard !active.isEmpty else { return request }
+        var out = request
+        for extID in active.keys.sorted() {
+            guard let runtime = active[extID] else { continue }
+            guard manifestPermissions(for: extID).contains("requests") else {
+                logMissingRequestsPermissionOnce(extensionID: extID)
+                continue
+            }
+            let granted = await PermissionGate.request("requests", extensionID: extID)
+            guard granted else { continue }
+            out = await runtime.applyRequestInterceptors(
+                to: out, provider: provider, model: model, sessionId: ActiveSession.id()
+            )
+        }
+        return out
+    }
+
+    private var warnedMissingRequestsPermission: Set<String> = []
+
+    private func logMissingRequestsPermissionOnce(extensionID: String) {
+        guard !warnedMissingRequestsPermission.contains(extensionID) else { return }
+        warnedMissingRequestsPermission.insert(extensionID)
+        AppLogger(category: "ExtensionRegistry").warning(
+            "Extension \(extensionID) registered a request interceptor but does not declare the 'requests' permission — interceptor ignored"
+        )
+    }
+
     // MARK: - Native bridge
 
     private func makeBridge(extensionID: String, manifest: ExtensionManifest) -> ExtensionJSRuntime.Bridge {
@@ -544,7 +642,7 @@ final class ExtensionRegistry {
                 }
                 let granted = await PermissionGate.request("files", extensionID: extensionID)
                 guard granted else { return ("Permission denied: files", true) }
-                guard let host = Self.resolveSandboxPath(path) else {
+                guard let host = await Self.resolveSandboxPath(path) else {
                     return ("Error: only /var/minis/ paths are readable", true)
                 }
                 guard let data = try? Data(contentsOf: URL(fileURLWithPath: host)),
@@ -559,7 +657,7 @@ final class ExtensionRegistry {
                 }
                 let granted = await PermissionGate.request("files", extensionID: extensionID)
                 guard granted else { return ("Permission denied: files", true) }
-                guard let host = Self.resolveSandboxPath(path) else {
+                guard let host = await Self.resolveSandboxPath(path) else {
                     return ("Error: only /var/minis/ paths are writable", true)
                 }
                 do {
@@ -571,6 +669,57 @@ final class ExtensionRegistry {
                     return ("Wrote \(path) (\(content.count) chars)", false)
                 } catch {
                     return ("Error: cannot write \(path): \(error.localizedDescription)", true)
+                }
+            },
+            fileList: { path in
+                guard manifest.permissions.contains("files") else {
+                    return ("Error: extension '\(extensionID)' needs 'files' permission", true)
+                }
+                let granted = await PermissionGate.request("files", extensionID: extensionID)
+                guard granted else { return ("Permission denied: files", true) }
+                guard let host = await Self.resolveSandboxPath(path) else {
+                    return ("Error: only /var/minis/ paths are listable", true)
+                }
+                let fm = FileManager.default
+                var isDir: ObjCBool = false
+                guard fm.fileExists(atPath: host, isDirectory: &isDir), isDir.boolValue else {
+                    return ("Error: not a directory: \(path)", true)
+                }
+                guard let names = try? fm.contentsOfDirectory(atPath: host) else {
+                    return ("Error: cannot list \(path)", true)
+                }
+                var entries: [[String: Any]] = []
+                for name in names.sorted() {
+                    let full = (host as NSString).appendingPathComponent(name)
+                    var childIsDir: ObjCBool = false
+                    let exists = fm.fileExists(atPath: full, isDirectory: &childIsDir)
+                    let size = ((try? fm.attributesOfItem(atPath: full))?[.size] as? NSNumber)?.intValue ?? 0
+                    entries.append([
+                        "name": name,
+                        "isDirectory": exists ? childIsDir.boolValue : false,
+                        "size": size,
+                    ])
+                }
+                if let data = try? JSONSerialization.data(withJSONObject: entries),
+                   let json = String(data: data, encoding: .utf8) {
+                    return (json, false)
+                }
+                return ("[]", false)
+            },
+            fileDelete: { path in
+                guard manifest.permissions.contains("files") else {
+                    return ("Error: extension '\(extensionID)' needs 'files' permission", true)
+                }
+                let granted = await PermissionGate.request("files", extensionID: extensionID)
+                guard granted else { return ("Permission denied: files", true) }
+                guard let host = await Self.resolveSandboxPath(path), host != "/var/minis" else {
+                    return ("Error: only /var/minis/ paths are deletable", true)
+                }
+                do {
+                    try FileManager.default.removeItem(atPath: host)
+                    return ("Deleted \(path)", false)
+                } catch {
+                    return ("Error: cannot delete \(path): \(error.localizedDescription)", true)
                 }
             },
             requestPermission: { kind in
@@ -605,13 +754,36 @@ final class ExtensionRegistry {
         )
     }
 
-    /// Resolve a sandbox Linux path to a host path (only /var/minis/**).
-    static func resolveSandboxPath(_ linuxPath: String) -> String? {
-        let prefix = "/var/minis/"
-        guard linuxPath.hasPrefix(prefix) else { return nil }
-        let tail = String(linuxPath.dropFirst(prefix.count))
-        let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
-        return library.appendingPathComponent("MinisChat/minis/\(tail)").path
+    /// Resolve a sandbox Linux path (/var/minis/**) to its real host path.
+    /// Uses the live mount layer (global dirs + per-session buckets +
+    /// external mounts) first, then falls back to direct mappings that don't
+    /// require a booted kernel.
+    static func resolveSandboxPath(_ linuxPath: String) async -> String? {
+        guard linuxPath.hasPrefix("/var/minis/") else { return nil }
+        // 1. Live mount tables (shared/memory/skills, per-session buckets,
+        //    external mounts) — anything the kernel would route.
+        if let url = await ISHExecutionCoordinator.shared.hostURL(
+            for: linuxPath, sessionId: ActiveSession.id()
+        ) {
+            return url.path
+        }
+        // 2. Fallbacks that work before the kernel boots.
+        let globals: [(prefix: String, base: URL)] = [
+            (AIChatViewModel.minisSharedLinuxDir, AIChatViewModel.minisSharedPersistentDir),
+            (AIChatViewModel.minisMemoryLinuxDir, AIChatViewModel.minisMemoryPersistentDir),
+            (AIChatViewModel.minisSkillsLinuxDir, AIChatViewModel.minisSkillsPersistentDir),
+        ]
+        for (prefix, base) in globals {
+            if linuxPath == prefix { return base.path }
+            if linuxPath.hasPrefix(prefix + "/") {
+                return base.appendingPathComponent(String(linuxPath.dropFirst(prefix.count + 1))).path
+            }
+        }
+        if let sid = ActiveSession.id(),
+           let url = MinisFsRouter.shared.hostURL(forGuest: linuxPath, sid: sid) {
+            return url.path
+        }
+        return nil
     }
 }
 
@@ -622,10 +794,23 @@ final class ExtensionRegistry {
 /// per-extension grants for the session. Times out after 30s (deny).
 enum PermissionGate {
     private static var grantedCache: [String: Set<String>] = [:]  // extID → kinds
+    private static var deniedCache: [String: Set<String>] = [:]   // session-only denials
     private static let logger = AppLogger(category: "ExtensionPermission")
+    private static let persistPrefix = "ext.perm."
+
+    private static func persistKey(_ extensionID: String, _ kind: String) -> String {
+        "\(persistPrefix)\(extensionID).\(kind)"
+    }
 
     static func request(_ kind: String, extensionID: String) async -> Bool {
         if grantedCache[extensionID, default: []].contains(kind) { return true }
+        if deniedCache[extensionID, default: []].contains(kind) { return false }
+        // Grants persist across launches so users aren't re-prompted after
+        // every app restart.
+        if UserDefaults.standard.bool(forKey: persistKey(extensionID, kind)) {
+            grantedCache[extensionID, default: []].insert(kind)
+            return true
+        }
 
         let allowed = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
             let request = PermissionRequest(
@@ -652,8 +837,22 @@ enum PermissionGate {
         logger.info("\(extensionID) \(kind) -> \(allowed ? "granted" : "denied")")
         if allowed {
             grantedCache[extensionID, default: []].insert(kind)
+            UserDefaults.standard.set(true, forKey: persistKey(extensionID, kind))
+        } else {
+            deniedCache[extensionID, default: []].insert(kind)
         }
         return allowed
+    }
+
+    /// Drop persisted grants for an extension (called on uninstall).
+    static func reset(extensionID: String) {
+        grantedCache[extensionID] = nil
+        deniedCache[extensionID] = nil
+        let defaults = UserDefaults.standard
+        let prefix = "\(persistPrefix)\(extensionID)."
+        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix(prefix) {
+            defaults.removeObject(forKey: key)
+        }
     }
 
     private static func kindDescription(_ kind: String) -> String {
@@ -662,6 +861,7 @@ enum PermissionGate {
         case "files": return "read and write files under /var/minis/"
         case "network": return "make network requests"
         case "ui": return "render UI widgets in this session"
+        case "requests": return "read and modify outgoing AI model requests (URL, headers, body)"
         default: return "use device capabilities"
         }
     }

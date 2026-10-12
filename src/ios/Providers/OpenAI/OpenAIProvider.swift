@@ -615,6 +615,13 @@ final class OpenAIProvider: LLMProvider {
         // nested key order across calls and the cache misses on every request.
         request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
 
+        // Extension request interception: plugins may rewrite URL / method /
+        // headers / body before the request leaves the app. No-op when no
+        // extension registered an interceptor.
+        request = await ExtensionRegistry.shared.applyProviderRequestInterceptors(
+            to: request, provider: "openai", model: model.id
+        )
+
         #if DEBUG
         // Capture the actual on-wire body bytes for debug.llmRequests, so parity
         // checks can compare exactly what DeepSeek received (byte-for-byte).
@@ -760,6 +767,11 @@ final class OpenAIProvider: LLMProvider {
 
         request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
 
+        // Extension request interception (see streamRaw).
+        request = await ExtensionRegistry.shared.applyProviderRequestInterceptors(
+            to: request, provider: "openai", model: model.id
+        )
+
         #if DEBUG
         logOutgoingRequest(url: url, headers: request.allHTTPHeaderFields, body: body)
         // Capture into LastAPIRequestBody so debug.llmRequests sees the
@@ -874,6 +886,11 @@ final class OpenAIProvider: LLMProvider {
         }
 
         request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
+
+        // Extension request interception (see streamRaw).
+        request = await ExtensionRegistry.shared.applyProviderRequestInterceptors(
+            to: request, provider: "openai", model: model.id
+        )
 
         #if DEBUG
         logOutgoingRequest(url: url, headers: request.allHTTPHeaderFields, body: body)
@@ -1214,6 +1231,11 @@ final class OpenAIProvider: LLMProvider {
             request.httpBody = try JSONSerialization.data(withJSONObject: bodyObject, options: [.sortedKeys])
         }
 
+        // Extension request interception (see streamRaw).
+        request = await ExtensionRegistry.shared.applyProviderRequestInterceptors(
+            to: request, provider: "openai", model: model.id
+        )
+
         // [T-log-noise-privacy 2026-07-18] Log without query/fragment — custom
         // endpoints can carry credentials in the query string.
         let logURL = url.absoluteString.split(separator: "?", maxSplits: 1).first.map(String.init) ?? url.absoluteString
@@ -1313,6 +1335,11 @@ final class OpenAIProvider: LLMProvider {
                 body["response_format"] = "b64_json"
             }
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+            // Extension request interception (see streamRaw).
+            request = await ExtensionRegistry.shared.applyProviderRequestInterceptors(
+                to: request, provider: "openai", model: model.id
+            )
 
             #if DEBUG
             logOutgoingRequest(url: url, headers: request.allHTTPHeaderFields, body: body)
@@ -1502,6 +1529,12 @@ final class OpenAIProvider: LLMProvider {
 
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)
         request.httpBody = body
+
+        // Extension request interception (see streamRaw). Multipart bodies stay
+        // byte-identical unless an interceptor explicitly patches `body`.
+        request = await ExtensionRegistry.shared.applyProviderRequestInterceptors(
+            to: request, provider: "openai", model: model.id
+        )
 
         #if DEBUG
         logger.debug("📤 OpenAI /images/edits request: model=\(model.id) prompt=\(prompt.prefix(100)) images=\(images.count)")

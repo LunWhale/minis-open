@@ -17,6 +17,18 @@ import Foundation
 // minis.log("hello", 42)
 // ```
 //
+// Host bridges (synchronous; each call blocks on the async native bridge):
+// ```lua
+// minis.api.shell("uname -s", { timeout = 15 })   -- string output
+// minis.api.file.read("/var/minis/shared/x.txt")  -- string content
+// minis.api.file.write("/var/minis/shared/x.txt", "hi")
+// minis.api.file.list("/var/minis/shared")
+// minis.api.file.delete("/var/minis/shared/x.txt")
+// minis.api.permission.request("shell")           -- boolean
+// minis.api.settings.get("greetingPrefix")        -- value | nil
+// minis.api.settings.set("greetingPrefix", "Hi")
+// ```
+//
 // Function values are stored as references in the Lua registry and invoked
 // through the same executor paths as JS tools (callTool/callCommand).
 
@@ -26,6 +38,7 @@ import Foundation
 
 private let LUA_REGISTRYINDEX: Int32 = -1001000
 private let LUA_TFUNCTION: Int32 = 6
+private let LUA_TTABLE: Int32 = 5
 private let LUA_TNUMBER: Int32 = 3
 private let LUA_TSTRING: Int32 = 4
 private let LUA_TBOOLEAN: Int32 = 1
@@ -144,14 +157,26 @@ final class ExtensionLuaRuntime {
     // via lua_pcall, and reading the single returned string.
 
     func callTool(_ tool: RegisteredTool, args: [String: Any]) -> (String, Bool) {
-        return invoke(ref: tool.ref, argsTable: args)
+        let result = invoke(ref: tool.ref, pushArgs: { [self] in pushTable(args) })
+        ExtensionLogStore.shared.log(
+            "tool \(tool.name) \(result.1 ? "failed" : "ok")",
+            level: result.1 ? .warn : .info,
+            category: "ExtTool"
+        )
+        return result
     }
 
     func callCommand(_ command: RegisteredCommand, args: [String]) -> (String, Bool) {
-        return invoke(ref: command.ref, argsTable: ["args": args])
+        let result = invoke(ref: command.ref, pushArgs: { [self] in pushArray(args) })
+        ExtensionLogStore.shared.log(
+            "command \(command.name) \(result.1 ? "failed" : "ok")",
+            level: result.1 ? .warn : .info,
+            category: "ExtCmd"
+        )
+        return result
     }
 
-    private func invoke(ref: Int32, argsTable: [String: Any]) -> (String, Bool) {
+    private func invoke(ref: Int32, pushArgs: () -> Void) -> (String, Bool) {
         guard ref > 0 else { return ("Lua runtime: function not registered", true) }
         // Push registry[ref]
         lua_rawgeti(L, LUA_REGISTRYINDEX, Int(ref))
@@ -159,8 +184,9 @@ final class ExtensionLuaRuntime {
             lua_pop(L, 1)
             return ("Lua runtime: invalid function ref", true)
         }
-        // Push args as a table
-        pushTable(argsTable)
+        // Push the handler's argument table (tools: args dict, commands:
+        // positional word array — same shapes as the JS runtime).
+        pushArgs()
         if lua_pcall(L, 1, 1, 0) != 0 {
             let err = currentError()
             return (err, true)
@@ -198,6 +224,51 @@ final class ExtensionLuaRuntime {
     }
 
     // MARK: - Stack helpers
+
+    /// Read a string argument at `index`: positional (`f("x")`) or the named
+    /// field of a table argument (`f{key="x"}`). Used by host bridges so both
+    /// call styles work.
+    private func stringArg(_ index: Int32, field: String, from L: OpaquePointer?) -> String {
+        guard let L else { return "" }
+        if lua_type(L, index) == LUA_TTABLE {
+            lua_getfield(L, index, field)
+            let value = lua_tostring(L, -1).map { String(cString: $0) } ?? ""
+            lua_pop(L, 1)
+            return value
+        }
+        return lua_tostring(L, index).map { String(cString: $0) } ?? ""
+    }
+
+    /// Read a numeric argument at `index`: positional number or a table
+    /// field. Returns nil when absent/not numeric.
+    private func numberArg(_ index: Int32, field: String, from L: OpaquePointer?) -> Double? {
+        guard let L else { return nil }
+        if lua_type(L, index) == LUA_TTABLE {
+            lua_getfield(L, index, field)
+            let value = lua_type(L, -1) == LUA_TNUMBER ? lua_tonumber(L, -1) : nil
+            lua_pop(L, 1)
+            return value
+        }
+        return lua_type(L, index) == LUA_TNUMBER ? lua_tonumber(L, index) : nil
+    }
+
+    /// Read any Lua value at `index` as a Swift value (bool/number/string).
+    private func anyArg(_ index: Int32, from L: OpaquePointer?) -> Any? {
+        guard let L else { return nil }
+        if lua_type(L, index) == LUA_TBOOLEAN { return lua_toboolean(L, index) != 0 }
+        if lua_type(L, index) == LUA_TNUMBER { return lua_tonumber(L, index) }
+        if let s = lua_tostring(L, index) { return String(cString: s) }
+        return nil
+    }
+
+    /// Push a Lua array table (1-indexed) — command args positional shape.
+    private func pushArray(_ items: [String]) {
+        lua_newtable(L)
+        for (i, item) in items.enumerated() {
+            lua_pushstring(L, item)
+            lua_rawseti(L, -2, i + 1)
+        }
+    }
 
     private func pushTable(_ dict: [String: Any]) {
         lua_newtable(L)
@@ -336,6 +407,10 @@ final class ExtensionLuaRuntime {
                 lua_pop(state, 1)
             }
             AppLogger(category: "ExtLua[\(runtime.extensionID)]").info("\(parts.joined(separator: " "))")
+            ExtensionLogStore.shared.log(
+                parts.joined(separator: " "),
+                category: "ExtLua[\(runtime.extensionID)]"
+            )
             return 0
         }
         lua_pushlightuserdata(L, selfPtr)
@@ -356,9 +431,13 @@ final class ExtensionLuaRuntime {
                 return 1
             }
             let state = runtime.L
-            lua_getfield(state, 1, "cmd")
-            let cmd = lua_tostring(state, -1).map { String(cString: $0) } ?? ""
-            lua_pop(state, 1)
+            // Positional form `shell("cmd", {timeout=15})`; a
+            // `{cmd=..., timeout=...}` table is also accepted (compat).
+            let cmd = runtime.stringArg(1, field: "cmd", from: state)
+            let timeout = runtime.numberArg(2, field: "timeout", from: state)
+                ?? runtime.numberArg(1, field: "timeout", from: state)
+            var opts: [String: Any] = [:]
+            if let timeout, timeout > 0 { opts["timeout"] = Int(timeout) }
             guard !cmd.isEmpty, let bridge = runtime.bridge else {
                 lua_pushstring(L, "Error: shell bridge unavailable")
                 return 1
@@ -366,7 +445,7 @@ final class ExtensionLuaRuntime {
             let semaphore = DispatchSemaphore(value: 0)
             var output = "Error: shell timeout"
             Task {
-                let (out, isErr) = await bridge.shell(cmd, [:])
+                let (out, isErr) = await bridge.shell(cmd, opts)
                 output = isErr ? "Error: \(out)" : out
                 semaphore.signal()
             }
@@ -377,7 +456,11 @@ final class ExtensionLuaRuntime {
         lua_pushlightuserdata(L, selfPtr)
         lua_pushcclosure(L, shell, 1)
         lua_setfield(L, -2, "shell")
-        // api.file.read(path) → string
+        // api.file = { read, write, list, delete } — mirrors the JS API.
+        // Paths are positional (`file.read("/var/minis/x")`) or table-style
+        // (`file.read{path="/var/minis/x"}`).
+        _ = lua_newtable(L)
+        // file.read(path) → string
         let fileRead: @convention(c) (OpaquePointer?) -> Int32 = { L in
             guard let L else { return 1 }
             let upval = LUA_REGISTRYINDEX - 1
@@ -387,9 +470,7 @@ final class ExtensionLuaRuntime {
                 return 1
             }
             let state = runtime.L
-            lua_getfield(state, 1, "path")
-            let path = lua_tostring(state, -1).map { String(cString: $0) } ?? ""
-            lua_pop(state, 1)
+            let path = runtime.stringArg(1, field: "path", from: state)
             guard !path.isEmpty, let bridge = runtime.bridge else {
                 lua_pushstring(L, "Error: file bridge unavailable")
                 return 1
@@ -407,8 +488,99 @@ final class ExtensionLuaRuntime {
         }
         lua_pushlightuserdata(L, selfPtr)
         lua_pushcclosure(L, fileRead, 1)
+        lua_setfield(L, -2, "read")
+        // file.write(path, content) → string
+        let fileWrite: @convention(c) (OpaquePointer?) -> Int32 = { L in
+            guard let L else { return 1 }
+            let upval = LUA_REGISTRYINDEX - 1
+            guard let ud = lua_touserdata(L, upval),
+                  let runtime = Unmanaged<ExtensionLuaRuntime>.fromOpaque(ud).takeUnretainedValue().optionalSelf else {
+                lua_pushstring(L, "Error: runtime unavailable")
+                return 1
+            }
+            let state = runtime.L
+            let path = runtime.stringArg(1, field: "path", from: state)
+            let content = runtime.stringArg(2, field: "content", from: state)
+            guard !path.isEmpty, let bridge = runtime.bridge else {
+                lua_pushstring(L, "Error: file bridge unavailable")
+                return 1
+            }
+            let semaphore = DispatchSemaphore(value: 0)
+            var output = "Error: file write timeout"
+            Task {
+                let (out, isErr) = await bridge.fileWrite(path, content, false)
+                output = isErr ? "Error: \(out)" : out
+                semaphore.signal()
+            }
+            semaphore.wait()
+            lua_pushstring(L, output)
+            return 1
+        }
+        lua_pushlightuserdata(L, selfPtr)
+        lua_pushcclosure(L, fileWrite, 1)
+        lua_setfield(L, -2, "write")
+        // file.list(path) → JSON string [{name, isDirectory, size}]
+        let fileList: @convention(c) (OpaquePointer?) -> Int32 = { L in
+            guard let L else { return 1 }
+            let upval = LUA_REGISTRYINDEX - 1
+            guard let ud = lua_touserdata(L, upval),
+                  let runtime = Unmanaged<ExtensionLuaRuntime>.fromOpaque(ud).takeUnretainedValue().optionalSelf else {
+                lua_pushstring(L, "Error: runtime unavailable")
+                return 1
+            }
+            let state = runtime.L
+            let path = runtime.stringArg(1, field: "path", from: state)
+            guard !path.isEmpty, let bridge = runtime.bridge else {
+                lua_pushstring(L, "Error: file bridge unavailable")
+                return 1
+            }
+            let semaphore = DispatchSemaphore(value: 0)
+            var output = "Error: file list timeout"
+            Task {
+                let (out, isErr) = await bridge.fileList(path)
+                output = isErr ? "Error: \(out)" : out
+                semaphore.signal()
+            }
+            semaphore.wait()
+            lua_pushstring(L, output)
+            return 1
+        }
+        lua_pushlightuserdata(L, selfPtr)
+        lua_pushcclosure(L, fileList, 1)
+        lua_setfield(L, -2, "list")
+        // file.delete(path) → string
+        let fileDelete: @convention(c) (OpaquePointer?) -> Int32 = { L in
+            guard let L else { return 1 }
+            let upval = LUA_REGISTRYINDEX - 1
+            guard let ud = lua_touserdata(L, upval),
+                  let runtime = Unmanaged<ExtensionLuaRuntime>.fromOpaque(ud).takeUnretainedValue().optionalSelf else {
+                lua_pushstring(L, "Error: runtime unavailable")
+                return 1
+            }
+            let state = runtime.L
+            let path = runtime.stringArg(1, field: "path", from: state)
+            guard !path.isEmpty, let bridge = runtime.bridge else {
+                lua_pushstring(L, "Error: file bridge unavailable")
+                return 1
+            }
+            let semaphore = DispatchSemaphore(value: 0)
+            var output = "Error: file delete timeout"
+            Task {
+                let (out, isErr) = await bridge.fileDelete(path)
+                output = isErr ? "Error: \(out)" : out
+                semaphore.signal()
+            }
+            semaphore.wait()
+            lua_pushstring(L, output)
+            return 1
+        }
+        lua_pushlightuserdata(L, selfPtr)
+        lua_pushcclosure(L, fileDelete, 1)
+        lua_setfield(L, -2, "delete")
         lua_setfield(L, -2, "file")
-        // api.permission.request(kind) → boolean
+        // api.permission = { request } — mirrors the JS API.
+        // permission.request(kind) → boolean
+        _ = lua_newtable(L)
         let permission: @convention(c) (OpaquePointer?) -> Int32 = { L in
             guard let L else { return 1 }
             let upval = LUA_REGISTRYINDEX - 1
@@ -418,9 +590,7 @@ final class ExtensionLuaRuntime {
                 return 1
             }
             let state = runtime.L
-            lua_getfield(state, 1, "kind")
-            let kind = lua_tostring(state, -1).map { String(cString: $0) } ?? ""
-            lua_pop(state, 1)
+            let kind = runtime.stringArg(1, field: "kind", from: state)
             guard let bridge = runtime.bridge else {
                 lua_pushboolean(L, 0)
                 return 1
@@ -437,6 +607,7 @@ final class ExtensionLuaRuntime {
         }
         lua_pushlightuserdata(L, selfPtr)
         lua_pushcclosure(L, permission, 1)
+        lua_setfield(L, -2, "request")
         lua_setfield(L, -2, "permission")
 
         // api.settings = { get, set } — per-extension settings declared in
@@ -451,9 +622,7 @@ final class ExtensionLuaRuntime {
                 return 1
             }
             let state = runtime.L
-            lua_getfield(state, 1, "key")
-            let key = lua_tostring(state, -1).map { String(cString: $0) } ?? ""
-            lua_pop(state, 1)
+            let key = runtime.stringArg(1, field: "key", from: state)
             if let bridge = runtime.bridge, let value = bridge.settingsGet(runtime.extensionID, key) {
                 runtime.pushNativeValue(value, into: state)
             } else {
@@ -464,6 +633,22 @@ final class ExtensionLuaRuntime {
         lua_pushlightuserdata(L, selfPtr)
         lua_pushcclosure(L, settingsGet, 1)
         lua_setfield(L, -2, "get")
+        // settings.all() → table of current values
+        let settingsAll: @convention(c) (OpaquePointer?) -> Int32 = { L in
+            guard let L else { return 1 }
+            let upval = LUA_REGISTRYINDEX - 1
+            guard let ud = lua_touserdata(L, upval),
+                  let runtime = Unmanaged<ExtensionLuaRuntime>.fromOpaque(ud).takeUnretainedValue().optionalSelf,
+                  let bridge = runtime.bridge else {
+                lua_pushnil(L)
+                return 1
+            }
+            runtime.pushTable(bridge.settingsAll(runtime.extensionID))
+            return 1
+        }
+        lua_pushlightuserdata(L, selfPtr)
+        lua_pushcclosure(L, settingsAll, 1)
+        lua_setfield(L, -2, "all")
         // settings.set(key, value)
         let settingsSet: @convention(c) (OpaquePointer?) -> Int32 = { L in
             guard let L else { return 0 }
@@ -473,21 +658,18 @@ final class ExtensionLuaRuntime {
                 return 0
             }
             let state = runtime.L
-            lua_getfield(state, 1, "key")
-            let key = lua_tostring(state, -1).map { String(cString: $0) } ?? ""
-            lua_pop(state, 1)
-            lua_getfield(state, 1, "value")
+            let key = runtime.stringArg(1, field: "key", from: state)
+            // Positional `set("key", value)` or table `set{key=..., value=...}`.
             let value: Any?
-            if lua_type(state, -1) == LUA_TBOOLEAN {
-                value = lua_toboolean(state, -1) != 0
-            } else if lua_type(state, -1) == LUA_TNUMBER {
-                value = lua_tonumber(state, -1)
-            } else if let s = lua_tostring(state, -1) {
-                value = String(cString: s)
+            if lua_gettop(state) >= 2, lua_type(state, 2) != LUA_TNIL {
+                value = runtime.anyArg(2, from: state)
+            } else if lua_type(state, 1) == LUA_TTABLE {
+                lua_getfield(state, 1, "value")
+                value = runtime.anyArg(-1, from: state)
+                lua_pop(state, 1)
             } else {
                 value = nil
             }
-            lua_pop(state, 1)
             if let bridge = runtime.bridge, let value {
                 bridge.settingsSet(runtime.extensionID, key, value)
             }

@@ -26,9 +26,9 @@ struct ExtensionManifest: Codable, Equatable, Sendable {
     /// Extension capabilities. Values: "agent-tool", "command", "event-hook",
     /// "ui-widget", "theme".
     var kinds: [String]
-    /// Declared permissions: "shell", "network", "files", "device.health",
-    /// "device.calendar", "ui", etc. Enforced at first use via the standard
-    /// permission dialog.
+    /// Declared permissions: "shell", "network", "files", "requests",
+    /// "device.health", "device.calendar", "ui", etc. Enforced at first use
+    /// via the standard permission dialog. Grants persist across launches.
     var permissions: [String]
     /// Agent-side tool definitions.
     var tools: [ToolDef]?

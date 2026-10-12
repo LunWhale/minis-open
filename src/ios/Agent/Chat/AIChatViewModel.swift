@@ -5471,6 +5471,14 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                         }
                     }
                     logger.info("[ToolLifecycle] DISPATCHED toolId=\(tu.id.prefix(20)) tool=\(tu.name) sid=\(self.sessionId?.prefix(8) ?? "nil") appState=\(UIApplication.shared.applicationState == .active ? "fg" : "bg") suspended=\(self.streamingUIUpdatesSuspended) isProcessing=\(self.isProcessing)")
+                    // [M3-extensions] tool_call hook: fired before the tool
+                    // executes so extensions can observe/annotate the call.
+                    ExtensionRegistry.shared.emitLifecycleEvent("tool_call", data: [
+                        "sessionId": self.sessionId ?? "",
+                        "tool": tu.name,
+                        "toolId": tu.id,
+                        "args": tu.args,
+                    ])
                     group.addTask { [weak self] in
                         guard let self else {
                             // Self torn down mid-batch: synthesize a cancelled outcome
@@ -5501,6 +5509,18 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             for idx in 0..<toolEntries.count {
                 guard let outcome = outcomesByIndex[idx] else { continue }
                 toolResultParts.append(outcome.resultPart)
+                // [M3-extensions] tool_result hook: fired once per completed
+                // tool call with a bounded output preview (full text stays on
+                // the ToolSnapshot path).
+                if case let .toolResult(_, name, content, isError, _, _, _, _) = outcome.resultPart {
+                    ExtensionRegistry.shared.emitLifecycleEvent("tool_result", data: [
+                        "sessionId": self.sessionId ?? "",
+                        "tool": name,
+                        "toolId": outcome.toolId,
+                        "success": !isError,
+                        "output": String(content.prefix(2000)),
+                    ])
+                }
                 if let se = outcome.snapshotEntry {
                     pendingSnapshots[outcome.toolId] = se
                 }

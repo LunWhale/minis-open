@@ -365,16 +365,22 @@ extension AIChatViewModel {
     func tryExecuteInputAsSlashCommand() -> Bool {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard text.hasPrefix("/") else { return false }
-        let name = String(text.dropFirst()).lowercased()
+        let body = String(text.dropFirst())
+        let name = body.lowercased()
 
-        // [M3-extensions] Extension commands: "/<name>" where <name> is a
-        // registered extension command. Execute the JS handler and surface
-        // its output via appendSystemInfo (the same channel built-in slash
+        // [M3-extensions] Extension commands: "/<name> [args...]" where
+        // <name> is a registered extension command. Everything after the
+        // first whitespace is passed to the JS handler as args. Output is
+        // surfaced via appendSystemInfo (the same channel built-in slash
         // commands use for results).
         let extCommands = ExtensionRegistry.shared.extensionCommands()
-        if let matched = extCommands.first(where: { $0.name.lowercased() == name }) {
+        let firstToken = String(body.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: false).first ?? "")
+        let firstTokenLower = firstToken.lowercased()
+        if let matched = extCommands.first(where: { $0.name.lowercased() == firstTokenLower }) {
+            let rest = body.dropFirst(firstToken.count).trimmingCharacters(in: .whitespaces)
+            let args = rest.isEmpty ? [] : rest.split(separator: " ").map(String.init)
             Task {
-                let (output, isError) = await ExtensionRegistry.shared.executeExtensionCommand(name: matched.name, args: [])
+                let (output, isError) = await ExtensionRegistry.shared.executeExtensionCommand(name: matched.name, args: args)
                 let icon = isError ? "exclamationmark.triangle" : "puzzlepiece.extension.fill"
                 let label = isError ? "Extension command \(matched.name) failed" : "Extension command: \(matched.name)"
                 await MainActor.run {
@@ -416,7 +422,7 @@ extension AIChatViewModel {
         // savedInputBeforeSlash here — that flag isn't relevant to the
         // skill path (the menu was opened by typing "/", not by the "/"
         // button over existing text).
-        if cmd.isSkill || cmd.isMCP {
+        if cmd.isSkill || cmd.isMCP || cmd.isExtension {
             // Skill / MCP insertion has two flavors:
             //
             // 1. Menu was opened over EXISTING text (savedInputBeforeSlash

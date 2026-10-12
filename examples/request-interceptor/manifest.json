@@ -1,0 +1,54 @@
+{
+  "id": "com.example.request-interceptor",
+  "name": "Request Interceptor Demo",
+  "version": "1.0.0",
+  "description": "Headline feature demo: rewrites outgoing AI model requests from a plugin. Injects a custom header (X-Plugin-Tag) into every request sent to a chosen provider — no proxy, no relay. Toggle it from the extension's settings.",
+  "author": "Minis Example",
+  "kinds": ["event-hook", "command"],
+  "permissions": ["requests"],
+  "settings": [
+    {
+      "key": "tag",
+      "label": "Request tag",
+      "type": "text",
+      "default": "minis-open",
+      "placeholder": "e.g. minis-open",
+      "description": "Value sent as the X-Plugin-Tag header on matching model requests."
+    },
+    {
+      "key": "enabled",
+      "label": "Enable header injection",
+      "type": "boolean",
+      "default": true,
+      "description": "When off, the interceptor leaves every request untouched."
+    },
+    {
+      "key": "provider",
+      "label": "Only for provider",
+      "type": "select",
+      "default": "openai",
+      "options": ["openai", "anthropic", "gemini", "antigravity", "any"],
+      "description": "Which provider's requests get the header. `any` matches all providers."
+    },
+    {
+      "key": "verbose",
+      "label": "Log every request",
+      "type": "boolean",
+      "default": true,
+      "description": "When on, each intercepted (or skipped) request is written to the extension debug log (Extensions → the scroll icon). Turn off for quiet operation."
+    }
+  ],
+  "commands": [
+    {
+      "file": "agent/commands/intercept-status.js",
+      "name": "ext-intercept-status",
+      "description": "Shows the request-interceptor demo configuration"
+    }
+  ],
+  "hooks": [
+    {
+      "file": "agent/hooks/inject_header.js",
+      "events": ["agent_start", "agent_end"]
+    }
+  ]
+}

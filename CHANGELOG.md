@@ -3,6 +3,77 @@
 All fork commits are listed here, newest first. The base is upstream
 OpenMinis v1.10 (`9cf3a85`), rebased onto upstream v1.12 (`09fc199`).
 
+## [1.13.2] - 2026-09-13
+
+### Plugin system: provider request interception + usability overhaul
+
+App version bumped to 1.13.2 (shown in About). No other behavior change
+for sessions without extensions.
+
+Headline: plugins can now rewrite outgoing AI model requests — URL, method,
+headers and body — from JS, for every provider (OpenAI-compatible, Gemini,
+Antigravity, Anthropic). This removes the reason the OpenCode Go plugin
+needed a local HTTP relay: a pure-JS interceptor can inject headers or point
+requests at a different base URL directly. Interception requires the new
+`requests` permission in the manifest; the first intercepted request asks
+once and the grant persists across launches.
+
+- `feat(extensions)`: `minis.api.request.intercept(handler)` registers a
+  request interceptor; `unintercept(id)` and `clear()` remove them. The
+  handler receives `{provider, model, sessionId?, url, method, headers,
+  body?}`, may mutate it in place and/or return a patch
+  (`{url, method, headers, body | bodyJSON}`), and may be async (Promise).
+  Wired into `OpenAIProvider` (chat completions, responses API, raw
+  passthrough, image gen/edit), `GeminiProvider`, `AntigravityProvider`,
+  and the three Anthropic URLProtocols (`OAuthURLProtocol`,
+  `EagerStreamingURLProtocol`, `DualAuthURLProtocol`). Non-UTF8/binary
+  bodies are preserved byte-for-byte unless a handler patches `body`.
+- `feat(extensions)`: permission grants now persist in UserDefaults
+  (`ext.perm.<id>.<kind>`) instead of re-prompting every launch; denials
+  stay session-only. Uninstalling an extension drops its grants.
+- `fix(extensions)`: `minis.log` is variadic again — scalars, objects and
+  arrays are stringified and joined (the old bridge crashed on anything
+  that was not an array of strings). Handlers may use any arguments.
+- `fix(extensions)`: command and tool handlers may return Promises; the
+  host now awaits them instead of surfacing `"[object Promise]"`. Rejects
+  surface as errors. Plain values keep working unchanged.
+- `fix(extensions)`: `minis.api.ui` supports both `ui(data)` and the
+  documented `ui.postMessage(data)` shape (demo widget tool used the
+  latter and previously failed).
+- `fix(extensions)`: file API (`read`/`write`/`list`/`delete`) resolves
+  `/var/minis/**` through the real mount layer (App Group shared/memory/
+  skills dirs, per-session workspace/attachments/offloads/browser buckets,
+  external mounts) instead of a flat `Library/MinisChat/minis/` guess.
+  New `minis.api.file.list` / `minis.api.file.delete`.
+- `feat(extensions)`: `minis.http.fetch` forwards a `headers` object.
+- `fix(extensions)`: extension slash-command rows in the `/` menu now fill
+  the composer (tap was a no-op); typed commands accept args
+  (`/ext-hello Alice` → `args = ["Alice"]`).
+- `feat(extensions)`: lifecycle events `tool_call` (before dispatch, with
+  args) and `tool_result` (after completion, with a bounded output
+  preview) now fire alongside `agent_start` / `agent_end`.
+- `feat(examples)`: new `examples/request-interceptor` (injects a header
+  via `minis.api.request.intercept`; provider filter + enable toggle in
+  settings). `examples/demo-extension` gains an async command, async tool,
+  a file-API tool (`demo_notes`), and hooks for all four lifecycle events.
+- `fix(tooling)`: `scripts/build_extension.sh` writes a compatibility
+  manifest entry (`x/../manifest.json`) so archives load on installer
+  builds that skipped the manifest; packaging now goes through python3
+  zipfile (deterministic entry order, dotfiles excluded).
+- `test(extensions)`: `scripts/extension-smoke/run.sh` compiles the real
+  `ExtensionJSRuntime.swift` against test stubs and runs 43 checks across
+  the runtime API and the shipped example plugins (including the
+  opencode-go relay as a regression guard). `scripts/extension-smoke/run-lua.sh`
+  does the same for the vendored Lua runtime (14 checks: positional shell
+  args, the `api.file` table, settings, permission requests).
+- `docs`: full rewrite of `docs/extensions.md` / `docs/extensions.en.md` —
+  complete manifest reference, the full JS API (registration, events, host
+  APIs, request interception, JavaScriptCore environment limits), permissions,
+  lifecycle/debugging, common pitfalls, and a copy-paste **AI prompt template**
+  for generating working plugins.
+- `fix(ios)`: `ExtensionInstaller` writes `manifest.json` explicitly
+  (future installs no longer depend on the compatibility entry).
+
 ## [0.3.0] - 2026-08-26
 
 ### Rebase onto upstream v1.12

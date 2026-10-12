@@ -355,7 +355,10 @@ final class AntigravityProvider: LLMProvider {
         // match across calls (Antigravity routes to multiple upstreams, some of
         // which use prefix-based caching).
         request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
-        return request
+        // Extension request interception (see OpenAIProvider.streamRaw).
+        return await ExtensionRegistry.shared.applyProviderRequestInterceptors(
+            to: request, provider: "antigravity", model: model.id
+        )
     }
 
     // MARK: - Response Parsing

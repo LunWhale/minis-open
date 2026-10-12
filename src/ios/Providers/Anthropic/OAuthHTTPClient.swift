@@ -513,6 +513,71 @@ private final class TokenBoxRegistry: @unchecked Sendable {
     }
 }
 
+// MARK: - Extension request interception (shared by the URLProtocols)
+
+/// Best-effort `model` field for the extension interceptor payload. Bodies
+/// over 2 MB (long sessions with base64 images) skip the parse — interceptors
+/// still see provider/url/headers and can rewrite the URL.
+private func extensionInterceptModelHint(from body: Data) -> String {
+    guard !body.isEmpty, body.count <= 2 * 1024 * 1024,
+          let obj = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else {
+        return ""
+    }
+    return (obj["model"] as? String) ?? ""
+}
+
+/// Starts the inner upload task for one of the Anthropic URLProtocols.
+///
+/// Fast path (no extension registered an interceptor): fully synchronous,
+/// identical to the pre-extension behavior. Extension path: the JS handlers
+/// run on the main actor, so the task is created after an async hop — the
+/// stop-guard (`stateLock` + `isStopped`) is re-checked under the lock because
+/// `stopLoading()` invalidates the session on another thread and creating a
+/// task on an invalidated session is a fatal NSException.
+private func startInnerUploadTask(
+    innerSession: URLSession,
+    request: NSMutableURLRequest,
+    body: Data,
+    stateLock: NSLock,
+    isStopped: @escaping () -> Bool,
+    assignTask: @escaping (URLSessionDataTask) -> Void
+) {
+    guard ExtensionRegistry.shared.hasAnyRequestInterceptors else {
+        stateLock.lock()
+        guard !isStopped() else {
+            stateLock.unlock()
+            return
+        }
+        let task = innerSession.uploadTask(with: request as URLRequest, from: body)
+        assignTask(task)
+        stateLock.unlock()
+        task.resume()
+        return
+    }
+    let snapshot = request as URLRequest
+    Task {
+        var prepared = snapshot
+        prepared.httpBody = body
+        let intercepted = await ExtensionRegistry.shared.applyProviderRequestInterceptors(
+            to: prepared,
+            provider: "anthropic",
+            model: extensionInterceptModelHint(from: body)
+        )
+        let finalBody = intercepted.httpBody ?? body
+        var finalRequest = intercepted
+        finalRequest.httpBody = nil
+        stateLock.lock()
+        guard !isStopped() else {
+            stateLock.unlock()
+            return
+        }
+        let task = innerSession.uploadTask(with: finalRequest, from: finalBody)
+        assignTask(task)
+        stateLock.unlock()
+        task.resume()
+    }
+}
+
 // MARK: - URLProtocol that swaps auth headers
 
 /// Intercepts outgoing requests that contain `x-api-key`, removes it,
@@ -738,6 +803,21 @@ private final class OAuthURLProtocol: URLProtocol, URLSessionDataDelegate {
             let headers = mutable.allHTTPHeaderFields ?? [:]
             logger.info("[URLProtocol] Headers: \(headers.keys.sorted().joined(separator: ", "))")
             #endif
+
+            // Extension request interception: a real plugin may rewrite the
+            // URL/headers/body of outgoing model requests. Fast path inside
+            // the helper is synchronous; the flag check is lock-free.
+            if ExtensionRegistry.shared.hasAnyRequestInterceptors {
+                startInnerUploadTask(
+                    innerSession: self.innerSession,
+                    request: mutable,
+                    body: capturedBody,
+                    stateLock: self.stateLock,
+                    isStopped: { self.isStopped },
+                    assignTask: { self.innerTask = $0 }
+                )
+                return
+            }
 
             // Atomically check isStopped and create the upload task under the same lock.
             // stopLoading() can fire on another thread between the token callback and here,
@@ -1332,6 +1412,10 @@ private final class EagerStreamingURLProtocol: URLProtocol, URLSessionDataDelega
         URLSession(configuration: .default, delegate: self, delegateQueue: nil)
     }()
     private var innerTask: URLSessionDataTask?
+    /// Stop-guard for the async extension-interception hop (see
+    /// `startInnerUploadTask`).
+    private var isStopped = false
+    private let stateLock = NSLock()
     #if DEBUG
     /// [T-ios-llmcapture-entry-crosstalk] This request instance's capture
     /// entry, so response/usage updates target it and not `_entries.last`.
@@ -1383,14 +1467,23 @@ private final class EagerStreamingURLProtocol: URLProtocol, URLSessionDataDelega
         // Use uploadTask to guarantee the body is sent — dataTask can lose httpBody
         let bodyData = mutable.httpBody ?? Data()
         mutable.httpBody = nil
-        let task = innerSession.uploadTask(with: mutable as URLRequest, from: bodyData)
-        innerTask = task
-        task.resume()
+        startInnerUploadTask(
+            innerSession: innerSession,
+            request: mutable,
+            body: bodyData,
+            stateLock: stateLock,
+            isStopped: { [weak self] in self?.isStopped ?? true },
+            assignTask: { [weak self] in self?.innerTask = $0 }
+        )
     }
 
     override func stopLoading() {
-        innerTask?.cancel()
+        stateLock.lock()
+        isStopped = true
+        let task = innerTask
         innerTask = nil
+        stateLock.unlock()
+        task?.cancel()
         innerSession.invalidateAndCancel()
     }
 
@@ -1516,6 +1609,10 @@ private final class DualAuthURLProtocol: URLProtocol, URLSessionDataDelegate {
         URLSession(configuration: .default, delegate: self, delegateQueue: nil)
     }()
     private var innerTask: URLSessionDataTask?
+    /// Stop-guard for the async extension-interception hop (see
+    /// `startInnerUploadTask`).
+    private var isStopped = false
+    private let stateLock = NSLock()
     #if DEBUG
     /// [T-ios-llmcapture-entry-crosstalk] This request instance's capture
     /// entry, so response/usage updates target it and not `_entries.last`.
@@ -1570,14 +1667,23 @@ private final class DualAuthURLProtocol: URLProtocol, URLSessionDataDelegate {
 
         let bodyData = mutable.httpBody ?? Data()
         mutable.httpBody = nil
-        let task = innerSession.uploadTask(with: mutable as URLRequest, from: bodyData)
-        innerTask = task
-        task.resume()
+        startInnerUploadTask(
+            innerSession: innerSession,
+            request: mutable,
+            body: bodyData,
+            stateLock: stateLock,
+            isStopped: { [weak self] in self?.isStopped ?? true },
+            assignTask: { [weak self] in self?.innerTask = $0 }
+        )
     }
 
     override func stopLoading() {
-        innerTask?.cancel()
+        stateLock.lock()
+        isStopped = true
+        let task = innerTask
         innerTask = nil
+        stateLock.unlock()
+        task?.cancel()
         innerSession.invalidateAndCancel()
     }
 

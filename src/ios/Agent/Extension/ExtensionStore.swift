@@ -229,6 +229,8 @@ actor ExtensionStore {
         sqlite3_finalize(stmt)
         // Remove bundle dir.
         try? FileManager.default.removeItem(at: extensionsDir.appendingPathComponent(id, isDirectory: true))
+        // Drop persisted first-use permission grants so a reinstall re-asks.
+        PermissionGate.reset(extensionID: id)
     }
 
     /// Path of a bundled asset within an extension.

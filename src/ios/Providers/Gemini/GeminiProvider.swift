@@ -421,7 +421,10 @@ final class GeminiProvider: LLMProvider {
         // sortedKeys: stable byte-level prefix so server-side prompt caches
         // (Gemini implicit cache, disk-cached providers, etc.) can match across calls.
         request.httpBody = try JSONSerialization.data(withJSONObject: finalBody, options: [.sortedKeys])
-        return request
+        // Extension request interception (see OpenAIProvider.streamRaw).
+        return await ExtensionRegistry.shared.applyProviderRequestInterceptors(
+            to: request, provider: "gemini", model: model.id
+        )
     }
 
     // MARK: - Cloud Code Assist Helpers

@@ -50,6 +50,13 @@ enum ExtensionInstaller {
         try? fm.removeItem(at: bundleRoot)
         try fm.createDirectory(at: bundleRoot, withIntermediateDirectories: true)
 
+        // Write the manifest into the bundle root. ExtensionRegistry reads it
+        // back from bundleURL/manifest.json on every reload (and the manager
+        // shows its settings), but the entry loop below skips the manifest
+        // entry — so without this explicit write every install registered in
+        // the DB and then failed to load with "manifest.json not found".
+        try manifestData.write(to: bundleRoot.appendingPathComponent("manifest.json"))
+
         for entry in entries where !entry.isDirectory {
             var rel = entry.name
             if !prefix.isEmpty && rel.hasPrefix(prefix) {

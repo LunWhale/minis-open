@@ -2,7 +2,7 @@
   "id": "com.example.demo",
   "name": "Demo Extension",
   "version": "1.0.0",
-  "description": "Showcase: an agent tool (weather-by-name stub), a slash command, an event hook, a chat UI widget, and a theme — all in one .minisx.",
+  "description": "Showcase: agent tools (greeting + file API), an async slash command, event hooks (lifecycle + tool events), a chat UI widget, and a theme — all in one .minisx.",
   "author": "Minis Example",
   "kinds": ["agent-tool", "command", "event-hook", "ui-widget", "theme"],
   "permissions": ["files", "ui"],
@@ -53,6 +53,19 @@
           "text": { "type": "string", "description": "Message text to send" }
         }
       }
+    },
+    {
+      "file": "agent/tools/notes.js",
+      "name": "demo_notes",
+      "description": "Demo of the file API: list/read/write/delete notes under /var/minis/shared/demo-notes.",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "action": { "type": "string", "description": "list (default) | read | write | delete" },
+          "name": { "type": "string", "description": "Note file name (default note.txt)" },
+          "content": { "type": "string", "description": "Content for action=write" }
+        }
+      }
     }
   ],
   "commands": [
@@ -65,7 +78,7 @@
   "hooks": [
     {
       "file": "agent/hooks/log.js",
-      "events": ["agent_start"]
+      "events": ["agent_start", "agent_end", "tool_call", "tool_result"]
     }
   ],
   "ui": [
