@@ -94,6 +94,23 @@ private let logger = AppLogger(category: "ConfigOffload")
         return out
     }
 
+    /// [T-config-path-dotted-id] OpenMinis#390. For a collection topic, how to
+    /// write a child path — surfaced by `topic-help` next to the field list,
+    /// whose example paths now carry raw ids. nil for flat topics.
+    @objc public static func pathNoteForTopic(_ topic: String) -> String? {
+        let sem = DispatchSemaphore(value: 0)
+        var note: String?
+        Task.detached { @MainActor in
+            ConfigRegistry.shared.registerBuiltinsIfNeeded()
+            if ConfigRegistry.shared.collection(basePath: topic) != nil {
+                note = "Child paths are \(topic).<entry_id>.<field>. Use entry_id exactly as `minis-config get \(topic)` prints it — dots and slashes need no escaping."
+            }
+            sem.signal()
+        }
+        sem.wait()
+        return note
+    }
+
     // MARK: - Read
 
     /// Read a single field's current value. Returns
@@ -269,7 +286,8 @@ private let logger = AppLogger(category: "ConfigOffload")
             return [
                 "ok": false,
                 "error": "unknown_path",
-                "reason": "No registered field at '\(path)'.",
+                // [T-config-path-dotted-id] Says which part was wrong.
+                "reason": ConfigRegistry.shared.explainUnknownPath(path),
             ]
         }
         if field.access == .hidden {
@@ -446,7 +464,11 @@ private let logger = AppLogger(category: "ConfigOffload")
                             "reason": "'\(rawPath)' expects a JSON string child id (e.g. \"<uuid>\").",
                         ]
                     }
-                    guard collection.childIds().contains(childId) else {
+                    // [T-config-path-dotted-id] A child may also be named in a
+                    // form `childIds()` does not list verbatim (the pre-#390
+                    // `~d`-escaped model id); `fields(for:)` accepts both.
+                    guard collection.childIds().contains(childId)
+                            || !collection.fields(for: childId).isEmpty else {
                         return [
                             "ok": false, "error": "not_found",
                             "reason": "No '\(resolvePath)' child with id '\(childId)'.",
@@ -506,7 +528,8 @@ private let logger = AppLogger(category: "ConfigOffload")
             guard let field = ConfigRegistry.shared.resolveField(path: resolvePath) else {
                 return [
                     "ok": false, "error": "unknown_path",
-                    "reason": "No registered field at '\(rawPath)'.",
+                    // [T-config-path-dotted-id] Says which part was wrong.
+                    "reason": ConfigRegistry.shared.explainUnknownPath(resolvePath),
                 ]
             }
             // Feature-unavailable gate BEFORE access/validation and before the
@@ -540,10 +563,14 @@ private let logger = AppLogger(category: "ConfigOffload")
                 oldValue = .null
             }
 
-            let newValue: ConfigValue
+            // `var` (not `let`): [T-soul-icon-config-images] rewrites this in
+            // place when an image source resolves to a data URI.
+            var newValue: ConfigValue
             let displayVerb: String
             let displayPath: String
-            let displayOld: String
+            // `var`: [T-soul-icon-config-images] collapses a stored data URI
+            // to "<image>" so the confirm sheet never shows base64.
+            var displayOld: String
             var displayNew: String
             if isAppend {
                 guard case .array(let elemSchema) = field.valueSchema else {
@@ -602,6 +629,37 @@ private let logger = AppLogger(category: "ConfigOffload")
                 displayNew = newValue.displayString
             }
 
+            // [T-soul-icon-config-images] Resolve an image source to its
+            // stored form BEFORE the confirmation sheet.
+            //
+            // Three reasons this belongs here rather than in the writer:
+            //   1. `ConfigField.write` is synchronous and @MainActor; an
+            //      https source needs an await. This function is already async.
+            //   2. The user should confirm a change that has already been
+            //      fetched and validated — otherwise the sheet promises
+            //      something the write may then fail to deliver.
+            //   3. A failed fetch becomes a clean tool error instead of a
+            //      half-applied batch.
+            //
+            // What lands in `newValue` is the finished data URI; what lands in
+            // the sheet and the audit log is the literal "<image>", so neither
+            // ever carries base64.
+            if field.path == "soul.icon", case .string(let rawIcon) = newValue,
+               SoulIconSource.looksLikeImageSource(rawIcon) {
+                do {
+                    let dataURI = try await SoulIconSource.resolveToDataURI(rawIcon)
+                    newValue = .string(dataURI)
+                    displayNew = "<image>"
+                } catch {
+                    let reason = (error as? LocalizedError)?.errorDescription
+                        ?? error.localizedDescription
+                    return [
+                        "ok": false, "error": "validation_failed",
+                        "reason": "Can't use that image: \(reason)",
+                    ]
+                }
+            }
+
             // [T-minis-config-provider-add] If this field holds a credential
             // (path ends in a secret key, e.g. providers.<id>.apiKey), mask the
             // value persisted to the audit and shown in the confirm sheet. The
@@ -616,6 +674,18 @@ private let logger = AppLogger(category: "ConfigOffload")
                let mv = mo[fieldLeaf] {
                 auditNewValue = mv
                 displayNew = mv.displayString
+            }
+
+            // [T-soul-icon-config-images] Keep the encoded icon out of the
+            // audit log and the confirm sheet. `displayString` truncates at 80
+            // chars, which would still splash 75 characters of base64 across
+            // both surfaces — and the audit column stores the value in full.
+            if case .string(let sv) = auditNewValue, SoulIconImage.isDataURI(sv) {
+                auditNewValue = .string("<image>")
+                displayNew = "<image>"
+            }
+            if case .string(let ov) = oldValue, SoulIconImage.isDataURI(ov) {
+                displayOld = "<image>"
             }
 
             resolved.append(.fieldWrite(field: field, oldValue: oldValue, newValue: newValue, auditNewValue: auditNewValue))
@@ -785,12 +855,24 @@ private let logger = AppLogger(category: "ConfigOffload")
             if applied.isEmpty {
                 if !writeErrors.isEmpty {
                     logger.warning("write_failed resolved=\(resolved.count) approvedRows=\(approvedRows.count) approvedRowsOn=\(approvedRows.filter { $0.isApproved }.count) errors=\(writeErrors.count) caption=\(caption ?? "")")
+                    let reason = writeErrors.map { "\($0["path"] ?? "?"): \($0["reason"] ?? "unknown error")" }.joined(separator: "; ")
+                    // [T-subagent-config-honesty] A DELIBERATE refusal lands in
+                    // this same branch — renaming or deleting the built-in sub
+                    // agent, for instance. "applying it failed" describes a
+                    // malfunction, so a working rule was reported as an internal
+                    // error. When every entry is a permission_denied, say it was
+                    // refused and carry the reason, which already explains what
+                    // to do instead. Mixed or other errors keep the original
+                    // wording: those really may be failures.
+                    let allDenied = writeErrors.allSatisfy { $0["error"] == "permission_denied" }
                     return [
                         "ok": false,
                         "error": "write_failed",
-                        "reason": writeErrors.map { "\($0["path"] ?? "?"): \($0["reason"] ?? "unknown error")" }.joined(separator: "; "),
+                        "reason": reason,
                         "write_errors": writeErrors,
-                        "user_message": "I confirmed the change, but applying it failed. No settings were updated.",
+                        "user_message": allDenied
+                            ? "That change isn't allowed: \(reason). No settings were updated."
+                            : "I confirmed the change, but applying it failed. No settings were updated.",
                     ]
                 }
                 if approvedRows.count != resolved.count {

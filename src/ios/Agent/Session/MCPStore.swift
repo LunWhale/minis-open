@@ -98,7 +98,6 @@ final class MCPStore: ObservableObject {
         openDatabase()
         createTables()
         load()
-        scheduleLegacyRecordCleanupIfNeeded()
     }
 
     deinit {
@@ -451,9 +450,9 @@ final class MCPStore: ObservableObject {
 
         var errorDescription: String? {
             switch self {
-            case .empty: return String(localized: "Paste some JSON to import.")
-            case .unparseable: return String(localized: "Couldn't parse that as JSON.")
-            case .noServers: return String(localized: "No MCP servers found in that JSON.")
+            case .empty: return AppLocalized("Paste some JSON to import.")
+            case .unparseable: return AppLocalized("Couldn't parse that as JSON.")
+            case .noServers: return AppLocalized("No MCP servers found in that JSON.")
             }
         }
     }
@@ -656,7 +655,7 @@ final class MCPStore: ObservableObject {
         var errorDescription: String? {
             switch self {
             case .kernelNotBooted:
-                return String(localized: "The terminal engine isn't running yet. Open a chat or the terminal once, then retry.")
+                return AppLocalized("The terminal engine isn't running yet. Open a chat or the terminal once, then retry.")
             case .cliFailed(let msg):
                 return msg
             }
@@ -696,7 +695,7 @@ final class MCPStore: ObservableObject {
                 return MCPToolInfo(name: name, description: (t["description"] as? String) ?? "")
             }
         }
-        throw ToolsRefreshError.cliFailed(String(localized: "Unexpected CLI output (no JSON result). Check the server's connectivity."))
+        throw ToolsRefreshError.cliFailed(AppLocalized("Unexpected CLI output (no JSON result). Check the server's connectivity."))
     }
 
     // MARK: - iCloud sync (per-server MCPServerItem records) [T-mcp-per-server-sync]
@@ -899,28 +898,4 @@ final class MCPStore: ObservableObject {
 
     // MARK: - Legacy whole-file record cleanup
 
-    private static let legacyCleanupKey = "cloudSync.mcp.legacyV2RecordDeleted"
-
-    /// One-time job (mirrors EnvVarStore.scheduleLegacyRecordCleanupIfNeeded):
-    /// re-emit every server as a per-item record, then queue an op=delete for
-    /// the legacy whole-file MCPServersV2 record so it stops occupying cloud
-    /// storage and confusing peers' inbound mergers. CloudKit orders the item
-    /// upserts before the whole-file delete within the batch.
-    private func scheduleLegacyRecordCleanupIfNeeded() {
-        guard !UserDefaults.standard.bool(forKey: Self.legacyCleanupKey) else { return }
-        Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 5_000_000_000) // 5s — let ChatStore/SyncCore finish wiring
-            guard let self else { return }
-            await MainActor.run {
-                self.noteSyncedLocalChange(names: self.servers.map(\.id))
-                Task { await ChatStore.shared.markDirty(
-                    recordType: "MCPServers",
-                    recordId: "mcp-servers",
-                    operation: "delete"
-                ) }
-                UserDefaults.standard.set(true, forKey: Self.legacyCleanupKey)
-                AppLogger(category: "MCPStore").info("[Sync] legacy MCPServersV2 cleanup scheduled (\(self.servers.count) servers re-emitted as MCPServerItem)")
-            }
-        }
-    }
 }

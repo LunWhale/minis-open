@@ -4,13 +4,19 @@ import UIKit
 private let logger = AppLogger(category: "AIChatVM")
 
 // MARK: - Stream Stall Timeout
-
-private struct StreamStallError: Error, LocalizedError {
-    let seconds: Int
-    var errorDescription: String? {
-        "No response from the server for \(seconds) seconds. The connection may have been dropped silently. Please try again."
-    }
-}
+//
+// [T-ios-stream-stall-no-retry] The stall watchdog used to throw a PRIVATE
+// `StreamStallError` struct here. That type was invisible to the agent loop's
+// `catch let streamError as LLMError where streamError.isRetryable` gate, so a
+// mid-stream stall skipped the entire existing recovery pipeline (uncommitted-
+// tail cleanup → immediate same-model re-dispatch → group fallback on a second
+// failure) and killed the loop outright. Field case 2026-08-18 22:11: upstream
+// emitted a tool_use header + 2 bytes of arguments, went silent for exactly
+// 120.0s, and the task died with no retry — while the request would almost
+// certainly have succeeded on a re-send (and hit the prompt cache doing it).
+// The watchdog now throws `LLMError.transientError`, which walks straight into
+// that pipeline. Net behavior: one immediate retry on the same model; a second
+// stall falls back to the next model in the group; turn budget untouched.
 
 private final class StreamIteratorBox<T: Sendable>: @unchecked Sendable {
     private var iterator: AsyncThrowingStream<T, Error>.AsyncIterator
@@ -65,6 +71,7 @@ extension AIChatViewModel {
         case .toolInputDelta(let name, _): return "toolInputDelta(\(name))"
         case .toolCallComplete(_, let name, _, _): return "toolCallComplete(\(name))"
         case .usage: return "usage"
+        case .responseModel: return "responseModel"
         case .thinkingDelta: return "thinkingDelta"
         case .reasoningContent: return "reasoningContent"
         case .reasoningEcho: return "reasoningEcho"
@@ -331,7 +338,14 @@ extension AIChatViewModel {
         // Both timestamps below are wall-clock, so comparing the measured gap
         // against `stallTimeoutSeconds` settles (3) on its own.
         let streamDiagSession = await MainActor.run { self.sessionId ?? "nil" }
-        let streamDiagModel = await MainActor.run { self.selectedModel.id }
+        // [T-ios-streamdiag-phantom-model] Read the model from the PROVIDER —
+        // the object this stream actually belongs to. This used to read
+        // `self.selectedModel.id`, which is a never-written legacy property
+        // whose compile-time default is `.claudeHaiku45`: every stream-open and
+        // STALL line therefore claimed "claude-haiku-4-5" regardless of the
+        // model the request was really for, and a stall investigation was
+        // nearly pinned on a model the session never used.
+        let streamDiagModel = provider.model.id
         var lastEventAt = Date()
         var eventSeq = 0
         logger.info("[StreamDiag] stream open session=\(streamDiagSession) provider=\(provider.name) model=\(streamDiagModel) at=\(Self.diagTimestamp(Date()))")
@@ -356,7 +370,10 @@ extension AIChatViewModel {
                         + "sinceLastEvent=\(String(format: "%.1f", sinceLastEvent))s eventsThisStream=\(eventSeq) "
                         + "appState=\(appState) iterStart=\(Self.diagTimestamp(iterationStartedAt)) firedAt=\(Self.diagTimestamp(firedAt))"
                     )
-                    throw StreamStallError(seconds: Int(stallTimeoutSeconds))
+                    // [T-ios-stream-stall-no-retry] An LLMError so the agent
+                    // loop's retryable-error gate catches it — see the header
+                    // comment at the top of this file.
+                    throw LLMError.transientError(message: "No response from the server for \(Int(stallTimeoutSeconds)) seconds — the stream stalled mid-generation")
                 }
                 let result = try await group.next()!
                 group.cancelAll()
@@ -446,6 +463,7 @@ extension AIChatViewModel {
                     case "browser_use": .browserTool(action: "")
                     case "read_image": .readImageTool(path: "")
                     case "memory_write", "memory_get": .memoryTool(action: name)
+                    case SubAgentDefinition.toolName: .delegateTool(title: "")
                     default: .shellTool(command: name)
                     }
                     if name == "file_write" || name == "file_edit" {
@@ -949,6 +967,12 @@ extension AIChatViewModel {
                 result.iterationUsage.add(u)
                 #endif
 
+            case .responseModel(let reported):
+                // [T-agent-model-identity] The API named the model that is
+                // serving this turn — record it on the vm so an agent's
+                // parent block / job can show the effective model in place.
+                await MainActor.run { self.noteResponseModel(reported) }
+
             case .done(let reason):
                 // Final flush of thinking block content
                 if let thinkIdx = currentThinkingBlockIdx, !result.thinkingText.isEmpty {
@@ -959,7 +983,18 @@ extension AIChatViewModel {
                         messages[msgIdx].blocks[thinkIdx].content = finalThinking
                     }
                 }
-                result.stopReason = reason
+                // [T-openai-done-overwrite] GH#263. First terminal reason wins
+                // over a later generic `.endTurn`. Providers emit `.done` once
+                // for the real finish reason and again at end-of-stream (OpenAI
+                // `[DONE]`, Gemini/Antigravity `.done`), and the end-of-stream
+                // one only knows "tool calls or not". Letting it overwrite
+                // turned `.maxTokens` / `.refusal` into `.endTurn`, i.e. a
+                // truncated or declined reply into "empty response".
+                if let prior = result.stopReason, prior != .endTurn, reason == .endTurn {
+                    logger.info("[StopReason] keeping \(prior) over later .endTurn")
+                } else {
+                    result.stopReason = reason
+                }
             }
         }
         // The AsyncThrowingStream may silently terminate (return nil) on Task

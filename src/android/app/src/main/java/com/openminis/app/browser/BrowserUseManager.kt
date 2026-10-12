@@ -35,6 +35,18 @@ import java.io.File
 class BrowserUseManager(
     val webView: WebView,
     profile: UserAgentProfile = UserAgentProfile.MOBILE_CHROME,
+    /**
+     * [T-android-minis-url-session-scope] Which chat session's sandbox a
+     * `minis://` URL should resolve against, or null when unknown.
+     *
+     * A LAMBDA, not a value: tabs are created before `BrowserTabPool.setSession`
+     * runs, so a snapshot taken at construction time would be permanently null
+     * for the first tab. Reading it lazily at intercept time gets whatever the
+     * pool knows when the request actually fires.
+     */
+    private val sessionIdProvider: () -> String? = { null },
+    /** App context for the session-scoped path resolver. Null disables it. */
+    private val appContext: android.content.Context? = null,
 ) {
     companion object {
         private const val TAG = "BrowserUseManager"
@@ -51,6 +63,24 @@ class BrowserUseManager(
          * scrollHeight so the agent can scroll-then-stitch if it needs more.
          */
         private const val MAX_FULL_PAGE_HEIGHT_PX = 32768
+
+        /**
+         * [T-android-browser-screenshot-scroll-offset] Budget for the JS probe
+         * that reads the page's scroll offset before a capture. Short on
+         * purpose: the probe is a correctness refinement, and a wedged
+         * renderer must not be able to stall every screenshot. On timeout the
+         * capture proceeds uncompensated, i.e. the pre-fix behaviour.
+         */
+        private const val SCROLL_PROBE_TIMEOUT_MS = 500L
+
+        /**
+         * [T-android-browser-fullpage-repaint] How long to let the renderer
+         * paint the newly exposed area after the full-page capture stretches
+         * the WebView's layout box. Without it the stretch and the draw happen
+         * in the same main-thread pass, so the region below the original
+         * viewport can be captured before it has been rendered.
+         */
+        private const val FULL_PAGE_REPAINT_DELAY_MS = 120L
 
         /**
          * Minimal HTML used in place of `about:blank` when a fresh tab
@@ -114,6 +144,14 @@ class BrowserUseManager(
 
     private val _currentURL = MutableStateFlow("")
     val currentURL: StateFlow<String> = _currentURL.asStateFlow()
+
+    /**
+     * [T-android-js-dialogs-256] JS dialogs this tab intercepted but did not
+     * show, drained into the next tool result so the model learns the page
+     * tried to open one. Per-tab (the manager is per-tab) and in-memory only,
+     * like the other diagnostics here. See [InterceptedDialogQueue].
+     */
+    private val dialogQueue = InterceptedDialogQueue()
 
     private val _pageTitle = MutableStateFlow("")
     val pageTitle: StateFlow<String> = _pageTitle.asStateFlow()
@@ -320,8 +358,67 @@ class BrowserUseManager(
     }
 
     @SuppressLint("SetJavaScriptEnabled")
+    /**
+     * [T-android-webview-render-process-gone] (GH#341) True once this tab's
+     * renderer died. Every later automation call on this manager would be
+     * driving a WebView the system has torn down.
+     *
+     * [webView] is a constructor `val` and there is no recreate path here, so
+     * the manager cannot heal itself. A flag is the smallest honest fix: the
+     * pool checks it and rebuilds the tab, and any call that still slips
+     * through gets a readable error instead of silently doing nothing (or
+     * hanging on a JS evaluation whose renderer no longer exists).
+     */
+    @Volatile
+    var isRendererDead: Boolean = false
+        private set
+
+    /**
+     * (GH#245) True once this tab's renderer is alive but no longer answering:
+     * a JS evaluation got no callback within
+     * [BrowserActionGuard.JS_EVAL_TIMEOUT_MS], or the pool gave up on an action
+     * that ran past its deadline. Such a renderer never fires
+     * `onRenderProcessGone`, so [isRendererDead] alone left the tab in rotation
+     * forever. The pool treats both flags the same way: drop and rebuild.
+     */
+    @Volatile
+    var isWedged: Boolean = false
+        private set
+
+    /** Why [isWedged] was set, for the rebuild notice and logs. */
+    @Volatile
+    var wedgeReason: String? = null
+        private set
+
+    /** Either failure mode: this manager's WebView cannot be driven any more. */
+    val isUnusable: Boolean get() = isRendererDead || isWedged
+
+    fun markWedged(reason: String) {
+        if (isWedged) return
+        wedgeReason = reason
+        isWedged = true
+        Log.w(TAG, "Tab marked unresponsive: $reason")
+    }
+
     private fun setupWebViewClient() {
         webView.webViewClient = object : WebViewClient() {
+            // [T-android-webview-render-process-gone] (GH#341) Nothing here
+            // owns a teardown routine the way the Katex pool and WebViewHolder
+            // do, so we only mark the tab unusable and let the pool replace it.
+            // Deliberately NOT calling webView.destroy(): the pool still holds
+            // this instance and may have it attached to a live composition
+            // (BrowserWebView mounts it into a FrameLayout), so destroying it
+            // from under the view tree is how you turn a survivable renderer
+            // death into a UI crash.
+            override fun onRenderProcessGone(
+                view: WebView?,
+                detail: android.webkit.RenderProcessGoneDetail?,
+            ): Boolean {
+                isRendererDead = true
+                return com.openminis.app.ui.webview.WebViewRenderProcess
+                    .handle("BrowserUseManager", detail)
+            }
+
             override fun shouldOverrideUrlLoading(
                 view: WebView,
                 request: WebResourceRequest,
@@ -340,8 +437,19 @@ class BrowserUseManager(
                 // T134: route intent://, market://, tel:, mailto:, … out
                 // of the WebView so they reach the matching app instead of
                 // surfacing as ERR_UNKNOWN_URL_SCHEME.
+                //
+                // [T-android-user-initiated-scheme-dispatch] AGENT_BACKGROUND:
+                // this WebView is pool-managed and never rendered to the user,
+                // so any navigation here came from the PAGE, not a tap. Keep
+                // T318's block — otherwise a page the agent visits can throw
+                // the user into another app mid-task.
                 return com.openminis.app.ui.browser.BrowserExternalSchemeHandler
-                    .handle(view.context, request.url)
+                    .handle(
+                        view.context,
+                        request.url,
+                        com.openminis.app.ui.browser.BrowserExternalSchemeHandler
+                            .Origin.AGENT_BACKGROUND,
+                    )
             }
 
             override fun onPageFinished(view: WebView, url: String?) {
@@ -402,7 +510,37 @@ class BrowserUseManager(
             val host = uri.host ?: return null
             val path = uri.path ?: ""
             val linuxPath = "/var/minis/$host$path"
-            val localFile = com.openminis.app.sandbox.PRootKernel.resolveHostPath(linuxPath)
+
+            // [T-android-minis-url-session-scope] Resolve against THIS session
+            // first, and only then fall back to the global bind-mount map.
+            //
+            // `workspace`, `attachments`, `offloads` and `browser` live under
+            // `minis-sessions/<sid>/`, but the global map only gains a
+            // `/var/minis/workspace` entry while some session's PRoot shell is
+            // running — and it is last-writer-wins across sessions. So the old
+            // global-only lookup failed in two ordinary situations: the shell
+            // had exited (path fell through to the rootfs copy of
+            // /var/minis/workspace, which is empty), or another session had
+            // booted more recently and the mount pointed at ITS workspace.
+            //
+            // Measured on a GEM-W09: `minis://workspace/jump-jump.html` 404'd
+            // while the file sat intact at 5969 bytes in
+            // minis-sessions/145d6883…/workspace/. The rootfs directory the
+            // resolver actually reached contained nothing but `.` and `..`.
+            // That is also why the failure looked intermittent and looked like
+            // it depended on subdirectory depth — it depends on neither, only
+            // on whether the global mount happens to point at the right
+            // session at that moment.
+            val sessionId = sessionIdProvider()
+            val ctx = appContext
+            val localFile = if (sessionId != null && ctx != null) {
+                com.openminis.app.sandbox.PRootKernel
+                    .resolveSessionHostPath(sessionId, linuxPath, ctx)
+                    ?.takeIf { it.isFile }
+                    ?: com.openminis.app.sandbox.PRootKernel.resolveHostPath(linuxPath)
+            } else {
+                com.openminis.app.sandbox.PRootKernel.resolveHostPath(linuxPath)
+            }
             if (localFile == null || !localFile.exists() || !localFile.isFile) {
                 return android.webkit.WebResourceResponse("text/plain", "UTF-8", 404, "Not Found",
                     emptyMap(), "File not found: $host$path".byteInputStream())
@@ -491,12 +629,114 @@ class BrowserUseManager(
             override fun onCloseWindow(window: WebView) {
                 onCloseWindow?.invoke()
             }
+
+            // [T-android-js-dialogs-256] Answer JS dialogs with a conservative
+            // default INSTEAD of showing them, and record what happened.
+            //
+            // This is unattended automation: showing a modal would block the
+            // page's JS thread on a human who isn't there, wedging the agent
+            // loop until the action dead-timeout fires. So the page is always
+            // answered immediately and never actually blocks — the only change
+            // versus the old silent-swallow behaviour is that the model now
+            // finds out it happened (see drainInterceptedDialogReport).
+            //
+            // confirm() answers false and prompt() answers null deliberately:
+            // the agent must not silently consent on the user's behalf to
+            // whatever was asked. The user-facing web preview does the exact
+            // opposite and shows real dialogs; see WebViewHolder.
+            //
+            // Returning true is what claims the dialog. Returning false (the
+            // WebChromeClient default) would let WebView apply the same default
+            // itself, but with no record — which is exactly the bug.
+
+            override fun onJsAlert(
+                view: WebView?,
+                url: String?,
+                message: String?,
+                result: android.webkit.JsResult?,
+            ): Boolean {
+                recordInterceptedDialog(
+                    kind = "alert",
+                    message = message.orEmpty(),
+                    defaultText = null,
+                    defaultResponse = "(dismissed)",
+                )
+                result?.confirm()
+                return true
+            }
+
+            override fun onJsConfirm(
+                view: WebView?,
+                url: String?,
+                message: String?,
+                result: android.webkit.JsResult?,
+            ): Boolean {
+                recordInterceptedDialog(
+                    kind = "confirm",
+                    message = message.orEmpty(),
+                    defaultText = null,
+                    defaultResponse = "false",
+                )
+                result?.cancel()
+                return true
+            }
+
+            override fun onJsPrompt(
+                view: WebView?,
+                url: String?,
+                message: String?,
+                defaultValue: String?,
+                result: android.webkit.JsPromptResult?,
+            ): Boolean {
+                recordInterceptedDialog(
+                    kind = "prompt",
+                    message = message.orEmpty(),
+                    defaultText = defaultValue,
+                    defaultResponse = "null",
+                )
+                result?.cancel()
+                return true
+            }
         }
     }
+
+    /** [T-android-js-dialogs-256] Record an intercepted dialog for the model. */
+    private fun recordInterceptedDialog(
+        kind: String,
+        message: String,
+        defaultText: String?,
+        defaultResponse: String,
+    ) {
+        val url = _currentURL.value
+        dialogQueue.record(
+            kind = kind,
+            message = message,
+            defaultText = defaultText,
+            pageURL = url.ifEmpty { null },
+            defaultResponse = defaultResponse,
+        )
+        Log.i(TAG, "[JSDialog] intercepted $kind on $url — answered $defaultResponse")
+    }
+
+    /**
+     * Drain this tab's intercepted-dialog queue into text for the model, or null
+     * when nothing was intercepted. Draining clears it, so each dialog is
+     * reported exactly once. Called by [BrowserTabPool] on the next tool result.
+     */
+    fun drainInterceptedDialogReport(): String? = dialogQueue.drainReport()
 
     // -- Execute Action --
 
     suspend fun execute(input: BrowserActionInput): BrowserActionResult {
+        // (GH#245) Fail fast instead of driving a WebView that cannot answer.
+        // The pool normally rebuilds such a tab before handing it out; this
+        // catches the call that was already routed here when the flag flipped.
+        if (isUnusable) {
+            throw WebViewWedgedException(
+                if (isRendererDead) "browser tab renderer process died"
+                else "browser tab stopped responding (${wedgeReason ?: "unknown"})",
+            )
+        }
         val prevUrl = withContext(Dispatchers.Main) { webView.url }
         var result: BrowserActionResult = when (input.action) {
             BrowserAction.NAVIGATE -> navigate(input.url)
@@ -550,7 +790,7 @@ class BrowserUseManager(
     private suspend fun attachSnapshot(result: BrowserActionResult): BrowserActionResult {
         return try {
             delay(300) // Let page settle
-            val bitmap = captureWebViewBitmap() ?: return result
+            val bitmap = captureWebViewBitmap(gpu = true) ?: return result
             val file = saveBitmapToFile(bitmap, "snapshot", SNAPSHOT_QUALITY)
             bitmap.recycle()
             result.copy(imageFilePath = file.absolutePath)
@@ -614,14 +854,26 @@ class BrowserUseManager(
         // so a session or global viewport override shows the actual layout
         // size, not the UA profile default. Matches iOS which likewise queries
         // the WKWebView's live bounds rather than a profile constant.
-        val scrollInfo = evaluateJavascript(
-            "JSON.stringify({" +
-                "sx:window.scrollX||0,sy:window.scrollY||0," +
-                "pw:document.documentElement.scrollWidth||0," +
-                "ph:document.documentElement.scrollHeight||0," +
-                "vw:window.innerWidth||0,vh:window.innerHeight||0" +
-                "})"
-        )
+        //
+        // (GH#245) If the page cannot answer, degrade to URL + title instead of
+        // failing the navigate: the load itself may well have finished, and the
+        // tab is already flagged for rebuild by evaluateJavascript.
+        val scrollInfo = try {
+            evaluateJavascript(
+                "JSON.stringify({" +
+                    "sx:window.scrollX||0,sy:window.scrollY||0," +
+                    "pw:document.documentElement.scrollWidth||0," +
+                    "ph:document.documentElement.scrollHeight||0," +
+                    "vw:window.innerWidth||0,vh:window.innerHeight||0" +
+                    "})"
+            )
+        } catch (e: WebViewWedgedException) {
+            return buildString {
+                appendLine("Navigated to $url")
+                if (title.isNotEmpty()) appendLine("  Title: $title")
+                append("  (page metrics unavailable: ${e.message})")
+            }
+        }
         var scrollX = 0; var scrollY = 0; var pageW = 0; var pageH = 0
         var vpW = 0; var vpH = 0
         try {
@@ -693,11 +945,19 @@ class BrowserUseManager(
                 applyViewport(savedW, cssCappedHeight)
             }
             didStretch = true
+            // [T-android-browser-fullpage-repaint] Give the renderer a chance
+            // to paint the area the stretch just exposed. applyViewport only
+            // measure/layouts the view; without a gap the capture below runs
+            // in the same main-thread pass and can read back a region that has
+            // never been drawn, which is why --full-page shots came out
+            // partially blank below the first viewport.
+            delay(FULL_PAGE_REPAINT_DELAY_MS)
             Log.i(TAG, "full_page stretch: ${savedW}x$cssCappedHeight CSS (px=$cappedPx, original=$scrollHeightPx, truncated=$truncated)")
         }
 
         val bitmap = try {
-            captureWebViewBitmap()
+            // A stretched full page is far taller than a display can be.
+            captureWebViewBitmap(gpu = !didStretch)
         } finally {
             if (didStretch) {
                 withContext(Dispatchers.Main) {
@@ -790,7 +1050,48 @@ class BrowserUseManager(
      */
     suspend fun captureLiveSnapshot(): Bitmap? = captureWebViewBitmap()
 
-    private suspend fun captureWebViewBitmap(): Bitmap? = withContext(Dispatchers.Main) {
+    /**
+     * [T-android-browser-screenshot-scroll-offset] The page's current scroll
+     * offset in CSS pixels, as (x, y).
+     *
+     * Read from JS rather than from `webView.scrollX/scrollY` because the pool
+     * WebView is usually detached, and a detached View never receives the
+     * scroll pass that would update those fields — measured on device as
+     * `scrollY=0` while the page was scrolled 300 CSS px. The authoritative
+     * value lives in the renderer.
+     *
+     * Must be called on the main thread (the caller already is). Uses its own
+     * short timeout and degrades to (0,0): a capture that is merely
+     * uncompensated is the old behaviour, which is far better than no capture
+     * at all, and `evaluateJavascript` cannot answer while the renderer is
+     * wedged — exactly when a screenshot is most wanted.
+     */
+    private suspend fun readCssScrollOffset(): Pair<Float, Float> {
+        val raw = withTimeoutOrNull(SCROLL_PROBE_TIMEOUT_MS) {
+            val d = CompletableDeferred<String>()
+            webView.evaluateJavascript(
+                "(function(){return (window.scrollX||window.pageXOffset||0)+','+" +
+                    "(window.scrollY||window.pageYOffset||0);})()",
+            ) { v -> if (!d.isCompleted) d.complete(v ?: "") }
+            d.await()
+        } ?: return 0f to 0f
+        // evaluateJavascript hands back a JSON string literal: "12,300"
+        val cleaned = raw.trim().removeSurrounding("\"")
+        val parts = cleaned.split(',')
+        if (parts.size != 2) return 0f to 0f
+        val x = parts[0].toFloatOrNull() ?: 0f
+        val y = parts[1].toFloatOrNull() ?: 0f
+        return x to y
+    }
+
+    /**
+     * [gpu] routes the capture through [HeadlessRenderHost] — a real GPU frame,
+     * so WebGL / video are included — whenever the WebView is headless (not on
+     * screen in the browser sheet). Agent-facing captures pass true; the 3 s
+     * live-preview thumbnail and the stretched full-page capture keep the
+     * cheaper software draw. Any GPU-path miss falls through to that draw.
+     */
+    private suspend fun captureWebViewBitmap(gpu: Boolean = false): Bitmap? = withContext(Dispatchers.Main) {
         try {
             // WebView may be detached (pool-owned, never added to a window), so
             // width/height can be 0. Ensure it has a layout box matching the
@@ -811,10 +1112,52 @@ class BrowserUseManager(
                 webView.layout(0, 0, targetW, targetH)
                 w = targetW; h = targetH
             }
+            if (gpu) HeadlessRenderHost.capture(webView, w, h)?.let { return@withContext it }
             val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(bitmap)
+            // [T-android-browser-screenshot-scroll-offset] Undo the scroll
+            // before drawing, or the capture is the scrolled-away region.
+            //
+            // `View.draw(Canvas)` does NOT compensate scroll — that is done by
+            // the PARENT, in `draw(Canvas, ViewGroup, long)`:
+            //     canvas.translate(mLeft - sx, mTop - sy)   (View.java)
+            // Drawing straight into our own bitmap skips that parent pass, so
+            // the content lands `scrollOffset` lower than it should: the top of
+            // the image is blank and the bottom is cropped. Measured on a
+            // Pixel 6 at CSS scrollY=300 — 788 physical px of white
+            // (788 / 2.625 density = 300.2 CSS px, i.e. exactly scrollY) and
+            // the Y300 band sitting at viewport y=300 instead of y=0. Once
+            // scrollY reaches the viewport height the blank band fills the
+            // whole frame, which is the "scroll 1500 → 100% white" report;
+            // same defect, not a second one.
+            //
+            // The offset CANNOT be read from `webView.scrollY` alone. This
+            // WebView is pool-owned and, whenever the browser sheet is closed,
+            // not attached to a window — and a detached View never gets the
+            // scroll pass that would update its own scrollX/scrollY. Verified
+            // on device: after `window.scrollTo(0, 300)` the capture logged
+            // `scrollY=0 attached=false` while the bitmap was still offset by
+            // 300 CSS px, because the scroll lives in Chromium's compositor.
+            // A plain `canvas.translate(-webView.scrollY)` would translate by
+            // zero there and fix nothing, which is why the offset is probed
+            // from JS as well.
+            //
+            // The two sources describe ONE quantity, so take whichever is
+            // populated — never their sum. When the sheet is mounted the View
+            // mirrors the compositor scroll, and adding both double-counts:
+            // measured on device at CSS scrollY=300 as
+            // `css=300.19 view=788 offset=1576` (788 = 300.19 × 2.625), which
+            // scrolls the capture twice as far as the page actually is.
+            // `webView.scrollY` wins when non-zero because it is already in
+            // physical px and carries no density-rounding error; the CSS probe
+            // covers the detached case, where the View stays at 0.
+            val cssScroll = readCssScrollOffset()
+            val offsetX = if (webView.scrollX != 0) webView.scrollX.toFloat() else cssScroll.first * density
+            val offsetY = if (webView.scrollY != 0) webView.scrollY.toFloat() else cssScroll.second * density
+            if (offsetX != 0f || offsetY != 0f) canvas.translate(-offsetX, -offsetY)
             webView.draw(canvas)
-            Log.d(TAG, "captureWebViewBitmap ${w}x$h")
+            Log.d(TAG, "captureWebViewBitmap ${w}x$h offset=(${offsetX},${offsetY}) " +
+                "css=(${cssScroll.first},${cssScroll.second}) view=(${webView.scrollX},${webView.scrollY})")
             bitmap
         } catch (e: Exception) {
             Log.e(TAG, "captureWebViewBitmap failed: ${e.message}")
@@ -1224,22 +1567,43 @@ class BrowserUseManager(
 
     // -- JS Evaluation Helpers --
 
-    private suspend fun evaluateJavascript(js: String): String = withContext(Dispatchers.Main) {
+    /**
+     * (GH#245) Bounded by [timeoutMs]. The callback of
+     * `WebView.evaluateJavascript` never fires when the renderer hangs, and
+     * this helper used to await it with no limit — the real place navigate
+     * got stuck (its own 30s load timeout covered only the load, then
+     * [navigationMetadata] hung here). On timeout the tab is flagged via
+     * [markWedged] so the pool rebuilds it, then [WebViewWedgedException] is
+     * thrown. The await sits outside `withContext(Main)` so the wait does not
+     * occupy a main-dispatcher continuation.
+     */
+    private suspend fun evaluateJavascript(
+        js: String,
+        timeoutMs: Long = BrowserActionGuard.JS_EVAL_TIMEOUT_MS,
+    ): String {
+        if (isRendererDead) throw WebViewWedgedException("browser tab renderer process died")
         val deferred = CompletableDeferred<String>()
-        webView.evaluateJavascript(js) { result ->
-            // Android WebView returns JSON-encoded strings, so unquote
-            val unquoted = if (result != null && result.startsWith("\"") && result.endsWith("\"")) {
-                try {
-                    JSONObject("{\"v\":$result}").getString("v")
-                } catch (_: Exception) {
-                    result
+        withContext(Dispatchers.Main) {
+            webView.evaluateJavascript(js) { result ->
+                // Android WebView returns JSON-encoded strings, so unquote
+                val unquoted = if (result != null && result.startsWith("\"") && result.endsWith("\"")) {
+                    try {
+                        JSONObject("{\"v\":$result}").getString("v")
+                    } catch (_: Exception) {
+                        result
+                    }
+                } else {
+                    result ?: "null"
                 }
-            } else {
-                result ?: "null"
+                deferred.complete(unquoted)
             }
-            deferred.complete(unquoted)
         }
-        deferred.await()
+        return withTimeoutOrNull(timeoutMs) { deferred.await() } ?: run {
+            markWedged("evaluateJavascript got no callback within ${timeoutMs / 1000}s")
+            throw WebViewWedgedException(
+                "browser tab stopped responding (JS evaluation timed out after ${timeoutMs / 1000}s)",
+            )
+        }
     }
 
     private suspend fun evaluateAndReturn(js: String): BrowserActionResult {

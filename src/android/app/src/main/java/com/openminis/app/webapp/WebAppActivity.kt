@@ -37,7 +37,6 @@ import androidx.compose.material.icons.outlined.FullscreenExit
 import androidx.compose.material.icons.outlined.OpenInBrowser
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Share
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -66,6 +65,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.webkit.WebViewAssetLoader
 import com.openminis.app.MainActivity
+import com.openminis.app.ui.components.MinisButton
 import com.openminis.app.MinisApp
 import com.openminis.app.R
 import com.openminis.app.logging.AppLogger
@@ -242,7 +242,7 @@ class WebAppActivity : ComponentActivity() {
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
-                                Button(onClick = { openInMinis(sourceSessionId) }) {
+                                MinisButton(onClick = { openInMinis(sourceSessionId) }) {
                                     Text(stringResource(R.string.webapp_open_in_minis))
                                 }
                             }
@@ -505,6 +505,20 @@ class WebAppActivity : ComponentActivity() {
             .build()
 
         webView.webViewClient = object : WebViewClient() {
+            // [T-android-webview-render-process-gone] (GH#341) This Activity IS
+            // the WebView — there is no other content to fall back to, so a
+            // dead renderer means finishing rather than leaving the user on a
+            // blank screen with no way to tell what happened.
+            override fun onRenderProcessGone(
+                view: WebView?,
+                detail: android.webkit.RenderProcessGoneDetail?,
+            ): Boolean {
+                val handled = com.openminis.app.ui.webview.WebViewRenderProcess
+                    .handle("WebAppActivity", detail)
+                runCatching { finish() }
+                return handled
+            }
+
             override fun shouldInterceptRequest(
                 view: WebView,
                 request: WebResourceRequest,

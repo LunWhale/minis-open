@@ -49,6 +49,7 @@ struct RetryRunIntent: AppIntent {
         let pendingId = ShortcutRunTracker.markPending(
             intent: "RetryRunIntent",
             sessionId: session.id,
+            waitForResult: waitForResult,
             eagerKeepAliveArmed: eagerResult.armed,
             eagerKeepAliveSkippedReason: eagerResult.skipReason
         )
@@ -59,6 +60,27 @@ struct RetryRunIntent: AppIntent {
         // session may have been created by hand in the app, and that tag also
         // drives near-capacity auto-compaction.
         vm.suppressGeneralCompletionNotification = true
+        // [T-headless-mount-activation] Resolve external folder mounts and
+        // WAIT for them before any agent work (issue #335).
+        //
+        // `activateAll()` runs from the root view's `.onAppear`, which a headless
+        // intent (`openAppWhenRun = false`) never builds — so on a cold or
+        // force-quit launch nothing acquired the security scopes, `activeURLs`
+        // stayed empty, and the external-mount snapshot the agent reads was
+        // empty too. `/var/minis/mounts/<name>` was simply absent until the user
+        // opened the app once.
+        //
+        // Bounded so a slow FileProvider cannot stall the Shortcut: on expiry the
+        // pass keeps running and publishes late (the mount becomes usable
+        // mid-run) instead of being abandoned. 12s because a cold iCloud
+        // FileProvider takes ~5s per bookmark on device and the resolves run
+        // concurrently, so this clears a realistic mount set with headroom
+        // without ever being the thing that hangs a Shortcut.
+        //
+        // Placed OUTSIDE the branch below: the VM may already be cached (isNew
+        // false) while this process still never activated mounts, which is exactly
+        // the force-quit case this fixes.
+        await MountedFoldersManager.shared.ensureActivated(timeout: 12)
         if isNew {
             await vm.loadSession()
         }
@@ -90,7 +112,7 @@ struct RetryRunIntent: AppIntent {
             }
             return .result(
                 value: SendPromptResult(sessionId: session.id, modelName: "N/A", status: "Error", isNewSession: false),
-                dialog: IntentDialog(stringLiteral: String(localized: "No user messages found in this session."))
+                dialog: IntentDialog(stringLiteral: AppLocalized("No user messages found in this session."))
             )
         }
 
@@ -171,7 +193,7 @@ struct RetryRunIntent: AppIntent {
         if sendCompletionNotification {
             ShortcutNotification.post(
                 id: "shortcut-retry-\(sid)",
-                title: String(localized: "Minis: Retrying"),
+                title: AppLocalized("Minis: Retrying"),
                 body: "\(modelName): \(promptPreview)\(targetMessage.content.count > 50 ? "…" : "")",
                 sessionId: sid
             )
@@ -192,7 +214,7 @@ struct RetryRunIntent: AppIntent {
             if sendCompletionNotification {
                 ShortcutNotification.post(
                     id: "shortcut-retry-done-\(sid)",
-                    title: String(localized: "Minis: Retry Done"),
+                    title: AppLocalized("Minis: Retry Done"),
                     body: "\(modelName): \(String(responseText.prefix(200)))",
                     sessionId: sid
                 )
@@ -227,7 +249,7 @@ struct RetryRunIntent: AppIntent {
             if capturedSendCompletionNotification {
                 ShortcutNotification.post(
                     id: "shortcut-retry-done-\(capturedSid)",
-                    title: String(localized: "Minis: Retry Done"),
+                    title: AppLocalized("Minis: Retry Done"),
                     body: "\(capturedModelName): \(summary)",
                     sessionId: capturedSid
                 )
@@ -246,7 +268,7 @@ struct RetryRunIntent: AppIntent {
         // has exactly one placeholder. Inlining the ternary would bake a second
         // one into the key and make it fragile to translate.
         let elidedPreview = promptPreview + (targetMessage.content.count > 50 ? "…" : "")
-        return .result(value: result, dialog: IntentDialog(stringLiteral: String(localized: "Retrying from message: \(elidedPreview)")))
+        return .result(value: result, dialog: IntentDialog(stringLiteral: AppLocalized("Retrying from message: \(elidedPreview)")))
     }
 
     static var parameterSummary: some ParameterSummary {

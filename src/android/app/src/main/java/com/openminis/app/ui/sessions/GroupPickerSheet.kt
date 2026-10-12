@@ -59,6 +59,24 @@ sealed interface GroupChoice {
 }
 
 /**
+ * [T-android-group-picker-recent] The Move to Group picker's order: most
+ * recently active group first. A group's activity is the later of its newest
+ * member session's `updatedAt` ([lastActivity], by group id) and its own
+ * record time (`updatedAt` / `createdAt`: a rename or pin, or when it was
+ * made). So an empty group ranks by its own record time. Ties keep [folders]'
+ * incoming order — the sort is stable — so the result never jitters between
+ * opens.
+ *
+ * The picker is where the user is most likely filing into a group they are
+ * working in right now; the session list's own group order (pins first) is a
+ * different question and is deliberately left as it is.
+ */
+internal fun groupPickerOrder(folders: List<FolderEntity>, lastActivity: Map<String, Long>): List<FolderEntity> =
+    folders.sortedByDescending { f ->
+        maxOf(f.updatedAt, f.createdAt, lastActivity[f.id] ?: Long.MIN_VALUE)
+    }
+
+/**
  * The group picker. ONE sheet serves both the single-session context menu and
  * the multi-select toolbar, deliberately — iOS keeps them unified so the two
  * flows cannot drift apart, and the same applies here.
@@ -131,6 +149,10 @@ fun GroupPickerSheet(
                 placeholder = stringResource(R.string.group_new_name_hint),
                 modifier = Modifier.padding(horizontal = 20.dp),
                 containerColor = SectionDesign.screenBackgroundColor(),
+                // [T-android-sheet-textfield-inset] The modifier padding above
+                // insets the CARD; without this the glyphs still sit flush
+                // against the card's own left edge (user-reported).
+                contentHorizontalPadding = 16.dp,
             )
             Spacer(Modifier.height(8.dp))
             SectionTextField(
@@ -141,6 +163,7 @@ fun GroupPickerSheet(
                 placeholder = stringResource(R.string.group_desc_hint),
                 modifier = Modifier.padding(horizontal = 20.dp),
                 containerColor = SectionDesign.screenBackgroundColor(),
+                contentHorizontalPadding = 16.dp,
             )
 
             if (duplicate != null) {

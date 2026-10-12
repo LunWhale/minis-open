@@ -296,6 +296,19 @@ final class GeminiProvider: LLMProvider {
     /// described in ONE place. Behaviour is byte-for-byte unchanged — pinned by
     /// ThinkingWireGeminiAnthropicSnapshotTests (182 rows generated from the previous
     /// implementation of this method and committed before the migration).
+    /// True for models whose response modality is not text (TTS today; image/embedding
+    /// share the trait). The Gemini API rejects `systemInstruction` on these with
+    /// 400 "Developer instruction is not enabled for this model", exactly as it rejects
+    /// a thinking config.
+    ///
+    /// [T-gemini-tts-thinking-400 / OpenMinis#226] Keyed off the DECLARED MODALITY rather
+    /// than the model id, because that is the property actually responsible: the id-suffix
+    /// list in `ThinkingRuleResolver` exists only because the thinking rules are consulted
+    /// without a capability object in scope. Here we have one, so use it.
+    private var rejectsSystemInstruction: Bool {
+        model.capabilities.supportedModalities.contains(.audioOutput)
+    }
+
     private func minimalThinkingConfig() -> [String: Any] {
         let cfg = ThinkingRuleResolver.geminiThinkingConfig(modelId: model.id, level: .off)
         thinkingLogger.info("[resolve] provider=gemini model=\(model.id) level=off keys=[\(cfg.keys.sorted().joined(separator: ","))]")
@@ -341,7 +354,10 @@ final class GeminiProvider: LLMProvider {
         }
         body["contents"] = contents
 
-        if let sys = systemPrompt, !sys.isEmpty {
+        // [OpenMinis#226] Audio-output models reject systemInstruction outright. Dropping
+        // it costs nothing here: the sub-agent preamble it carries is guidance for a text
+        // responder, and a TTS model's job is to speak `contents` verbatim.
+        if let sys = systemPrompt, !sys.isEmpty, !rejectsSystemInstruction {
             body["systemInstruction"] = ["parts": [["text": sys]]]
         }
 
@@ -520,19 +536,64 @@ final class GeminiProvider: LLMProvider {
         return (text, functionCalls, media)
     }
 
+    /// Parse `usageMetadata` into `LLMUsage`. [GH#384]
+    ///
+    /// Google's shape is not the one the rest of the app assumes, in two ways:
+    ///
+    /// 1. `candidatesTokenCount` counts ONLY the visible answer. Gemini 3.x
+    ///    bills thinking separately in `thoughtsTokenCount`, and the invariant
+    ///    the API maintains is
+    ///        totalTokenCount = prompt + candidates + thoughts
+    ///    so reading `candidatesTokenCount` alone drops every thinking token.
+    ///    Captured on gemini-3.8-flash: prompt 11, candidates 20, thoughts 310
+    ///    — i.e. 94%% of the output went unreported.
+    ///
+    /// 2. `promptTokenCount` is the FULL input, cache included, whereas this
+    ///    app's convention (see `TokenUsage.add` and the OpenAI/Anthropic
+    ///    providers) is that `inputTokens` means the FRESH, uncached part and
+    ///    the cached part travels in `cacheReadInputTokens`. Passing the full
+    ///    prompt through as `inputTokens` while also reporting the cache would
+    ///    double-count it: the hit-rate denominator is `input + cacheRead`, so
+    ///    a real 91.8%% hit (45026 of 49016) would render as 47.8%%.
+    ///
+    /// `cachedContentTokenCount` is only present on the FINAL chunk of a
+    /// stream, so most chunks legitimately report no cache. nil (not 0) is used
+    /// for "this chunk said nothing about caching" so downstream can tell that
+    /// apart from a measured zero.
     private func extractUsage(_ json: [String: Any]) -> LLMUsage? {
         let effective = unwrapCloudCodeResponse(json)
         guard let usage = effective["usageMetadata"] as? [String: Any] else { return nil }
-        let input = usage["promptTokenCount"] as? Int ?? 0
-        let output = usage["candidatesTokenCount"] as? Int ?? 0
-        return LLMUsage(inputTokens: input, outputTokens: output,
-                        cacheCreationInputTokens: nil, cacheReadInputTokens: nil)
+        return Self.parseUsageMetadata(usage)
+    }
+
+    /// Shared so the parsing rules can be exercised directly by tests and reused
+    /// by every Gemini-protocol endpoint (relays and proxies forward this block
+    /// unchanged).
+    static func parseUsageMetadata(_ usage: [String: Any]) -> LLMUsage {
+        let promptTokens = usage["promptTokenCount"] as? Int ?? 0
+        let candidatesTokens = usage["candidatesTokenCount"] as? Int ?? 0
+        let thoughtsTokens = usage["thoughtsTokenCount"] as? Int ?? 0
+        // Absent or 0 both mean "no cache to report" — keep nil so a cache-less
+        // chunk is distinguishable from a measured zero.
+        let cachedTokens = (usage["cachedContentTokenCount"] as? Int).flatMap { $0 > 0 ? $0 : nil }
+
+        let totalOutput = candidatesTokens + thoughtsTokens
+        // Clamped: a relay that reports a cache larger than the prompt must not
+        // produce a negative input count.
+        let freshInput = cachedTokens.map { max(0, promptTokens - $0) } ?? promptTokens
+
+        return LLMUsage(inputTokens: freshInput, outputTokens: totalOutput,
+                        cacheCreationInputTokens: nil, cacheReadInputTokens: cachedTokens)
     }
 
     /// Parse a single SSE chunk from streaming response into events.
     private func parseStreamChunk(_ json: [String: Any]) -> [GeminiStreamEvent] {
         var events: [GeminiStreamEvent] = []
         let effective = unwrapCloudCodeResponse(json)
+        // [T-agent-model-identity] The served model, as the API names it.
+        if let mv = effective["modelVersion"] as? String, !mv.isEmpty {
+            events.append(.responseModel(mv))
+        }
 
         guard let candidates = effective["candidates"] as? [[String: Any]],
               let first = candidates.first,
@@ -624,7 +685,7 @@ final class GeminiProvider: LLMProvider {
         }
         let transientStatusCodes: Set<Int> = [500, 502, 503, 504, 529]
         if transientStatusCodes.contains(http.statusCode) {
-            throw LLMError.transientError(message: "Gemini API error \(http.statusCode): \(body.prefix(200))")
+            throw LLMError.transientError(message: "Gemini API error \(http.statusCode): \(body.prefix(200))", statusCode: http.statusCode)
         }
         throw LLMError.providerError(message: "Gemini API error \(http.statusCode): \(body.prefix(500))")
     }
@@ -655,7 +716,7 @@ final class GeminiProvider: LLMProvider {
             #endif
             let transientStatusCodes: Set<Int> = [500, 502, 503, 504, 529]
             if transientStatusCodes.contains(http.statusCode) {
-                throw LLMError.transientError(message: "Gemini API error \(http.statusCode): \(body.prefix(200))")
+                throw LLMError.transientError(message: "Gemini API error \(http.statusCode): \(body.prefix(200))", statusCode: http.statusCode)
             }
             throw LLMError.providerError(message: "Gemini API error \(http.statusCode): \(body.prefix(200))")
         }
@@ -777,6 +838,8 @@ final class GeminiProvider: LLMProvider {
                 parts.append("  → thinkingDelta(\(text.count) chars): \"\(preview)\"" + (text.count > 100 ? "..." : ""))
             case .usage(let usage):
                 parts.append("  → usage: in=\(usage.inputTokens) out=\(usage.outputTokens)")
+            case .responseModel(let m):
+                parts.append("  → modelVersion: \(m)")
             case .done:
                 parts.append("  → done")
             }
@@ -809,6 +872,8 @@ enum GeminiStreamEvent {
     case functionCall(name: String, args: [String: Any], thoughtSignature: String?)
     case finishReason(String)
     case usage(LLMUsage)
+    /// [T-agent-model-identity] `modelVersion` as reported by the API.
+    case responseModel(String)
     case done
 }
 

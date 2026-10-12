@@ -147,6 +147,14 @@ fun MinisSkillsBrowserScreen(
                         settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Mobile Safari/537.36"
 
                         webViewClient = object : WebViewClient() {
+                            // [T-android-webview-render-process-gone] (GH#341)
+                            // AndroidView factory rebuilds on recomposition.
+                            override fun onRenderProcessGone(
+                                view: WebView?,
+                                detail: android.webkit.RenderProcessGoneDetail?,
+                            ): Boolean = com.openminis.app.ui.webview.WebViewRenderProcess
+                                .handle("MinisSkillsBrowserScreen", detail)
+
                             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                                 url?.let { currentUrl = it }
                             }
@@ -171,9 +179,17 @@ fun MinisSkillsBrowserScreen(
                                 // T134: hand off intent:// / market:// /
                                 // tel: / mailto: links to the system so the
                                 // user doesn't see ERR_UNKNOWN_URL_SCHEME.
+                                // [T-android-user-initiated-scheme-dispatch]
+                                // Visible skills browser; user-tapped link.
                                 return com.openminis.app.ui.browser
                                     .BrowserExternalSchemeHandler
-                                    .handle(ctx, request?.url)
+                                    .handle(
+                                        ctx,
+                                        request?.url,
+                                        com.openminis.app.ui.browser
+                                            .BrowserExternalSchemeHandler
+                                            .Origin.USER_INITIATED,
+                                    )
                             }
                         }
 

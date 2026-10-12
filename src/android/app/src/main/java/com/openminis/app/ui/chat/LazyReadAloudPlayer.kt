@@ -20,13 +20,32 @@ internal class LazyReadAloudPlayer(context: Context) {
     @Volatile
     private var player: ReadAloudPlayer? = null
 
-    /** Speak [text] as one utterance, stopping anything already in flight. */
+    /**
+     * Speak [text] sentence by sentence, stopping anything already in flight.
+     *
+     * Only the explicit long-press actions call this, so read-replies is
+     * switched on (and un-muted) first — otherwise, with the default settings,
+     * the player drops the text silently. [T-android-readaloud-menu-enable]
+     */
     fun speak(text: String) {
         if (text.isBlank()) return
+        com.openminis.app.speech.VoiceOutputState.activateForExplicitReadAloud()
         val p = player ?: synchronized(this) {
             player ?: ReadAloudPlayer(appContext).also { player = it }
         }
         p.speak(text)
+    }
+
+    /**
+     * [T-android-readaloud-stop-stale] Stop whatever is currently being read.
+     *
+     * Deliberately does NOT bind an engine: if nothing has ever been spoken
+     * there is nothing to stop, and constructing a TTS engine here would undo
+     * the whole point of the lazy player (an unused ChatScreen never binds
+     * one). Idempotent and safe to call on every new reply.
+     */
+    fun stop() {
+        player?.stop()
     }
 
     /** Release the engine if one was ever bound. Idempotent. */

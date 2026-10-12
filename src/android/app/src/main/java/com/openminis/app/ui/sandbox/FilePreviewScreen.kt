@@ -45,6 +45,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
+import androidx.compose.material.icons.filled.Android
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Share
@@ -77,6 +78,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.FileProvider
+import androidx.core.graphics.drawable.toBitmap
 import com.openminis.app.logging.AppLogger
 import com.openminis.app.ui.components.rememberIosBounceOverscrollEffect
 import com.openminis.app.ui.markdown.MarkdownText
@@ -162,6 +164,28 @@ fun FilePreviewScreen(
     // because they fought the Activity's edge-to-edge transparent-scrim
     // setup instead of cooperating with it. The "Browse Chat Files" screen
     // (FileBrowserScreen) renders correctly with zero overrides; do the same.
+    //
+    // [T-android-file-preview-statusbar] ...with one exception, which that
+    // note predates. Since 988bd6491 this screen is a NavHost `dialog`
+    // destination (so the chat keeps its scroll position), i.e. it runs in
+    // its OWN window, on top. The status bar takes its icon colour from that
+    // top window, and nothing set it: a Dialog window defaults to light
+    // (white) icons. In light mode that is white on the white top bar — the
+    // status bar looked blank. Set the dialog window's icon appearance from
+    // the app theme; bar colours are left alone (they are what the note
+    // above warns about). Same fix the other own-window viewers carry
+    // (WebPreviewBottomSheet, FullscreenImageViewer, InlineMediaPlayer).
+    val previewDark = com.openminis.app.ui.theme.ChatColors.isDark
+    val hostView = androidx.compose.ui.platform.LocalView.current
+    androidx.compose.runtime.DisposableEffect(hostView, previewDark) {
+        filePreviewDialogWindow(hostView)?.let { w ->
+            androidx.core.view.WindowInsetsControllerCompat(w, w.decorView).apply {
+                isAppearanceLightStatusBars = !previewDark
+                isAppearanceLightNavigationBars = !previewDark
+            }
+        }
+        onDispose { }
+    }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -237,6 +261,10 @@ fun FilePreviewScreen(
                 item.isPdfFile -> PdfPreview(item)
                 item.isCsvFile -> CsvPreview(item)
                 item.isJsonFile -> JsonPreview(item)
+                // [T-android-apk-preview] BEFORE isArchiveFile — an APK is a
+                // ZIP, and the generic archive branch would win and dump its
+                // entry list.
+                item.isApkFile -> ApkPreview(item)
                 item.isArchiveFile -> ArchivePreview(item)
                 item.isOfficeFile -> OfficeOpenExternal(item)
                 item.isTextFile -> TextPreview(item)
@@ -474,7 +502,16 @@ private fun HtmlPreview(item: FileItem) {
                 // viewport units.
                 settings.useWideViewPort = true
                 settings.loadWithOverviewMode = true
-                webViewClient = WebViewClient()
+                // [T-android-webview-render-process-gone] (GH#341) Was a bare
+                // `WebViewClient()`; it has to be a subclass to override the
+                // callback at all.
+                webViewClient = object : WebViewClient() {
+                    override fun onRenderProcessGone(
+                        view: WebView?,
+                        detail: android.webkit.RenderProcessGoneDetail?,
+                    ): Boolean = com.openminis.app.ui.webview.WebViewRenderProcess
+                        .handle("FilePreviewScreen.inline", detail)
+                }
                 val targetUrl = "file://${item.file.absolutePath}"
                 post { loadUrl(targetUrl) }
             }
@@ -788,6 +825,169 @@ private fun JsonPreview(item: FileItem) {
     }
 }
 
+// ==================== APK ====================
+
+/**
+ * [T-android-apk-preview] Package card for an .apk, instead of the ZIP entry
+ * list the generic archive renderer used to show.
+ *
+ * An APK *is* a ZIP, so it fell into [ArchivePreview] and rendered 282 rows of
+ * `META-INF/androidx.*.version` — accurate and useless. Someone who taps an APK
+ * in a chat wants to know what app it is and then install it, so this shows the
+ * package identity (icon, label, version, package name, min/target SDK) and
+ * puts "Install" front and centre.
+ *
+ * Metadata is read with [PackageManager.getPackageArchiveInfo], which parses the
+ * manifest WITHOUT installing anything. Its `applicationInfo` comes back with
+ * `sourceDir`/`publicSourceDir` unset — they must be pointed at the file by hand
+ * or `loadIcon`/`loadLabel` resolve against the wrong package and return this
+ * app's own icon.
+ *
+ * Parsing can fail (a corrupt download, or an .xapk which is a ZIP OF apks and
+ * has no manifest of its own). That is not an error state worth blocking on:
+ * the file still exists and can still be opened or shared, so the card falls
+ * back to filename + size and keeps the actions live.
+ */
+@Composable
+private fun ApkPreview(item: FileItem) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    data class ApkInfo(
+        val label: String?,
+        val packageName: String?,
+        val versionName: String?,
+        val versionCode: Long?,
+        val minSdk: Int?,
+        val targetSdk: Int?,
+        val icon: android.graphics.drawable.Drawable?,
+    )
+
+    var info by remember(item.file) { mutableStateOf<ApkInfo?>(null) }
+    var parsed by remember(item.file) { mutableStateOf(false) }
+
+    LaunchedEffect(item.file) {
+        withContext(Dispatchers.IO) {
+            val result = try {
+                val pm = context.packageManager
+                val pkg = pm.getPackageArchiveInfo(item.file.absolutePath, 0)
+                if (pkg == null) {
+                    null
+                } else {
+                    // Without these the icon/label lookups resolve against the
+                    // HOST package and silently return Minis' own assets.
+                    pkg.applicationInfo?.let { app ->
+                        app.sourceDir = item.file.absolutePath
+                        app.publicSourceDir = item.file.absolutePath
+                    }
+                    ApkInfo(
+                        label = pkg.applicationInfo?.let { runCatching { pm.getApplicationLabel(it).toString() }.getOrNull() },
+                        packageName = pkg.packageName,
+                        versionName = pkg.versionName,
+                        versionCode = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                            pkg.longVersionCode
+                        } else {
+                            @Suppress("DEPRECATION") pkg.versionCode.toLong()
+                        },
+                        minSdk = pkg.applicationInfo?.minSdkVersion,
+                        targetSdk = pkg.applicationInfo?.targetSdkVersion,
+                        icon = pkg.applicationInfo?.let { runCatching { pm.getApplicationIcon(it) }.getOrNull() },
+                    )
+                }
+            } catch (e: Exception) {
+                AppLogger.warning("FilePreview", "APK parse failed: ${e.message}")
+                null
+            }
+            info = result
+            parsed = true
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            val icon = info?.icon
+            if (icon != null) {
+                androidx.compose.foundation.Image(
+                    painter = androidx.compose.ui.graphics.painter.BitmapPainter(
+                        icon.toBitmap().asImageBitmap(),
+                    ),
+                    contentDescription = null,
+                    modifier = Modifier.size(72.dp),
+                )
+            } else {
+                Icon(
+                    Icons.Default.Android,
+                    contentDescription = null,
+                    modifier = Modifier.size(72.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+            Spacer(Modifier.height(16.dp))
+            Text(
+                // Falls back to the filename when the manifest could not be
+                // read — still the most useful thing we can name it.
+                text = info?.label ?: item.name,
+                style = MaterialTheme.typography.titleMedium,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+            info?.packageName?.let { pkg ->
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = pkg,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+            }
+            val version = info?.versionName
+            if (version != null) {
+                Spacer(Modifier.height(2.dp))
+                val code = info?.versionCode
+                Text(
+                    text = if (code != null) "$version ($code)" else version,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = item.formattedSize,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (parsed && info == null) {
+                // Say so rather than showing a bare filename and letting the
+                // user wonder whether the file is broken.
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = stringResource(R.string.filepreview_apk_unreadable),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+            }
+            Spacer(Modifier.height(24.dp))
+            // ACTION_VIEW on an application/vnd.android.package-archive URI is
+            // what reaches the system installer. It is offered even when the
+            // manifest failed to parse: the installer does its own, stricter
+            // validation and will report a bad package better than we can.
+            MinisTextButton(onClick = {
+                openExternally(context, item, "application/vnd.android.package-archive")
+            }) {
+                Text(stringResource(R.string.filepreview_apk_install))
+            }
+        }
+        FileMetadataBlock(item)
+    }
+}
+
 // ==================== Archive (ZIP/JAR/APK) ====================
 
 @Composable
@@ -932,9 +1132,20 @@ private fun openExternally(context: Context, item: FileItem, mime: String) {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         context.startActivity(Intent.createChooser(intent, "Open with…"))
-    } catch (e: Exception) {
+    } catch (e: android.content.ActivityNotFoundException) {
         AppLogger.warning("FilePreview", "openExternally failed: ${e.message}")
         Toast.makeText(context, "No app available to open this file.", Toast.LENGTH_SHORT).show()
+    } catch (e: Exception) {
+        // [T-android-mount-fileprovider-root] Everything else is OUR failure —
+        // typically getUriForFile rejecting a path no provider root covers.
+        // Reporting it as "No app available" sent users looking for a missing
+        // viewer app when the file itself was never handed over.
+        AppLogger.warning("FilePreview", "openExternally failed: ${e.message}")
+        Toast.makeText(
+            context,
+            context.getString(R.string.file_open_failed_toast, e.message ?: ""),
+            Toast.LENGTH_SHORT,
+        ).show()
     }
 }
 
@@ -1068,6 +1279,16 @@ private fun printFile(context: Context, item: FileItem) {
         // Keep a reference alive until the print job is dispatched.
         var holder: WebView? = webView
         webView.webViewClient = object : WebViewClient() {
+            // [T-android-webview-render-process-gone] (GH#341) Throwaway
+            // WebView built just to drive the print adapter; if its renderer
+            // dies the print simply does not happen, which beats killing the
+            // app. Nothing holds a reference afterwards.
+            override fun onRenderProcessGone(
+                view: WebView?,
+                detail: android.webkit.RenderProcessGoneDetail?,
+            ): Boolean = com.openminis.app.ui.webview.WebViewRenderProcess
+                .handle("FilePreviewScreen.print", detail)
+
             override fun onPageFinished(view: WebView, url: String) {
                 val printManager =
                     context.getSystemService(Context.PRINT_SERVICE) as PrintManager
@@ -1197,3 +1418,16 @@ private fun collectImageGallery(
     return items to startIdx
 }
 
+/**
+ * [T-android-file-preview-statusbar] The Dialog window this preview runs in
+ * (as a NavHost `dialog` destination), or null when it is hosted directly in
+ * an Activity window.
+ */
+private fun filePreviewDialogWindow(view: android.view.View): android.view.Window? {
+    var p: android.view.ViewParent? = view.parent
+    while (p != null) {
+        if (p is androidx.compose.ui.window.DialogWindowProvider) return p.window
+        p = p.parent
+    }
+    return null
+}

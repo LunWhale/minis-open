@@ -30,6 +30,7 @@ import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material.icons.outlined.Extension
 import androidx.compose.material.icons.outlined.Feedback
+import androidx.compose.material.icons.outlined.Backup
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.FolderShared
 import androidx.compose.material.icons.outlined.FrontHand
@@ -37,6 +38,8 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.Groups
+import androidx.compose.material.icons.outlined.Handyman
 import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.Settings
@@ -67,6 +70,7 @@ import androidx.compose.ui.res.stringResource
 import com.openminis.app.BuildConfig
 import com.openminis.app.R
 import com.openminis.app.ui.components.openExternalUrl
+import com.openminis.app.i18n.uppercaseForDisplay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -75,10 +79,14 @@ fun SettingsScreen(
     onProvidersClick: () -> Unit,
     onModelGroupsClick: () -> Unit,
     onRootfsClick: () -> Unit = {},
+    onBackupClick: () -> Unit = {},
     onEnvVarsClick: () -> Unit = {},
     onSkillsClick: () -> Unit = {},
     onTerminalClick: () -> Unit = {},
     onMemoryClick: () -> Unit = {},
+    /** [T-p2-agent-settings] Settings › Agents (delegation on/off), below Memory. */
+    onAgentsClick: () -> Unit = {},
+    onAgentToolsClick: () -> Unit = {},
     // [T-mcp-integration-android] MCP Integrations page, listed directly below
     // Memory. Default no-op for callers that haven't wired the route yet.
     onMcpClick: () -> Unit = {},
@@ -170,7 +178,32 @@ fun SettingsScreen(
             }
 
             // -- Agent Runtime --
+            // [T-android-settings-runtime-order] Row order matches iOS
+            // (ContentView.swift, Section "Agent Runtime"): Agent Tools, Sub
+            // Agents, Skills, Soul, Memory, MCP, Environment Variables.
+            //
+            // The order is not alphabetical or historical — it runs from what
+            // the agent may DO (tools, and who it may hand work to) to what it
+            // is made OF (skills, identity, memory) and finally to what it
+            // connects to (MCP, env). Android had grown its own order simply by
+            // appending each row as it landed, which put the two capability
+            // switches in the middle of the identity rows.
             SettingsSection(title = stringResource(R.string.settings_section_agent_runtime)) {
+                // [T-tools-granular-switches] Which optional tools the agent may use.
+                SettingsItem(
+                    icon = Icons.Outlined.Handyman,
+                    iconColor = Color(0xFF5E5CE6),
+                    title = stringResource(R.string.settings_agent_tools),
+                    subtitle = stringResource(R.string.settings_agent_tools_subtitle),
+                    onClick = onAgentToolsClick,
+                )
+                SettingsItem(
+                    icon = Icons.Outlined.Groups,
+                    iconColor = com.openminis.app.ui.chat.HelperAccentStatic,
+                    title = stringResource(R.string.settings_agents),
+                    subtitle = stringResource(R.string.settings_agents_subtitle),
+                    onClick = onAgentsClick,
+                )
                 SettingsItem(
                     icon = Icons.Outlined.Extension,
                     iconColor = Color(0xFF007AFF),
@@ -178,7 +211,7 @@ fun SettingsScreen(
                     subtitle = stringResource(R.string.settings_skills_subtitle),
                     onClick = onSkillsClick,
                 )
-                // [T-soul-md] insertion between Skills and Memory per spec.
+                // [T-soul-md] Between Skills and Memory, as on iOS.
                 SettingsItem(
                     icon = Icons.Outlined.AutoAwesome,
                     iconColor = Color(0xFFFF9500),
@@ -193,7 +226,7 @@ fun SettingsScreen(
                     subtitle = stringResource(R.string.settings_memory_subtitle),
                     onClick = onMemoryClick,
                 )
-                // [T-mcp-integration-android] MCP Integrations — directly below Memory.
+                // [T-mcp-integration-android] MCP Integrations — below Memory.
                 // [T-android-mcp-icon-distinct] Dashboard (2x2 block grid) instead of
                 // Extension so MCP no longer shares the Skills row's puzzle-piece icon —
                 // the grid reads as "multiple composed blocks/servers". teal unchanged.
@@ -236,6 +269,13 @@ fun SettingsScreen(
                     title = stringResource(R.string.settings_mount_external_folders),
                     subtitle = stringResource(R.string.settings_mount_external_folders_subtitle),
                     onClick = onMountedFoldersClick,
+                )
+                SettingsItem(
+                    icon = Icons.Outlined.Backup,
+                    iconColor = Color(0xFF34C759),
+                    title = stringResource(R.string.settings_backup_restore),
+                    subtitle = stringResource(R.string.settings_backup_restore_subtitle),
+                    onClick = onBackupClick,
                     showDivider = false,
                 )
             }
@@ -484,7 +524,7 @@ private fun SettingsSection(
     ) {
         // Section header
         Text(
-            text = title.uppercase(),
+            text = title.uppercaseForDisplay(),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontWeight = FontWeight.Medium,

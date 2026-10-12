@@ -104,6 +104,7 @@ import androidx.compose.material.icons.filled.ArrowCircleUp
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Compress
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Check
@@ -289,6 +290,14 @@ internal fun UserMessageBubble(
     onCopy: () -> Unit = {},
     onRetry: (() -> Unit)? = {},
     onEdit: (() -> Unit)? = null,
+    // [T-android-delete-from-here] Delete this message and everything after
+    // it. Null hides the action (streaming, or a host with no truncation
+    // capability).
+    onDeleteFromHere: (() -> Unit)? = null,
+    // [T-android-compact-above] Summarize everything above this message
+    // (iOS parity: ChatMessageViews.swift's `onCompact`). Null hides the
+    // action — same streaming gate as Retry/Edit/Delete From Here.
+    onCompactAbove: (() -> Unit)? = null,
     onWithdraw: (() -> Unit)? = null,
     onPreviewFile: (Uri, String) -> Unit = { _, _ -> },
 ) {
@@ -503,6 +512,58 @@ internal fun UserMessageBubble(
                         text = { Text(stringResource(R.string.chat_longpress_edit)) },
                         onClick = { showMenu = false; onEdit() },
                         leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                    )
+                }
+                // [T-android-delete-from-here] Removes this message and every
+                // message after it. Destructive and not undoable, so it sits
+                // last (furthest from the thumb's resting position on the
+                // items above) and is tinted with the error colour like the
+                // Retry affordance. Gated while streaming for the same reason
+                // as Retry/Edit — the caller passes null.
+                if (onDeleteFromHere != null) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                stringResource(R.string.chat_longpress_delete_from_here),
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        },
+                        onClick = { showMenu = false; onDeleteFromHere() },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        },
+                    )
+                }
+                // [T-android-compact-above] Summarizes every message above this
+                // one. Sits last, after Delete From Here, matching the iOS
+                // context menu's order. Warning-tinted like Delete rather than
+                // plain: the replaced history is not recoverable, even though
+                // nothing is literally deleted from the DB. The caller passes
+                // null while streaming — compactAll() would reject the request
+                // anyway, so hiding it avoids a menu entry that only produces a
+                // "cannot compact while a turn is in progress" notice.
+                if (onCompactAbove != null) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                stringResource(R.string.chat_longpress_compact_above),
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        },
+                        onClick = { showMenu = false; onCompactAbove() },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Compress,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        },
                     )
                 }
             }

@@ -41,12 +41,16 @@ enum DebugRPCProvider {
             case .openAIResponses: supportedCreds = ["apiKey"]
             case .xAI: supportedCreds = ["apiKey", "oauth"]
             case .kimiCode: supportedCreds = ["oauth"]
+            // [T-copilot-provider] OAuth only — there is no API-key form.
+            case .githubCopilot: supportedCreds = ["oauth"]
             case .unsupported: supportedCreds = []
             }
             let customBaseSupported: Bool
             switch type {
             case .openAI, .openRouter, .openAIResponses, .gemini, .xAI, .kimiCode: customBaseSupported = true
-            case .anthropic, .antigravity, .unsupported: customBaseSupported = false
+            // Copilot's host is fixed; a custom base would just break the
+            // header/endpoint contract the integration depends on.
+            case .anthropic, .antigravity, .githubCopilot, .unsupported: customBaseSupported = false
             }
             return [
                 "id": type.rawValue,
@@ -86,10 +90,6 @@ enum DebugRPCProvider {
         let isEnabled = (params["isEnabled"] as? Bool) ?? true
         let seedBuiltInModels = (params["seedBuiltInModels"] as? Bool) ?? true
 
-        if credentialType == .apiKey, apiKey == nil || apiKey?.isEmpty == true {
-            throw DebugRPCErr(-32602, "apiKey is required when credentialType=apiKey")
-        }
-
         let instance = ProviderInstance(
             label: label,
             providerType: providerType,
@@ -99,8 +99,24 @@ enum DebugRPCProvider {
             appendV1Suffix: appendV1Suffix
         )
 
-        // Persist credential before adding instance — if Keychain write fails we abort.
-        if credentialType == .apiKey, let key = apiKey {
+        // [T-empty-key-compat-endpoints] Keyless is a valid configuration for
+        // a third-party OpenAI/Anthropic-compatible endpoint with a custom
+        // base URL (ollama, LM Studio, an internal gateway) — the same
+        // `allowsEmptyAPIKey` predicate the rest of the app already trusts
+        // (hasAnyCredential, model refresh, AddProviderView). This RPC used
+        // to hard-refuse any empty key, which blocked agents from creating
+        // exactly the instances the UI happily creates.
+        if credentialType == .apiKey, (apiKey ?? "").isEmpty, !instance.allowsEmptyAPIKey {
+            throw DebugRPCErr(-32602, "apiKey is required when credentialType=apiKey "
+                + "(keyless is allowed only for OpenAI/Anthropic-compatible instances "
+                + "with a custom base URL)")
+        }
+
+        // Persist credential before adding instance — if Keychain write fails we
+        // abort. Never write an empty string: hasAnyCredential treats empty as
+        // absent, and an empty Keychain entry is how the AddProviderView keyless
+        // flow avoids phantom credentials too.
+        if credentialType == .apiKey, let key = apiKey, !key.isEmpty {
             ProviderKeychainHelper.saveAPIKey(key, instanceId: instance.id)
         }
         if let token = oauthToken, !token.isEmpty {
@@ -646,14 +662,22 @@ enum DebugRPCProvider {
             "modelEntryCount": store.entries(for: instance.id).count,
         ]
         dict["customBaseURL"] = instance.customBaseURL ?? NSNull()
-        let hasKey: Bool = {
+        // [T-empty-key-compat-endpoints] `hasCredential` answers the question a
+        // caller actually asks: "is this instance usable?" That is
+        // hasAnyCredential — the same predicate every picker, router and chat
+        // path gates on — and it is true for a keyless compatible endpoint. The
+        // old raw Keychain probe reported false for a fully working keyless
+        // instance, sending agents chasing a credential the server never
+        // wanted. `hasStoredKey` keeps the raw probe for callers that really
+        // do need to know whether a secret is stored (e.g. before an export).
+        dict["hasCredential"] = instance.hasAnyCredential
+        dict["hasStoredKey"] = {
             if instance.credentialType == .apiKey {
                 return ProviderKeychainHelper.loadAPIKey(instanceId: instance.id)?.isEmpty == false
             } else {
                 return ProviderKeychainHelper.loadOAuthString(instanceId: instance.id, account: "manual-oauth-token")?.isEmpty == false
             }
-        }()
-        dict["hasCredential"] = hasKey
+        }() as Bool
         if instance.supportsImageEndpointSetting {
             dict["imageEndpointMode"] = instance.imageEndpointMode.rawValue
             if let resolved = instance.imageEndpointResolved {
@@ -847,6 +871,79 @@ enum DebugRPCProvider {
 
 @MainActor
 enum DebugRPCChat {
+
+    /// [T-msgidx-oob-repro] `chat.debugRemoveMessages` — TEST HOOK.
+    ///
+    /// Removes `count` UI rows from the FRONT of the LIVE view model's
+    /// `messages` array (never the trailing assistant), simulating the
+    /// external mid-loop mutations the agent loop's msgIdx resync exists to
+    /// survive: an iCloud inbound rebuild, a compaction sweep, a user delete.
+    /// Exists to deterministically reproduce (and then regression-test) the
+    /// crash family where `messages[msgIdx]` is subscripted with a stale
+    /// index after a suspension — timing the call into a stalled provider
+    /// stream lands the mutation inside the exact windows that crash in the
+    /// field (1.11(15) .ips 2026-08-15 14:02, runAgentLoop reminder path).
+    /// Deliberately mutates ONLY the UI array (not agentHistory, not the DB)
+    /// — same shape as the sync-rebuild mutation.
+    static func debugRemoveMessages(params: [String: Any]) async throws -> [String: Any] {
+        guard let sid = params["sessionId"] as? String, !sid.isEmpty else {
+            throw DebugRPCErr(-32602, "Missing required param: sessionId")
+        }
+        let count = max(1, min((params["count"] as? Int) ?? 2, 10))
+        return await MainActor.run {
+            let (vm, _) = ViewModelCache.shared.getOrCreate(for: sid)
+            let before = vm.messages.count
+            var removed = 0
+            while removed < count, vm.messages.count > 1 {
+                vm.messages.remove(at: 0)
+                removed += 1
+            }
+            AppLogger(category: "DebugRPC").warning("[MsgIdxRepro] removed \(removed) leading UI rows (\(before) → \(vm.messages.count)) sid=\(sid.prefix(8))")
+            return ["before": before, "removed": removed, "after": vm.messages.count]
+        }
+    }
+
+    /// [T-ios-delete-from-message] `chat.deleteFromMessage` — TEST HOOK.
+    ///
+    /// Drives `AIChatViewModel.deleteFromMessage` on the live view model and
+    /// reports the before/after size of all THREE stores the suffix delete has
+    /// to keep in step (UI rows, model-facing agentHistory, persisted rows), so
+    /// a test can assert they stay consistent — in particular that the surviving
+    /// history never ends on a dangling tool_use.
+    ///
+    /// `index` selects the n-th USER bubble (0-based) instead of requiring a
+    /// message UUID, which is what a script actually has on hand.
+    static func deleteFromMessage(params: [String: Any]) async throws -> [String: Any] {
+        guard let sid = params["sessionId"] as? String, !sid.isEmpty else {
+            throw DebugRPCErr(-32602, "Missing required param: sessionId")
+        }
+        let userIndex = (params["index"] as? Int) ?? 0
+        // Make sure the view model has its UI loaded — a session that isn't
+        // open in the app has an empty `messages`/`agentHistory`, and the
+        // delete would be a silent no-op.
+        let (vm, _) = await MainActor.run { ViewModelCache.shared.getOrCreate(for: sid) }
+        await vm.loadSession()
+        return await MainActor.run {
+            let userIds = vm.messages.filter { $0.role == .user }.map(\.id)
+            guard userIndex >= 0, userIndex < userIds.count else {
+                return ["error": "index \(userIndex) out of range (userBubbles=\(userIds.count))"]
+            }
+            let beforeMsgs = vm.messages.count
+            let beforeHistory = vm.agentHistory.count
+            vm.deleteFromMessage(userIds[userIndex])
+            return [
+                "userBubblesBefore": userIds.count,
+                "messagesBefore": beforeMsgs,
+                "messagesAfter": vm.messages.count,
+                "historyBefore": beforeHistory,
+                "historyAfter": vm.agentHistory.count,
+                "trailingHistoryRole": vm.agentHistory.last.map { "\($0.role)" } ?? "none",
+                "trailingHasToolUse": vm.agentHistory.last.map { entry in
+                    entry.parts.contains { if case .toolUse = $0 { return true }; return false }
+                } ?? false,
+            ]
+        }
+    }
 
     static func modelsList(params: [String: Any]) throws -> [String: Any] {
         let includeHidden = (params["includeHidden"] as? Bool) ?? false
@@ -1074,8 +1171,33 @@ enum DebugRPCChat {
             store.setInferenceConfig(cfg, for: sid)
         }
 
-        vm.inputText = prompt
-        vm.send()
+        // [T-paste-single-split] Faithful E2E driver for the paste pipeline:
+        // each entry in `pastedTexts` is stashed exactly as PastableUITextView's
+        // paste branch would, and its `[Pasted#N]` literal lands in the prompt —
+        // at the matching `{{PASTE<i>}}` token when present, appended otherwise.
+        // The subsequent send() then exercises the real consume/persist path.
+        var effectivePrompt = prompt
+        if let pastes = params["pastedTexts"] as? [String] {
+            for (i, pasteText) in pastes.enumerated() {
+                guard let literal = vm.stashPastedText(pasteText) else { continue }
+                let token = "{{PASTE\(i)}}"
+                if effectivePrompt.contains(token) {
+                    effectivePrompt = effectivePrompt.replacingOccurrences(of: token, with: literal)
+                } else {
+                    effectivePrompt += " \(literal)"
+                }
+            }
+        }
+        vm.inputText = effectivePrompt
+        // Mirror ChatInputBar: while a turn is running, the send button becomes
+        // "queue" — send() itself guards on isProcessing and would silently
+        // drop the prompt. Routing to enqueuePrompt makes chat.prompt faithful
+        // to the UI and lets automation exercise the queued-drain path.
+        if vm.isProcessing {
+            vm.enqueuePrompt()
+        } else {
+            vm.send()
+        }
 
         let sid = vm.sessionId ?? "unknown"
         let userMessageId = vm.messages.last(where: { $0.role == .user })?.id.uuidString ?? ""
@@ -1335,6 +1457,15 @@ enum DebugRPCChat {
         let id = try require(params["sessionId"] as? String, "sessionId")
         let confirm = (params["confirm"] as? Bool) ?? false
         guard confirm else { throw DebugRPCErr(-32602, "confirm=true required") }
+        let all = await ChatStore.shared.sessionIdsWithDescendants([id])
+        await MainActor.run {
+            for sid in all {
+                AgentJobRegistry.shared.cancelAll(parent: sid, reason: "sessionDeleted")
+                AgentJobRegistry.shared.cancelAll(session: sid, reason: "sessionDeleted")
+                ViewModelCache.shared.remove(sessionId: sid)
+                BrowserUseOffloadBridge.releasePool(forSession: sid)
+            }
+        }
         await ChatStore.shared.deleteSession(id)
         ProviderConfigStore.shared.removeBinding(for: id)
         ProviderConfigStore.shared.removeInferenceConfig(for: id)
@@ -1497,6 +1628,24 @@ enum DebugRPCChat {
         return ["folderId": id, "pinned": pinned]
     }
 
+    /// [T-titlegen-regenerate-folder] Drive the manual "regenerate title"
+    /// action for tests — the real entry point is a session-row long-press
+    /// menu the tap synthesizer can't reach. Returns the resulting title and
+    /// folder id so folder-suggestion behavior is directly assertable.
+    static func titleRegenerate(params: [String: Any]) async throws -> [String: Any] {
+        let sessionId = try require(params["sessionId"] as? String, "sessionId")
+        try await AIChatViewModel.regenerateSessionTitle(sessionId: sessionId)
+        guard let session = await ChatStore.shared.getSession(sessionId) else {
+            throw DebugRPCErr(-32602, "Session not found after regenerate")
+        }
+        await notifySessionListChanged()
+        return [
+            "sessionId": sessionId,
+            "title": session.title ?? NSNull(),
+            "folderId": session.folderId ?? NSNull(),
+        ]
+    }
+
     /// Toggle the auto-grouping setting (Settings → Appearance → Grouping)
     /// for tests — the toggle lives in a sheet the tap synthesizer can't
     /// reach, and title-generation reads this defaults key directly.
@@ -1591,7 +1740,15 @@ enum DebugRPCChat {
 
         let beforeMarkers = await ChatStore.shared.compactMarkers(sessionId: sid).count
 
+        // [T-ios-compact-task-binding] Deliberately still an inline await rather
+        // than startCompactTask: this RPC's contract is to block until the
+        // compaction settles, and it does that by polling isCompacting below.
+        // Wrapping it in a Task would return here immediately and race that
+        // poll. The origin is still stamped so that if the user hits Stop mid-
+        // RPC, cancel() applies the right cleanup (no promptQueue rollback).
+        await MainActor.run { vm.compactOrigin = .debugRPC }
         await vm.compactBefore(msgUUID, includesBoundary: includesBoundary)
+        await MainActor.run { vm.compactOrigin = nil }
 
         // compactBefore is async + drives an LLM call internally. Poll until
         // isCompacting / isProcessing both clear (or timeout).

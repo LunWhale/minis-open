@@ -26,6 +26,8 @@ extension AIChatViewModel {
     private struct RequestBudgetPlan {
         let droppedIds: Set<Int>
         let droppedPaths: [Int: String?]
+        /// [T-image-budget-base64] Both are BASE64 byte counts (wire size),
+        /// matching the unit the budget is expressed in. Log/diagnostic only.
         let keptBytes: Int
         let elidedBytes: Int
         let droppedCount: Int
@@ -47,9 +49,16 @@ extension AIChatViewModel {
         // Walk latest → eldest so most-recent images win the budget.
         for img in images.reversed() {
             let id = ObjectIdentifier(img.data as AnyObject).hashValue
-            // Cap-clamp each image's effective size to kPerImageMaxBytes —
-            // matches what compressedImageDataUnderBudget would produce.
-            let effective = min(img.data.count, kPerImageMaxBytes)
+            // [T-image-budget-base64] Measure what this image costs ON THE
+            // WIRE: images are base64 inlined into the request body, so the
+            // budget has to count encoded bytes or it under-counts every image
+            // by a third — the gap that pushed real requests past a gateway's
+            // 32 MB body limit while this planner believed it was at 25 MB.
+            //
+            // Cap-clamp to kPerImageMaxBytes (also base64 bytes) — matches
+            // what compressedImageDataUnderBudget would produce, since its
+            // caller targets the raw equivalent of that same ceiling.
+            let effective = min(estimatedBase64Length(img.data.count), kPerImageMaxBytes)
             if kept + effective <= maxBytes {
                 kept += effective
             } else {
@@ -126,7 +135,7 @@ extension AIChatViewModel {
                 switch part {
                 case .imageData(let data, let mimeType, let lp):
                     refs.append(Ref(msgIdx: mi, partIdx: pi, image: BudgetImage(data: data, linuxPath: lp, mimeType: mimeType)))
-                case .toolResult(_, _, _, _, let imgData, let imgMime, _, let lp):
+                case .toolResult(_, _, _, _, let imgData, let imgMime, _, let lp, _):
                     if let d = imgData {
                         refs.append(Ref(msgIdx: mi, partIdx: pi, image: BudgetImage(data: d, linuxPath: lp, mimeType: imgMime ?? "image/jpeg")))
                     }
@@ -165,12 +174,14 @@ extension AIChatViewModel {
                 switch original {
                 case .imageData:
                     newParts[ref.partIdx] = .text(placeholder)
-                case .toolResult(let id, let name, let content, let isError, _, _, let pageURL, let imgLinuxPath):
+                case .toolResult(let id, let name, let content, let isError, _, _, let pageURL, let imgLinuxPath, let isReadback):
                     let newContent = content.isEmpty ? placeholder : "\(content)\n\(placeholder)"
                     newParts[ref.partIdx] = .toolResult(
                         id: id, name: name, content: newContent,
                         isError: isError, imageData: nil, imageMimeType: nil,
-                        pageURL: pageURL, imageLinuxPath: imgLinuxPath
+                        // [T-offload-readback-loop] Carry the flag across the rebuild.
+                        pageURL: pageURL, imageLinuxPath: imgLinuxPath,
+                        isOffloadReadback: isReadback
                     )
                 default: break
                 }
@@ -178,12 +189,12 @@ extension AIChatViewModel {
             mutated[mi].parts = newParts
         }
 
-        logger.info("[ImageBudget] request-level: dropped=\(plan.droppedCount)/\(plan.totalCount) keptBytes=\(plan.keptBytes) elidedBytes=\(plan.elidedBytes)")
+        logger.info("[ImageBudget] request-level: dropped=\(plan.droppedCount)/\(plan.totalCount) keptBytes=\(plan.keptBytes) elidedBytes=\(plan.elidedBytes) (base64 wire bytes, budget=\(Self.kRequestImageMaxBytes))")
 
         // Surface to the user via Toast (already-existing infrastructure).
         let droppedCount = plan.droppedCount
         Task { @MainActor in
-            self.transientNotice = String(localized: "Older \(droppedCount) image(s) elided from request to fit 25MB budget")
+            self.transientNotice = AppLocalized("Older \(droppedCount) image(s) elided from request to fit 25MB budget")
         }
 
         return mutated
@@ -224,7 +235,19 @@ extension AIChatViewModel {
         if lower.contains("image content cannot exceed")
             || lower.contains("image_too_large")
             || (lower.contains("413") && lower.contains("image")) {
-            return String(localized: "Image too large for the provider. The pre-send compressor already shrank it as far as it could; try removing one or more attachments and resending.") + "\n\n" + raw
+            return AppLocalized("Image too large for the provider. The pre-send compressor already shrank it as far as it could; try removing one or more attachments and resending.") + "\n\n" + raw
+        }
+        // [T-file-write-large-content-timeout] GH#223. A request that dies with
+        // a timeout / TLS drop while the model is emitting a big file_write
+        // argument surfaces only as "Network error: request timed out", which
+        // reads as a connectivity fault and sends users off checking their
+        // proxy. The real cause is usually the sheer length of the generated
+        // argument, so point at that too — without claiming it as the only
+        // cause, since a genuinely bad network produces the same string.
+        if lower.contains("timed out") || lower.contains("timeout")
+            || lower.contains("request timed out") || lower.contains("secure connection")
+            || lower.contains("ssl") || lower.contains("tls") {
+            return raw + "\n\n" + AppLocalized("If this happened while writing a large file, the request likely died mid-generation rather than the network being down: the whole file is generated as tool arguments before the write starts. Ask for the file in smaller appended chunks, or have it generated by a short script instead.")
         }
         return raw
     }
@@ -291,15 +314,22 @@ extension AIChatViewModel {
 
     /// Resolve a `minis://` URL to a host filesystem URL.
     /// Shared resolution logic used by Markdown link handlers and the browser's WKURLSchemeHandler.
-    nonisolated static func resolveMinisURL(_ url: URL) -> URL? {
+    ///
+    /// [T-minisurl-wrong-active-session] `sessionId` scopes the per-session
+    /// hosts (attachments/workspace/…) to the session that OWNS the reference.
+    /// Callers running inside an agent loop MUST pass their own session id —
+    /// the `activeSessionId` fallback tracks the session whose UI is
+    /// frontmost, which is the wrong scope whenever another session is
+    /// processing concurrently in the background.
+    nonisolated static func resolveMinisURL(_ url: URL, sessionId: String? = nil) -> URL? {
         guard url.scheme == "minis", let host = url.host else { return nil }
         // Tolerate double-encoded links (%25E6…) alongside the correct
         // single-encoded form. [T-fix-double-encoding]
         let subPaths = MinisURLPathDecoding.subPathCandidates(for: url)
         let fm = FileManager.default
 
-        // Primary: resolve via active session
-        if let sid = activeSessionId {
+        // Primary: resolve via the owning session (explicit), else frontmost
+        if let sid = sessionId ?? activeSessionId {
             for subPath in subPaths {
                 let candidate = minisPersistentBase
                     .appendingPathComponent(sid, isDirectory: true)

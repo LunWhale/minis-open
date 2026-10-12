@@ -109,6 +109,23 @@ object Routes {
     const val MODEL_ENTRY_DETAIL = "model_entry/{instanceId}/{entryId}"
     const val ADD_CUSTOM_MODEL = "add_custom_model/{instanceId}"
     const val STORAGE = "storage"
+    const val BACKUP = "backup"
+    /**
+     * [T-onboarding-restore-link] One-shot key the caller sets on its own
+     * savedStateHandle before navigating to [BACKUP] to open on a given tab.
+     * A handle value rather than a route argument: the BACKUP route string is
+     * matched verbatim by getBackStackEntry / pop-to-BACKUP in the restore
+     * browse flow, and an optional argument would change its pattern.
+     */
+    const val BACKUP_INITIAL_TAB_KEY = "backup_initial_tab"
+    const val BACKUP_DESTINATIONS = "backup_destinations"
+    const val BACKUP_HISTORY_DETAIL = "backup_history_detail"
+    const val BACKUP_DESTINATION_BROWSE = "backup_destination_browse"
+    const val RESTORE_BROWSE = "restore_browse"
+    // [T-android-restore-server-list] The servers you can restore FROM, plus
+    // an Add Server entry. Separate from BACKUP_DESTINATIONS, which is the
+    // editable management screen for the same servers.
+    const val RESTORE_SERVERS = "restore_servers"
     const val SESSION_STORAGE_DETAIL = "session_storage/{sessionId}"
     const val ROOTFS_MANAGEMENT = "rootfs_management"
     const val MIRROR_CATEGORY_DETAIL = "mirror_category/{categoryKey}"
@@ -141,9 +158,21 @@ object Routes {
         return if (params.isEmpty()) "terminal" else "terminal?${params.joinToString("&")}"
     }
     /** Chat-files browser: opens FileBrowser rooted at /var/minis for the session. */
-    const val CHAT_FILES = "chat_files/{sessionId}"
-    fun chatFiles(sessionId: String) = "chat_files/$sessionId"
+    const val CHAT_FILES = "chat_files/{sessionId}?path={path}"
+    /** [path]: optional Linux folder to open at (a tapped minis:// folder link). */
+    fun chatFiles(sessionId: String, path: String? = null) =
+        if (path == null) "chat_files/$sessionId" else "chat_files/$sessionId?path=${android.net.Uri.encode(path)}"
+    /** [T-agent-transcript-page] Full-screen read-only agent (child) transcript. */
+    const val AGENT_TRANSCRIPT = "agent_transcript/{sessionId}"
+    fun agentTranscript(sessionId: String) = "agent_transcript/$sessionId"
     const val MEMORY = "memory"
+    /** [T-p2-agent-settings] Settings › Agents. */
+    const val AGENTS = "agents"
+    // [T-sub-agents-v1] The roster the main model delegates to by name.
+    const val SUB_AGENTS = "sub_agents"
+    const val SUB_AGENT_DETAIL = "sub_agent/{agentId}"
+    /** [T-tools-granular-switches] Settings > Agent Runtime > Tools. */
+    const val AGENT_TOOLS = "agent_tools"
     /** [T-mcp-integration-android] MCP Integrations management screen. */
     const val MCP = "mcp"
     /** [T-soul-md] SOUL.md editor. */
@@ -337,6 +366,28 @@ fun AppNavigation(
             com.openminis.app.diagnostics.LaunchCycleBeacon.shouldForceHomeOnLaunch()
         ) 3 else rawMode
         val autoThresholdMs = 15L * 60 * 1000
+        // [T-android-first-launch-lands-home] Read once, before the mode
+        // branches: "is this device set up at all?" is the question that
+        // outranks the launch preference.
+        val hasAnySession = chatRepository.dao.listSessions().isNotEmpty()
+        // [T-android-hang-false-positive] Wait for the provider config to load
+        // by SUSPENDING, bounded, instead of blocking the main thread: the
+        // getter used to take configLock and waited up to 21 s behind a
+        // saveConfig. If the load never completes (unreadable store), fall
+        // through after the bound and read what is published, as before.
+        kotlinx.coroutines.withTimeoutOrNull(2_000) { providerRepository.awaitConfigLoaded() }
+        val hasAnyProvider = providerRepository.instances.isNotEmpty()
+        // [XSessionDiag] Hypothesis 1 context: which launch mode actually applied.
+        // rawMode is the user's preference (0 = auto, the default); mode is what
+        // survived the force-home circuit breakers. Without this line a log that
+        // lacks the "launch/auto" entry below is ambiguous — it could mean the
+        // auto branch was not taken, or that this whole resolver never ran.
+        com.openminis.app.logging.AppLogger.info(
+            "XSessionDiag",
+            "[XSessionDiag] launch/mode: rawMode=$rawMode effectiveMode=$mode " +
+                "hasPendingShare=$hasPendingShare hasAnySession=$hasAnySession " +
+                "hasAnyProvider=$hasAnyProvider",
+        )
         val target: String? = when {
             // T185: if a system share is buffered and the configured launch
             // mode would leave us on the session list (mode 3 = Home), the
@@ -344,13 +395,46 @@ fun AppNavigation(
             // exactly the symptom from the bug report. Force a new draft
             // chat so the share lands in a composer.
             hasPendingShare && mode == 3 -> Routes.chat("__new__${java.util.UUID.randomUUID()}")
-            mode == 1 -> chatRepository.dao.listSessions().firstOrNull()?.let { Routes.chat(it.id) }
+            // [T-android-first-launch-lands-home] Nothing configured AND no
+            // history: land on Home whatever the mode says. Mode 2 ("always a
+            // new chat") is a real preference, but on a device with no provider
+            // it opens a composer that cannot send — and hides the onboarding
+            // steps that explain why. Once the user has either a session or a
+            // provider, their preference is honoured again.
+            !hasAnySession && !hasAnyProvider -> null
+            mode == 1 -> chatRepository.dao.listSessions().firstOrNull { !it.isChild }?.let { Routes.chat(it.id) }
             mode == 2 -> Routes.chat("__new__${java.util.UUID.randomUUID()}")
             mode == 3 -> null
             else -> {
-                val latest = chatRepository.dao.listSessions().firstOrNull()
-                val fresh = latest != null && System.currentTimeMillis() - latest.updatedAt < autoThresholdMs
-                if (fresh) Routes.chat(latest!!.id) else Routes.chat("__new__${java.util.UUID.randomUUID()}")
+                // [T-android-first-launch-lands-home] No history → Home, not a
+                // fresh draft. Auto mode is the DEFAULT, and it used to fall
+                // through to a new chat here: a device with providers but no
+                // sessions yet opened straight into an empty composer instead
+                // of the list. "Resume what I was doing" has nothing to resume
+                // when nothing was ever done.
+                // [T-child-session-leak] "Resume what I was doing" must never
+                // land in a hidden agent child session.
+                val latest = chatRepository.dao.listSessions().firstOrNull { !it.isChild }
+                    ?: return@LaunchedEffect
+                val fresh = System.currentTimeMillis() - latest.updatedAt < autoThresholdMs
+                // [XSessionDiag] Hypothesis 1: auto mode silently RESUMES the most
+                // recently updated session, so a restored backup whose updatedAt is
+                // the iPhone's own timestamp can look "fresh" and be presented as
+                // the landing chat — the user believes they are in a new chat.
+                // Logs the exact inputs to the freshness test and where it navigated.
+                // Runs once per cold start; no measurable cost.
+                run {
+                    val now = System.currentTimeMillis()
+                    com.openminis.app.logging.AppLogger.info(
+                        "XSessionDiag",
+                        "[XSessionDiag] launch/auto: candidate=${latest.id.take(8)} " +
+                            "title=${latest.title?.take(24)} " +
+                            "updatedAt=${latest.updatedAt} now=$now " +
+                            "ageMs=${now - latest.updatedAt} thresholdMs=$autoThresholdMs " +
+                            "fresh=$fresh -> ${if (fresh) "RESUME_EXISTING" else "NEW_DRAFT"}",
+                    )
+                }
+                if (fresh) Routes.chat(latest.id) else Routes.chat("__new__${java.util.UUID.randomUUID()}")
             }
         }
         if (target != null) {
@@ -488,34 +572,23 @@ fun AppNavigation(
             ) + fadeOut(animationSpec = tween(200, easing = EmphasizedAccelerate))
         },
     ) {
+        // [T-android-tablet-split] SESSION_LIST and CHAT both render the same
+        // ChatSplitScaffold; they differ only in which session it opens with.
+        //
+        // Keeping BOTH routes (rather than collapsing to one) is deliberate:
+        // `Routes.chat(id)` is navigated to from many places — deep links,
+        // share handoff, Move-to, the widget, notifications — and every one of
+        // them keeps working unchanged. On a phone the scaffold resolves to a
+        // single pane, so those pushes look and behave exactly as before.
         composable(Routes.SESSION_LIST) {
-            SessionListScreen(
+            ChatSplitScaffoldRoute(
+                initialSessionId = null,
+                navController = navController,
                 chatRepository = chatRepository,
                 providerRepository = providerRepository,
-                onSessionClick = { sessionId ->
-                    navController.safeNavigate(Routes.chat(sessionId))
-                },
-                onNewChat = { sessionId ->
-                    navController.safeNavigate(Routes.chat(sessionId))
-                },
-                onSettingsClick = {
-                    navController.safeNavigate(Routes.SETTINGS)
-                },
-                onAddProviderClick = {
-                    navController.safeNavigate(Routes.ADD_PROVIDER)
-                },
-                onSelectModelsClick = {
-                    navController.safeNavigate(Routes.ONBOARDING_MODELS)
-                },
-                onTerminalClick = {
-                    navController.safeNavigate(Routes.terminal())
-                },
-                onRootfsClick = {
-                    navController.safeNavigate(Routes.ROOTFS_MANAGEMENT)
-                },
-                onScheduledTasksClick = {
-                    navController.safeNavigate(Routes.SCHEDULED_TASKS)
-                },
+                memoryRepository = memoryRepository,
+                skillRepository = skillRepository,
+                mcpRepository = mcpRepository,
             )
         }
 
@@ -524,48 +597,14 @@ fun AppNavigation(
             arguments = listOf(navArgument("sessionId") { type = NavType.StringType }),
         ) { backStackEntry ->
             val sessionId = backStackEntry.arguments?.getString("sessionId") ?: return@composable
-            ChatScreen(
-                sessionId = sessionId,
+            ChatSplitScaffoldRoute(
+                initialSessionId = sessionId,
+                navController = navController,
                 chatRepository = chatRepository,
                 providerRepository = providerRepository,
                 memoryRepository = memoryRepository,
                 skillRepository = skillRepository,
                 mcpRepository = mcpRepository,
-                onBack = { navController.safePopBackStack() },
-                // [T-new-chat-menu-entry] Chat-menu "New Chat": same draft-id
-                // funnel as the session list / NewChat deep link — a fresh
-                // "__new__" route whose DB record is only created on first
-                // send, so abandoning it leaves no empty session. popUpTo
-                // removes the current chat from the stack (back → list) and
-                // a double-fire just replaces one unpersisted draft with
-                // another instead of stacking two chats.
-                onNewChat = {
-                    navController.safeNavigate(Routes.chat("__new__${java.util.UUID.randomUUID()}")) {
-                        popUpTo(Routes.SESSION_LIST) { inclusive = false }
-                        launchSingleTop = true
-                    }
-                },
-                onOpenTerminal = {
-                    navController.safeNavigate(Routes.terminal(sessionId = sessionId))
-                },
-                onOpenTerminalWithCommand = { command ->
-                    navController.safeNavigate(
-                        Routes.terminal(initCommand = command, sessionId = sessionId),
-                    )
-                },
-                onMoveToSession = { targetId ->
-                    navController.safeNavigate(Routes.chat(targetId)) {
-                        popUpTo(Routes.SESSION_LIST) { inclusive = false }
-                    }
-                },
-                onBrowseChatFiles = {
-                    navController.safeNavigate(Routes.chatFiles(sessionId))
-                },
-                onPreviewAttachment = { item ->
-                    FilePreviewHolder.currentItem = item
-                    navController.safeNavigate(Routes.FILE_PREVIEW)
-                },
-                onModelGroupsClick = { navController.safeNavigate(Routes.MODEL_GROUPS) },
             )
         }
 
@@ -575,10 +614,13 @@ fun AppNavigation(
                 onProvidersClick = { navController.safeNavigate(Routes.PROVIDER_LIST) },
                 onModelGroupsClick = { navController.safeNavigate(Routes.MODEL_GROUPS) },
                 onRootfsClick = { navController.safeNavigate(Routes.STORAGE) },
+                onBackupClick = { navController.safeNavigate(Routes.BACKUP) },
                 onEnvVarsClick = { navController.safeNavigate(Routes.ENV_VARS) },
                 onSkillsClick = { navController.safeNavigate(Routes.SKILLS) },
                 onTerminalClick = { navController.safeNavigate(Routes.terminal()) },
                 onMemoryClick = { navController.safeNavigate(Routes.MEMORY) },
+                onAgentsClick = { navController.safeNavigate(Routes.AGENTS) },
+                onAgentToolsClick = { navController.safeNavigate(Routes.AGENT_TOOLS) },
                 onMcpClick = { navController.safeNavigate(Routes.MCP) },
                 onSoulClick = { navController.safeNavigate(Routes.SOUL) },
                 onPermissionsClick = { navController.safeNavigate(Routes.PERMISSIONS) },
@@ -589,6 +631,167 @@ fun AppNavigation(
                 onAboutClick = { navController.safeNavigate(Routes.ABOUT) },
                 onMountedFoldersClick = { navController.safeNavigate(Routes.MOUNTED_FOLDERS) },
                 onSharedFoldersClick = { navController.safeNavigate(Routes.SHARED_FOLDERS) },
+            )
+        }
+
+        composable(Routes.BACKUP) { entry ->
+            // Read once per entry and consumed, so a later visit from Settings
+            // opens on Backup again.
+            val initialTab = remember(entry) {
+                navController.previousBackStackEntry?.savedStateHandle
+                    ?.remove<Int>(Routes.BACKUP_INITIAL_TAB_KEY) ?: 0
+            }
+            com.openminis.app.ui.settings.backup.BackupAndRestoreScreen(
+                initialTab = initialTab,
+                onBack = { navController.safePopBackStack() },
+                onManageDestinations = { navController.safeNavigate(Routes.BACKUP_DESTINATIONS) },
+                onChooseRestoreServer = { navController.safeNavigate(Routes.RESTORE_SERVERS) },
+                onOpenHistoryRecord = { id ->
+                    navController.safeNavigate("${Routes.BACKUP_HISTORY_DETAIL}/$id")
+                },
+                onBrowseDestination = { name ->
+                    navController.safeNavigate(
+                        "${Routes.RESTORE_BROWSE}/" + android.net.Uri.encode(name),
+                    )
+                },
+            )
+        }
+
+        composable(
+            "${Routes.BACKUP_HISTORY_DETAIL}/{recordId}",
+            arguments = listOf(navArgument("recordId") { type = NavType.StringType }),
+        ) { entry ->
+            val id = entry.arguments?.getString("recordId").orEmpty()
+            val ctx = androidx.compose.ui.platform.LocalContext.current
+            val history = remember { com.openminis.app.backup.BackupHistory.get(ctx) }
+            val record = remember(id) { history.records().firstOrNull { it.id == id } }
+            if (record == null) {
+                // The record was removed (or pruned) while this screen was on
+                // the stack; there is nothing to show, so leave rather than
+                // render an empty shell.
+                LaunchedEffect(Unit) { navController.safePopBackStack() }
+            } else {
+                // The screen needs a ViewModel for the delete-with-files path
+                // (it talks to rclone); scoped to this entry so it dies with
+                // the screen.
+                val vm: com.openminis.app.ui.settings.backup.BackupViewModel =
+                    androidx.lifecycle.viewmodel.compose.viewModel()
+                com.openminis.app.ui.settings.backup.BackupHistoryDetailScreen(
+                    record = record,
+                    onBack = { navController.safePopBackStack() },
+                    onRemove = {
+                        history.remove(id)
+                        navController.safePopBackStack()
+                    },
+                    // [T-android-backup-delete-files-feedback] Await the
+                    // delete and hand the screen its outcome. This used to pop
+                    // on the same frame it called the ViewModel — and since the
+                    // ViewModel is scoped to THIS nav entry, popping cleared it
+                    // and cancelled `viewModelScope` before the IO block ran.
+                    // Nothing was deleted and nothing was said, which is the
+                    // "button does nothing" the user reported. The screen now
+                    // pops itself via onRemoved, once the record is really gone.
+                    onRemoveWithFiles = { vm.removeHistoryRecordWithFiles(id) },
+                    onRemoved = { navController.safePopBackStack() },
+                    onOpenDestination = { name ->
+                        navController.safeNavigate(
+                            "${Routes.BACKUP_DESTINATION_BROWSE}/" +
+                                android.net.Uri.encode(name),
+                        )
+                    },
+                )
+            }
+        }
+
+        composable(
+            "${Routes.BACKUP_DESTINATION_BROWSE}/{remoteName}",
+            arguments = listOf(navArgument("remoteName") { type = NavType.StringType }),
+        ) { entry ->
+            val name = entry.arguments?.getString("remoteName").orEmpty()
+            val ctx = androidx.compose.ui.platform.LocalContext.current
+            val remote = remember(name) {
+                com.openminis.app.backup.remote.RcloneRemoteStore(ctx).remote(name)
+            }
+            if (remote == null) {
+                // The destination was removed since the record was written.
+                LaunchedEffect(Unit) { navController.safePopBackStack() }
+            } else {
+                val vm: com.openminis.app.ui.settings.backup.BackupViewModel =
+                    androidx.lifecycle.viewmodel.compose.viewModel()
+                com.openminis.app.ui.settings.backup.BackupDestinationBrowseScreen(
+                    remote = remote,
+                    vm = vm,
+                    onBack = { navController.safePopBackStack() },
+                )
+            }
+        }
+
+        // [T-android-restore-server-list] Reached from the restore tab's
+        // "Choose from Server…" — always, configured or not. Picking a row
+        // (or finishing an add) continues to that server's package browser.
+        composable(Routes.RESTORE_SERVERS) {
+            com.openminis.app.ui.settings.backup.RestoreServersScreen(
+                onBack = { navController.safePopBackStack() },
+                onPickServer = { name ->
+                    navController.safeNavigate(
+                        "${Routes.RESTORE_BROWSE}/" + android.net.Uri.encode(name),
+                    )
+                },
+            )
+        }
+
+        composable(
+            "${Routes.RESTORE_BROWSE}/{remoteName}",
+            arguments = listOf(navArgument("remoteName") { type = NavType.StringType }),
+        ) { entry ->
+            val name = entry.arguments?.getString("remoteName").orEmpty()
+            val ctx = androidx.compose.ui.platform.LocalContext.current
+            val remote = remember(name) {
+                com.openminis.app.backup.remote.RcloneRemoteStore(ctx).remote(name)
+            }
+            if (remote == null) {
+                LaunchedEffect(Unit) { navController.safePopBackStack() }
+            } else {
+                // Scoped to the BACKUP entry so the browser and the restore
+                // screen share one ViewModel — the picked package has to be
+                // visible to the screen that restores it.
+                val parent = remember(entry) { navController.getBackStackEntry(Routes.BACKUP) }
+                val vm: com.openminis.app.ui.settings.backup.BackupViewModel =
+                    androidx.lifecycle.viewmodel.compose.viewModel(parent)
+                com.openminis.app.ui.settings.backup.RestoreBrowseScreen(
+                    remote = remote,
+                    vm = vm,
+                    onBack = { navController.safePopBackStack() },
+                    // [T-android-restore-picked-lands-home] Pop to BACKUP, not
+                    // one level up.
+                    //
+                    // This screen is reachable at two different depths:
+                    // BACKUP → RESTORE_BROWSE when a destination is tapped on
+                    // the restore tab, but BACKUP → RESTORE_SERVERS →
+                    // RESTORE_BROWSE when the user came through "Choose from
+                    // Server…". A single pop is right for the first and one
+                    // short for the second, so after a multi-GB download and
+                    // extract the user landed back on the server list — the
+                    // step BEFORE the one they just completed — with no sign
+                    // of the package they had waited for. It is on the Backup
+                    // screen, one more pop away, that the opened package and
+                    // its category checkboxes actually render.
+                    //
+                    // Popping to a named destination is depth-independent, so
+                    // a future third entry point cannot reintroduce this.
+                    onPicked = {
+                        navController.safePopBackStack(
+                            route = Routes.BACKUP,
+                            inclusive = false,
+                        )
+                    },
+                )
+            }
+        }
+
+        composable(Routes.BACKUP_DESTINATIONS) {
+            com.openminis.app.ui.settings.backup.RcloneDestinationsScreen(
+                onBack = { navController.safePopBackStack() },
             )
         }
 
@@ -844,8 +1047,16 @@ fun AppNavigation(
         }
 
         composable(Routes.STORAGE) {
+            // [T-android-storage-usage-cache] Scoped to this entry: it survives a
+            // trip to a session's detail page and back (no re-measure), and is
+            // dropped when the user leaves Storage.
+            val storageContext = androidx.compose.ui.platform.LocalContext.current
+            val storageVm: com.openminis.app.ui.settings.StorageUsageViewModel =
+                androidx.lifecycle.viewmodel.compose.viewModel(
+                    factory = com.openminis.app.ui.settings.StorageUsageViewModel.factory(storageContext, chatRepository),
+                )
             StorageManagementScreen(
-                chatDao = chatRepository.dao,
+                vm = storageVm,
                 onBack = { navController.safePopBackStack() },
                 onRootfsClick = { navController.safeNavigate(Routes.ROOTFS_MANAGEMENT) },
                 onSessionClick = { sessionId ->
@@ -859,10 +1070,23 @@ fun AppNavigation(
             arguments = listOf(navArgument("sessionId") { type = NavType.StringType }),
         ) { backStackEntry ->
             val sessionId = backStackEntry.arguments?.getString("sessionId") ?: return@composable
+            // [T-android-storage-usage-cache] The list's ViewModel, when Storage
+            // is below us on the stack: this page's measurements update its row.
+            val storageVm = remember(backStackEntry) {
+                runCatching { navController.getBackStackEntry(Routes.STORAGE) }.getOrNull()
+            }?.let { parent ->
+                androidx.lifecycle.viewmodel.compose.viewModel<com.openminis.app.ui.settings.StorageUsageViewModel>(
+                    viewModelStoreOwner = parent,
+                    factory = com.openminis.app.ui.settings.StorageUsageViewModel.factory(
+                        androidx.compose.ui.platform.LocalContext.current, chatRepository,
+                    ),
+                )
+            }
             SessionStorageDetailScreen(
                 sessionId = sessionId,
                 chatDao = chatRepository.dao,
                 onBack = { navController.safePopBackStack() },
+                onMeasured = { id, minis, media -> storageVm?.onSessionMeasured(id, minis, media) },
                 onBrowseFiles = { rootPath ->
                     // [T-android-copy-abs-path-fullpath] This browser is rooted at
                     // the per-session host dir (filesDir/minis-sessions/<sid>),
@@ -938,16 +1162,30 @@ fun AppNavigation(
         // so the user can navigate up out of /var/minis into the broader rootfs.
         composable(
             route = Routes.CHAT_FILES,
-            arguments = listOf(navArgument("sessionId") { type = NavType.StringType }),
+            arguments = listOf(
+                navArgument("sessionId") { type = NavType.StringType },
+                navArgument("path") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+            ),
         ) { backStackEntry ->
             val context = androidx.compose.ui.platform.LocalContext.current
             val rootfs = RootfsManager.getInstance(context.applicationContext)
             val varMinis = java.io.File(rootfs.rootfsDir, "var/minis")
             val sessionId = backStackEntry.arguments?.getString("sessionId") ?: return@composable
-            val vm = remember(rootfs.rootfsDir.absolutePath, varMinis.absolutePath, sessionId) {
+            // [T-minis-folder-link] A tapped folder link opens at that folder.
+            // The browser is rooted at the rootfs and lists through the PRoot
+            // resolver, so the Linux path maps onto the rootfs layout directly;
+            // the folder need not exist inside the rootfs tarball itself.
+            val folderPath = backStackEntry.arguments?.getString("path")
+                ?.trim('/')?.takeIf { it.isNotEmpty() }
+            val vm = remember(rootfs.rootfsDir.absolutePath, varMinis.absolutePath, sessionId, folderPath) {
                 FileBrowserViewModel(
                     rootPath = rootfs.rootfsDir,
-                    initialPath = varMinis.takeIf { it.exists() },
+                    initialPath = folderPath?.let { java.io.File(rootfs.rootfsDir, it) }
+                        ?: varMinis.takeIf { it.exists() },
                     rootLabel = "/",
                     // T121: route directory listings through PRootKernel bind
                     // mounts so /var/minis/{skills,memory,shared} resolve to
@@ -1191,6 +1429,58 @@ fun AppNavigation(
             )
         }
 
+        // [T-android-subagent-page-parity] AGENTS resolves to the roster page
+        // itself, not to a wrapper around it.
+        //
+        // The old AgentSettingsScreen held a link to this page plus a READ-ONLY
+        // mirror of the sub-model group — a setting iOS configures under
+        // Providers > Model Groups, not here. Once the switch moved onto the
+        // roster page (e905140cb), the wrapper carried nothing of its own and
+        // was purely an extra tap between the user and the thing they picked.
+        //
+        // Kept as a route rather than deleted: `minis://settings/agents` is a
+        // published deep link, so it must keep resolving.
+        composable(Routes.AGENTS) {
+            com.openminis.app.ui.settings.SubAgentsScreen(
+                onBack = { navController.safePopBackStack() },
+                onOpen = { id -> navController.navigate("sub_agent/$id") },
+            )
+        }
+
+        composable(Routes.SUB_AGENTS) {
+            com.openminis.app.ui.settings.SubAgentsScreen(
+                onBack = { navController.safePopBackStack() },
+                onOpen = { id -> navController.navigate("sub_agent/$id") },
+            )
+        }
+
+        composable(
+            Routes.SUB_AGENT_DETAIL,
+            arguments = listOf(navArgument("agentId") { type = NavType.StringType }),
+        ) { entry ->
+            com.openminis.app.ui.settings.SubAgentDetailScreen(
+                agentId = entry.arguments?.getString("agentId").orEmpty(),
+                onBack = { navController.safePopBackStack() },
+            )
+        }
+
+        composable(Routes.AGENT_TOOLS) {
+            com.openminis.app.ui.settings.AgentToolsSettingsScreen(
+                onBack = { navController.safePopBackStack() },
+            )
+        }
+
+        composable(
+            route = Routes.AGENT_TRANSCRIPT,
+            arguments = listOf(navArgument("sessionId") { type = NavType.StringType }),
+        ) { backStackEntry ->
+            val sessionId = backStackEntry.arguments?.getString("sessionId") ?: return@composable
+            com.openminis.app.ui.chat.AgentTranscriptScreen(
+                sessionId = sessionId,
+                onBack = { navController.safePopBackStack() },
+            )
+        }
+
         composable(Routes.ABOUT) {
             AboutScreen(onBack = { navController.safePopBackStack() })
         }
@@ -1219,6 +1509,9 @@ fun AppNavigation(
             OnboardingModelSelectionScreen(
                 providerRepository = providerRepository,
                 onBack = { navController.safePopBackStack() },
+                onAddCustomModel = { instanceId ->
+                    navController.safeNavigate(Routes.addCustomModel(instanceId))
+                },
             )
         }
 

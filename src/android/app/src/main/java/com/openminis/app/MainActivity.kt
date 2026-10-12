@@ -40,6 +40,7 @@ import com.openminis.app.service.SessionActivityTracker
 import com.openminis.app.ui.navigation.AppNavigation
 import com.openminis.app.ui.navigation.Routes
 import com.openminis.app.ui.navigation.safeNavigate
+import com.openminis.app.ui.NewerDatabaseGuidanceScreen
 import com.openminis.app.ui.settings.KEY_FONT_APP_BASE
 import com.openminis.app.ui.settings.KEY_KEEP_SCREEN_AWAKE
 import com.openminis.app.ui.settings.KEY_LANGUAGE
@@ -232,6 +233,22 @@ class MainActivity : ComponentActivity() {
         // assigned, so it stays false for exactly as long as composing is
         // genuinely unsafe.
         val minisApp = application as? MinisApp
+
+        // [T-android-downgrade-compat] A database written by a NEWER build is
+        // not a crash — it is a recoverable state with a specific remedy, and
+        // the file has deliberately been left untouched. Handle it before the
+        // generic crash-share path below, which would otherwise ask the user to
+        // send a bug report for something that is not a bug and offer no way
+        // out.
+        if (minisApp != null &&
+            minisApp.dbVersionDecision ==
+            com.openminis.app.data.db.DatabaseVersionGuard.Decision.SHOW_NEWER_DB_GUIDANCE
+        ) {
+            android.util.Log.w("MainActivity", "showing newer-database guidance screen")
+            setContent { NewerDatabaseGuidanceScreen(onExit = { finishAndRemoveTask() }) }
+            return
+        }
+
         if (minisApp == null || !minisApp.subsystemsInitialized) {
             android.util.Log.w(
                 "MainActivity",
@@ -469,7 +486,7 @@ class MainActivity : ComponentActivity() {
         }
 
         // Register for debug screenshot capture (debug builds only)
-        if (BuildConfig.DEBUG) {
+        if (BuildConfig.DEV_TOOLS) {
             com.openminis.app.debug.DebugRPCHandler.currentActivity = java.lang.ref.WeakReference(this)
         }
 
@@ -551,6 +568,9 @@ class MainActivity : ComponentActivity() {
                 DisposableEffect(navController) {
                     val job = lifecycleScope.launch {
                         navController.currentBackStackEntryFlow.collect { entry ->
+                            // [T-android-hang-caller-attribution] Let a stall
+                            // sample name the screen it happened on.
+                            com.openminis.app.diagnostics.HangDetector.noteScreen(entry.destination.route)
                             val isChatRoute = entry.destination.route == Routes.CHAT
                             val sid = entry.arguments?.getString("sessionId").takeIf { isChatRoute }
                             val previous = currentChatSessionId
@@ -653,11 +673,21 @@ class MainActivity : ComponentActivity() {
     /**
      * Apply (or release) the activity window's `FLAG_KEEP_SCREEN_ON` based on
      * the user's "Keep Screen Awake" toggle and whether any session has an
-     * active task right now. Idempotent — flipping with the same desired
-     * state is a no-op at the WindowManager level.
+     * active task right now.
+     *
+     * [T-android-orientation-user] (OpenMinis#401) Touch the window only when
+     * the flag actually changes. `Window.addFlags` / `clearFlags` are NOT
+     * no-ops when the flag is already in that state: both go through
+     * `setFlags`, which always dispatches a window-attributes change — a
+     * relayout round trip to the WindowManager. This runs on every
+     * activeSessions emission (each task start and stop, per session), and
+     * each of those redundant updates was a chance for the system to
+     * re-evaluate rotation; on OnePlus / Android 16 that rotated the screen
+     * against a portrait lock.
      */
     private fun applyKeepScreenAwakeFlag(hasActiveSession: Boolean) {
         val want = keepScreenAwakeEnabled(this) && hasActiveSession
+        if (!keepScreenOnNeedsChange(window.attributes.flags, want)) return
         if (want) {
             window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             AppLogger.info("KeepScreenAwake", "screen-on lock acquired (active sessions present)")
@@ -769,4 +799,14 @@ class MainActivity : ComponentActivity() {
             else -> {}
         }
     }
+}
+
+/**
+ * [T-android-orientation-user] (OpenMinis#401) Whether the window's current
+ * [flags] differ from the wanted `FLAG_KEEP_SCREEN_ON` state, i.e. whether
+ * applyKeepScreenAwakeFlag has anything to do.
+ */
+internal fun keepScreenOnNeedsChange(flags: Int, want: Boolean): Boolean {
+    val on = (flags and android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) != 0
+    return on != want
 }

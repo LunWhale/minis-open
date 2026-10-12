@@ -119,6 +119,132 @@ extension ConfigRegistry {
             }
         ))
 
+        // [T-soul-custom-icon] [T-soul-icon-config-images] Emoji OR an image.
+        //
+        // An image may be given as a data URI, bare base64, a `minis://`
+        // resource, a path inside the minis directories, or an http(s) URL.
+        // Whatever the source, it is decoded and pushed through the SAME
+        // `SoulIconImage.encode` the Settings picker uses — alpha check,
+        // square crop, 96px cap, PNG — and the RESULT is stored inline.
+        //
+        // An address is an import source only, never the stored value: keeping
+        // a path would leave the icon dangling the moment the attachment is
+        // cleaned up, the session is deleted, or the value syncs to a device
+        // where that path means nothing.
+        //
+        // The resolution (including the download) happens in
+        // `ConfigOffloadBridge.performWriteBatch`, which is `async`, so by the
+        // time this synchronous writer runs the value is already a finished
+        // data URI. See `SoulIconSource` for why.
+        //
+        // Reading stays summarized: a data URI is reported as `<image>` so
+        // `minis-config get` never floods the context with base64, and the
+        // same substitution keeps the confirmation sheet and the audit log
+        // clean. Clearing (empty string) restores the default sparkle.
+        r.register(ClosureField(
+            path: "soul.icon",
+            displayName: "Soul icon",
+            // [T-soul-icon-config-images] The description IS the API doc —
+            // `minis-config topic-help soul` renders it verbatim, so every
+            // accepted form is spelled out with a runnable example. Claims
+            // here are limited to what is actually implemented: the decodable
+            // formats were checked against ImageIO on-device rather than
+            // assumed, and SVG is absent because it genuinely does not decode.
+            description: "The Soul's identity icon — also called its avatar, its persona image, or its "
+                + "character image (中文：角色形象 / 图标 / 头像). All of those refer to THIS one setting; "
+                + "there is no separate avatar field. Shown beside the assistant name in the chat header "
+                + "and on the Soul settings card. Accepts an emoji or an image.\n"
+                + "\n"
+                + "EMOJI\n"
+                + "  A single emoji, e.g. \"⚡\". An empty string \"\" restores the default sparkle.\n"
+                + "\n"
+                + "IMAGE — any of these forms:\n"
+                + "  • data URI (preferred for inline bytes):\n"
+                + "      data:image/png;base64,iVBORw0KGgo...\n"
+                + "      MIME may be image/png, image/jpeg, image/webp, image/gif, image/heic or image/tiff.\n"
+                + "  • bare base64 (no data: prefix) — auto-detected, e.g. iVBORw0KGgo...\n"
+                + "  • minis:// resource, e.g. minis://attachments/icon.png or minis://workspace/icon.png\n"
+                + "  • local path inside the minis directories, e.g. /var/minis/attachments/icon.png\n"
+                + "  • https:// URL, e.g. https://example.com/icon.png (http:// also works; "
+                + "private/loopback/link-local hosts are refused)\n"
+                + "\n"
+                + "TRANSPARENCY — not required. Both transparent and opaque images are accepted "
+                + "(a JPEG or a flattened PNG is fine); the icon is displayed with rounded corners, "
+                + "so an opaque image still reads as a normal small avatar. Transparency is preserved "
+                + "when the source has it.\n"
+                + "\n"
+                + "PROCESSING — identical to picking an image in Settings → Soul: "
+                + "the image is centre-cropped to a square, downscaled to 96×96 and re-encoded as PNG, "
+                + "then stored inline. An address is only an import source — "
+                + "it is never persisted, so the file can be deleted afterwards and the icon survives "
+                + "attachment cleanup and syncing to other devices.\n"
+                + "\n"
+                + "READING — `get soul.icon` returns \"<image>\" for an image, never the base64.\n"
+                + "\n"
+                + "EXAMPLES (note the value is JSON, so the string needs its own quotes)\n"
+                + "  minis-config set soul.icon '\"⚡\"'\n"
+                + "  minis-config set soul.icon '\"minis://attachments/icon.png\"'\n"
+                + "  minis-config set soul.icon '\"https://example.com/icon.png\"'\n"
+                + "  minis-config set soul.icon '\"data:image/png;base64,iVBORw0KGgo...\"'\n"
+                + "  minis-config set soul.icon '\"\"'    # back to the default sparkle\n"
+                + "A long data URI is easier to pass via a file. --file reads the JSON VALUE "
+                + "(a quoted string), not the raw image — write the quoted data URI to the file first:\n"
+                + "  printf '\"%s\"' \"data:image/png;base64,$(base64 -w0 icon.png)\" > /tmp/icon-value.json\n"
+                + "  minis-config set soul.icon --file /tmp/icon-value.json\n"
+                + "Simpler still: point at the file directly with minis:// or a path and skip base64 entirely.",
+            // Wide enough for an inline base64 argument; `SoulIconSource`
+            // applies the real byte/pixel limits once it knows the source
+            // kind. Emoji validation below is unchanged.
+            valueSchema: .string(maxLength: SoulIconSource.maxInlineBase64Chars),
+            // .sensitive: this is the assistant's visible identity, and an
+            // image write cannot be rolled back from the audit log (see
+            // `revertable` below), so it deserves an explicit confirmation.
+            risk: .sensitive,
+            // An emoji write is trivially revertable, but an image write is
+            // not: the audit log stores `<image>` rather than the base64, so
+            // there is nothing to restore from. Claiming otherwise would give
+            // `audit revert` a button that silently does the wrong thing.
+            revertable: false,
+            reader: {
+                let raw = currentFile().metadata.icon
+                // Never surface the base64 payload.
+                return .string(SoulIconImage.isDataURI(raw) ? "<image>" : raw)
+            },
+            writer: { v in
+                guard case .string(let s) = v else { throw ConfigError.typeMismatch(expected: "string") }
+                let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+                // Empty clears back to the default sparkle.
+                guard !trimmed.isEmpty else {
+                    try updateMetadata { $0.icon = "" }
+                    return
+                }
+                // Already a stored icon: either the bridge resolved an image
+                // source into one, or a caller handed us the final form.
+                if SoulIconImage.isDataURI(trimmed) {
+                    guard trimmed.count <= SoulIconSource.maxStoredChars else {
+                        throw ConfigError.invalidValue(
+                            "encoded icon is \(trimmed.count) chars, over the \(SoulIconSource.maxStoredChars) limit")
+                    }
+                    try updateMetadata { $0.icon = trimmed }
+                    return
+                }
+                // An image source that reached the writer unresolved means the
+                // async resolve step was skipped. Fail loudly rather than
+                // storing a path that would dangle.
+                if SoulIconSource.looksLikeImageSource(trimmed) {
+                    throw ConfigError.invalidValue(
+                        "image source was not resolved before the write — this is a bug; "
+                        + "please report it")
+                }
+                // One grapheme cluster, so a flag or skin-toned/ZWJ emoji
+                // (several scalars, one glyph) counts as one.
+                guard trimmed.count == 1 else {
+                    throw ConfigError.invalidValue("icon must be a single emoji")
+                }
+                try updateMetadata { $0.icon = trimmed }
+            }
+        ))
+
         r.register(ClosureField(
             path: "soul.lang",
             displayName: "Soul language preference",
@@ -370,6 +496,11 @@ extension ConfigRegistry {
         r.register(GroupsCollection())
         r.register(EnvVarsCollection())
         r.register(ThinkingRulesCollection())
+        // [T-sub-agents-cli] Sub agents are global (not per-provider), so the
+        // collection uses a plain id as its child key and needs only one
+        // `order` field rather than one per instance.
+        r.register(SubAgentsCollection())
+        r.register(SubAgentsCollection.orderField())
 
         // [T-thinking-rules-minis-config] One `order` field per provider instance.
         // These are flat fields rather than collection children because the collection
@@ -385,6 +516,49 @@ extension ConfigRegistry {
         // Aggregate read-only summary. This is the ONLY place built-in rules are
         // exposed: they are computed per request from code, never persisted and never
         // synced, so they are shown for reference but have no writable path anywhere.
+        // [T-sub-agents-cli] Aggregate view so `get subagents` alone answers
+        // "what exists, which is writable, and what is each one's model" —
+        // without it a caller has to walk every child path to find out.
+        r.register(ReadOnlyField(
+            path: "subagents",
+            displayName: "Sub agents (summary)",
+            description: "Read-only roster view. Each entry's writable paths are subagents.<id>.{name,description,instructions,model_group}; the built-in one refuses name/description and cannot be removed. Reorder with subagents.order.",
+            valueSchema: .json,
+            reader: {
+                let store = ProviderConfigStore.shared
+                let items: [ConfigValue] = SubAgentStore.shared.subAgents.map { def in
+                    var obj: [String: ConfigValue] = [
+                        "id": .string(def.id),
+                        "name": .string(def.name),
+                        "description": .string(def.description),
+                        "built_in": .bool(def.isBuiltIn),
+                        "path": .string("subagents.\(def.id)"),
+                    ]
+                    if !def.instructions.isEmpty {
+                        obj["instructions"] = .string(def.instructions)
+                    }
+                    if let gid = def.modelGroupId {
+                        obj["model_group"] = .string(store.group(for: gid)?.name ?? gid)
+                    } else {
+                        // Spelled out rather than omitted: "Auto" is a real
+                        // setting, not an absence, and the reader should not
+                        // have to infer it from a missing key.
+                        obj["model_group"] = .string("")
+                        obj["model"] = .string("auto — chosen per task")
+                    }
+                    if def.isBuiltIn {
+                        obj["note"] = .string("Built-in: name and description are fixed and it cannot be deleted; model and instructions are writable.")
+                    }
+                    return .object(obj)
+                }
+                return .object([
+                    "count": .int(items.count),
+                    "max": .int(SubAgentLimits.maxCount),
+                    "agents": .array(items),
+                ])
+            }
+        ))
+
         r.register(ReadOnlyField(
             path: "thinkingrules",
             displayName: "Thinking rules (summary)",
@@ -997,6 +1171,29 @@ extension ConfigRegistry {
             description: "Prevents auto-lock while the agent is busy.",
             userDefaultsKey: "keepScreenAwakeDuringTasks",
             defaultValue: false
+        ))
+        // [T-tools-switches-cli] The two optional-tool switches, same keys the
+        // Settings toggles write (AgentToolSwitch.browser / .agents). Exposed so
+        // they can be scripted and so their cost can be measured — each one adds
+        // its tool schema AND its system-prompt section to every request, which
+        // is invisible until you diff the token usage with them on and off.
+        //
+        // Registered as plain AppStorage fields rather than through
+        // AgentToolSwitch so the CLI reads and writes exactly the stored value;
+        // `isEnabled` applies the same `?? defaultValue` fallback on read.
+        r.register(AppStorageBoolField(
+            path: "chat.tools.browserUse",
+            displayName: "Browser Use tool",
+            description: "Whether the assistant is offered browser_use. When off the tool is removed from the schema entirely and the system prompt drops the sentences advertising it — the model never learns it exists.",
+            userDefaultsKey: AgentToolSwitch.browser.key,
+            defaultValue: AgentToolSwitch.browser.defaultValue
+        ))
+        r.register(AppStorageBoolField(
+            path: "chat.tools.subAgents",
+            displayName: "Sub Agents tool",
+            description: "Whether the assistant is offered subagent_task. When off that tool and the sub agent roster both leave the request. Configure the agents themselves under `subagents`.",
+            userDefaultsKey: AgentToolSwitch.agents.key,
+            defaultValue: AgentToolSwitch.agents.defaultValue
         ))
         r.register(AppStorageBoolField(
             path: "chat.toolPreview",

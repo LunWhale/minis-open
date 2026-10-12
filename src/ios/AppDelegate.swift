@@ -30,6 +30,31 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
             CLBackgroundActivitySession().invalidate()
         }
 
+        // [T-env-diagnostic-line] Name the runtime environment once per cold
+        // launch, so any log a user sends carries it without being asked.
+        //
+        // "Designed for iPad" (an unmodified iOS binary on Apple Silicon) and
+        // Mac Catalyst (UIKit bridged onto AppKit) are indistinguishable in a
+        // screenshot but share almost no rendering path, and an SDK release
+        // note that explains a symptom on one does not apply to the other —
+        // a macOS 27 nav-bar report already cost a round trip to establish
+        // which was in play. `isiOSAppOnMac` is the authoritative
+        // discriminator; the compile-time flag is logged beside it because it
+        // says how the binary was BUILT, which is the other half of the answer.
+        do {
+            let osv = ProcessInfo.processInfo.operatingSystemVersion
+            #if targetEnvironment(macCatalyst)
+            let built = "catalyst"
+            #else
+            let built = "ios"
+            #endif
+            let onMac = ProcessInfo.processInfo.isiOSAppOnMac
+            let mode = onMac ? "iOSAppOnMac" : (built == "catalyst" ? "catalyst" : "device")
+            logger.info("[Env] mode=\(mode) idiom=\(UIDevice.current.userInterfaceIdiom.rawValue) "
+                + "os=\(osv.majorVersion).\(osv.minorVersion).\(osv.patchVersion) "
+                + "built=\(built) model=\(UIDevice.current.model)")
+        }
+
         // [T-notification-tap-vs-launch-session] The UNUserNotificationCenter
         // delegate must be in place BEFORE didFinishLaunching returns, or iOS
         // never delivers a cold-launch notification tap to didReceive — the
@@ -153,7 +178,12 @@ final class SceneDelegate: NSObject, UIWindowSceneDelegate {
             logger.info("[Share] scene \(phase) URL: \(url.absoluteString)")
             Task { @MainActor in
                 let coordinator = ShareCoordinator.shared
-                if ExternalFileImporter.canIngest(url) {
+                // A .minisbak must reach the restore flow, not the attachment
+                // pipeline — canIngest() accepts any file URL, so this has to
+                // be checked first.
+                if BackupOpenRouter.handle(url) {
+                    // handled
+                } else if ExternalFileImporter.canIngest(url) {
                     ExternalFileImporter.ingest(url, into: coordinator)
                 } else {
                     DeepLinkRouter.handle(url: url, shareCoordinator: coordinator)

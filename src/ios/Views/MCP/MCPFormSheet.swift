@@ -35,6 +35,10 @@ struct MCPFormSheet: View {
     // [T-mcp-static-oauth] Authorization (HTTP transport only)
     private enum AuthMode: String, CaseIterable, Identifiable {
         case none = "None"
+        // [T-mcp-oauth-dcr] The zero-configuration path (issue #315): discover
+        // the authorization server from the MCP server's own 401 and register
+        // this app automatically, so the user never sees a Client ID.
+        case oauthBrowser = "Sign in with browser"
         case oauthStatic = "OAuth (Client ID + Secret)"
         var id: String { rawValue }
     }
@@ -48,6 +52,12 @@ struct MCPFormSheet: View {
     @State private var isAuthorized = false
     @State private var isAuthorizing = false
     @State private var oauthError: String?
+    // [T-mcp-oauth-dcr] Discovery/DCR state. `pendingDiscovery` holds the
+    // result between "we found the service" and "the user pressed Continue" —
+    // the native confirmation card the design calls for, so the system
+    // sign-in sheet never appears unannounced.
+    @State private var pendingDiscovery: MCPOAuthDiscovery.Outcome?
+    @State private var discoveryNote: String?
 
     // STDIO
     @State private var command: String = ""
@@ -87,11 +97,11 @@ struct MCPFormSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField(String(localized: "Server name"), text: $name)
+                    TextField(AppLocalized("Server name"), text: $name)
                         .disabled(isEditing)   // id is the key; renaming = delete+add
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
-                    Picker(String(localized: "Transport"), selection: $transport) {
+                    Picker(AppLocalized("Transport"), selection: $transport) {
                         ForEach(Transport.allCases) { t in
                             Text(t.rawValue).tag(t)
                         }
@@ -104,8 +114,8 @@ struct MCPFormSheet: View {
                     httpSection
                 }
 
-                Section(String(localized: "Note (shown to the agent)")) {
-                    TextField(String(localized: "Optional description"), text: $note, axis: .vertical)
+                Section(AppLocalized("Note (shown to the agent)")) {
+                    TextField(AppLocalized("Optional description"), text: $note, axis: .vertical)
                         .lineLimit(1...4)
                 }
             }
@@ -113,7 +123,7 @@ struct MCPFormSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(String(localized: "Cancel")) { dismiss() }
+                    Button(AppLocalized("Cancel")) { dismiss() }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
@@ -124,12 +134,12 @@ struct MCPFormSheet: View {
                             // so the tap appeared to do nothing.
                             DispatchQueue.main.async { copyJSON() }
                         } label: {
-                            Label(String(localized: "Copy JSON"), systemImage: "doc.on.doc")
+                            Label(AppLocalized("Copy JSON"), systemImage: "doc.on.doc")
                         }
                         Button {
                             DispatchQueue.main.async { shareJSON() }
                         } label: {
-                            Label(String(localized: "Share JSON"), systemImage: "square.and.arrow.up")
+                            Label(AppLocalized("Share JSON"), systemImage: "square.and.arrow.up")
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle")
@@ -154,7 +164,7 @@ struct MCPFormSheet: View {
             // Self-dismissing "Copied" capsule, mirroring FileBrowserView.
             .overlay(alignment: .bottom) {
                 if copiedToast {
-                    Label(String(localized: "Copied"), systemImage: "checkmark.circle.fill")
+                    Label(AppLocalized("Copied"), systemImage: "checkmark.circle.fill")
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 16)
@@ -174,7 +184,7 @@ struct MCPFormSheet: View {
 
     private var httpSection: some View {
         Group {
-            Section(String(localized: "Server URL")) {
+            Section(AppLocalized("Server URL")) {
                 HStack {
                     TextField("https://…", text: $url)
                         .autocorrectionDisabled()
@@ -185,9 +195,9 @@ struct MCPFormSheet: View {
                     envReferenceMenu(into: $url, separator: "")
                 }
             }
-            Section(String(localized: "Custom Headers")) {
-                keyValueEditor($headers, keyPlaceholder: String(localized: "Header"),
-                               valuePlaceholder: String(localized: "Value"),
+            Section(AppLocalized("Custom Headers")) {
+                keyValueEditor($headers, keyPlaceholder: AppLocalized("Header"),
+                               valuePlaceholder: AppLocalized("Value"),
                                showEnvPicker: true)
             }
             oauthSection
@@ -201,16 +211,21 @@ struct MCPFormSheet: View {
     @ViewBuilder
     private var oauthSection: some View {
         Section {
-            Picker(String(localized: "Authorization"), selection: $authMode) {
+            Picker(AppLocalized("Authorization"), selection: $authMode) {
                 ForEach(AuthMode.allCases) { m in
                     Text(m.rawValue).tag(m)
                 }
             }
+            // [T-mcp-oauth-dcr] Browser path: nothing to fill in. Everything
+            // below the button is discovered from the server.
+            if authMode == .oauthBrowser {
+                browserAuthRows
+            }
             if authMode == .oauthStatic {
-                TextField(String(localized: "Client ID"), text: $oauthClientId)
+                TextField(AppLocalized("Client ID"), text: $oauthClientId)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
-                SecureField(String(localized: "Client Secret (optional)"), text: $oauthClientSecret)
+                SecureField(AppLocalized("Client Secret (optional)"), text: $oauthClientSecret)
                     // [T-provider-label-keyboard] Same AutoFill opt-out as the
                     // provider form. This is the textbook trigger shape: a
                     // "Client ID" TextField directly above a SecureField reads
@@ -220,15 +235,15 @@ struct MCPFormSheet: View {
                     .textContentType(.oneTimeCode)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-                TextField(String(localized: "Authorization Endpoint (https://…/authorize)"), text: $oauthAuthEndpoint)
+                TextField(AppLocalized("Authorization Endpoint (https://…/authorize)"), text: $oauthAuthEndpoint)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
                     .keyboardType(.URL)
-                TextField(String(localized: "Token Endpoint (https://…/token)"), text: $oauthTokenEndpoint)
+                TextField(AppLocalized("Token Endpoint (https://…/token)"), text: $oauthTokenEndpoint)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
                     .keyboardType(.URL)
-                TextField(String(localized: "Scopes (space-separated)"), text: $oauthScopes)
+                TextField(AppLocalized("Scopes (space-separated)"), text: $oauthScopes)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
                 // [T-mcp-oauth-loopback] Default is the standardized loopback
@@ -243,17 +258,17 @@ struct MCPFormSheet: View {
 
                 HStack {
                     if isAuthorized {
-                        Label(String(localized: "Authorized"), systemImage: "checkmark.seal.fill")
+                        Label(AppLocalized("Authorized"), systemImage: "checkmark.seal.fill")
                             .foregroundStyle(.green)
                             .font(.subheadline)
                     } else {
-                        Label(String(localized: "Not authorized"), systemImage: "xmark.seal")
+                        Label(AppLocalized("Not authorized"), systemImage: "xmark.seal")
                             .foregroundStyle(.secondary)
                             .font(.subheadline)
                     }
                     Spacer()
                     if isAuthorized {
-                        Button(String(localized: "Sign Out"), role: .destructive) {
+                        Button(AppLocalized("Sign Out"), role: .destructive) {
                             MCPOAuthController.signOut(server: name.trimmingCharacters(in: .whitespaces))
                             isAuthorized = false
                         }
@@ -265,7 +280,7 @@ struct MCPFormSheet: View {
                         if isAuthorizing {
                             ProgressView()
                         } else {
-                            Text(isAuthorized ? String(localized: "Re-authorize") : String(localized: "Authorize…"))
+                            Text(isAuthorized ? AppLocalized("Re-authorize") : AppLocalized("Authorize…"))
                         }
                     }
                     .disabled(isAuthorizing || !canSave || oauthClientId.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -289,6 +304,128 @@ struct MCPFormSheet: View {
 
     /// Save first (the guest transport keys everything off the persisted
     /// server), then run the interactive flow.
+    // [T-mcp-oauth-dcr] The browser path's rows: a one-line explanation, the
+    // Connect button, then — once discovery has run — the native confirmation
+    // card naming the service before any system sheet appears.
+    @ViewBuilder
+    private var browserAuthRows: some View {
+        if let outcome = pendingDiscovery {
+            VStack(alignment: .leading, spacing: 8) {
+                Label(AppLocalized("Ready to sign in"), systemImage: "checkmark.shield")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.green)
+                // Naming the issuer is the point of this card: the user should
+                // know WHICH service is about to ask for their password before
+                // the system sheet takes over the screen.
+                Text(outcome.issuer)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+                if outcome.reusedCachedClient {
+                    Text(AppLocalized("Reusing this app's existing registration."))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+                Button {
+                    Task { await continueBrowserAuthorize(outcome) }
+                } label: {
+                    if isAuthorizing {
+                        ProgressView()
+                    } else {
+                        Text(AppLocalized("Continue"))
+                    }
+                }
+                .disabled(isAuthorizing)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(AppLocalized("Minis will find this service's sign-in page automatically. No Client ID needed."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button {
+                    Task { await runDiscovery() }
+                } label: {
+                    if isAuthorizing {
+                        ProgressView()
+                    } else {
+                        Text(AppLocalized("Connect…"))
+                    }
+                }
+                .disabled(isAuthorizing || url.trimmingCharacters(in: .whitespaces).isEmpty)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+        }
+        if let discoveryNote {
+            Text(discoveryNote)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// [T-mcp-oauth-dcr] Steps 1-4: 401 -> resource metadata -> AS metadata ->
+    /// DCR. Stops at the confirmation card rather than going straight into the
+    /// system sheet.
+    private func runDiscovery() async {
+        oauthError = nil
+        discoveryNote = nil
+        isAuthorizing = true
+        defer { isAuthorizing = false }
+        do {
+            let outcome = try await MCPOAuthDiscovery.discover(
+                serverURL: url.trimmingCharacters(in: .whitespaces),
+                redirectURI: MCPOAuthController.defaultRedirectURI)
+            pendingDiscovery = outcome
+        } catch let err as MCPOAuthDiscovery.DiscoveryError {
+            if case .dcrUnsupported = err {
+                // The documented fallback (TC-08): switch the user to the
+                // manual form and say why, rather than reporting a failure.
+                authMode = .oauthStatic
+                discoveryNote = AppLocalized("This service does not support automatic registration. Enter its Client ID below.")
+            } else {
+                oauthError = err.localizedDescription
+            }
+        } catch {
+            oauthError = error.localizedDescription
+        }
+    }
+
+    /// [T-mcp-oauth-dcr] Steps 5-10, reusing the existing authorize() wholesale
+    /// — PKCE, ASWebAuthenticationSession, state check, token storage and the
+    /// guest bridge all already live there.
+    private func continueBrowserAuthorize(_ outcome: MCPOAuthDiscovery.Outcome) async {
+        oauthError = nil
+        isAuthorizing = true
+        defer { isAuthorizing = false }
+        oauthClientId = outcome.config.clientId
+        oauthAuthEndpoint = outcome.config.authorizationEndpoint
+        oauthTokenEndpoint = outcome.config.tokenEndpoint
+        oauthRedirectURI = outcome.config.redirectURI ?? MCPOAuthController.defaultRedirectURI
+        oauthScopes = outcome.config.scopes ?? ""
+        let config = buildConfig()
+        store.add(config)
+        guard let oauth = config.oauth else { return }
+        do {
+            try await MCPOAuthController.shared.authorize(server: config.id, oauth: oauth)
+            isAuthorized = true
+            pendingDiscovery = nil
+            discoveryNote = nil
+        } catch MCPOAuthController.OAuthError.cancelled {
+            // Quiet on cancel (TC-16): closing the sheet is a decision, not an
+            // error to shout about — the row simply stays "not authorized".
+            discoveryNote = AppLocalized("Sign-in was not completed. You can try again.")
+        } catch MCPOAuthController.OAuthError.denied {
+            // TC-17: pressing Deny gets the same calm treatment, worded for a
+            // person rather than echoing `access_denied`.
+            discoveryNote = AppLocalized("Access was not granted. You can try connecting again.")
+        } catch {
+            oauthError = error.localizedDescription
+        }
+    }
+
     private func runAuthorize() async {
         oauthError = nil
         isAuthorizing = true
@@ -307,17 +444,17 @@ struct MCPFormSheet: View {
 
     private var stdioSection: some View {
         Group {
-            Section(String(localized: "Command")) {
+            Section(AppLocalized("Command")) {
                 TextField("npx", text: $command)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
-                TextField(String(localized: "Arguments (space-separated)"), text: $argsText)
+                TextField(AppLocalized("Arguments (space-separated)"), text: $argsText)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
             }
             Section {
-                keyValueEditor($env, keyPlaceholder: String(localized: "Name"),
-                               valuePlaceholder: String(localized: "Value"),
+                keyValueEditor($env, keyPlaceholder: AppLocalized("Name"),
+                               valuePlaceholder: AppLocalized("Value"),
                                showEnvPicker: true)
             } header: {
                 Text("Environment Variables")
@@ -325,7 +462,7 @@ struct MCPFormSheet: View {
                 Text("Use the braces button to insert a reference to an App environment variable as $$NAME. Its value is filled in at runtime.")
             }
             Section {
-                TextField(String(localized: "Default 60"), text: $startupTimeoutText)
+                TextField(AppLocalized("Default 60"), text: $startupTimeoutText)
                     .keyboardType(.numberPad)
             } header: {
                 Text("Startup timeout (seconds)")
@@ -340,25 +477,55 @@ struct MCPFormSheet: View {
         envVarStore.entries.map(\.key)
     }
 
+    /// [T-mcp-envrow-delete-index-crash] A binding to ONE row, addressed by its
+    /// stable `id` rather than by its position.
+    ///
+    /// `ForEach(pairs) { $pair in … }` looks equivalent but is not: it hands
+    /// each row `pairs[i]`, a POSITIONAL binding. Deleting a row while one of
+    /// its `TextField`s still holds focus makes UIKit read that binding back
+    /// during teardown — `-[UICollectionView _resignOrRebaseFirstResponderView…]`
+    /// resigns first responder from inside the batch update that removes the
+    /// row, so `textFieldDidEndEditing` fires with the array ALREADY shortened.
+    /// The stale index then trips `Array._checkSubscript` and the app dies with
+    /// a SIGTRAP (crash reports 2026-09-17 07:03 / 07:04, 1.14 (20)); the delete
+    /// button sits in the same row as the field, so the focused row is exactly
+    /// the one being removed and the last row crashes every time.
+    ///
+    /// Looking the row up by id makes that read harmless: a removed row simply
+    /// isn't found, and the binding falls back to a detached value that the
+    /// setter drops. Writes still go to the real element while it exists.
+    private func rowBinding(_ pairs: Binding<[KeyValue]>, id: KeyValue.ID) -> Binding<KeyValue> {
+        Binding(
+            get: { pairs.wrappedValue.first { $0.id == id } ?? KeyValue() },
+            set: { newValue in
+                guard let idx = pairs.wrappedValue.firstIndex(where: { $0.id == id }) else { return }
+                pairs.wrappedValue[idx] = newValue
+            }
+        )
+    }
+
     private func keyValueEditor(_ pairs: Binding<[KeyValue]>, keyPlaceholder: String,
                                 valuePlaceholder: String, showEnvPicker: Bool = false) -> some View {
         Group {
-            ForEach(pairs) { $pair in
+            // Iterate identities, not elements: the body below must not capture
+            // a positional binding. See `rowBinding` above.
+            ForEach(pairs.wrappedValue.map(\.id), id: \.self) { id in
+                let pair = rowBinding(pairs, id: id)
                 HStack {
-                    TextField(keyPlaceholder, text: $pair.key)
+                    TextField(keyPlaceholder, text: pair.key)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                     Divider()
-                    TextField(valuePlaceholder, text: $pair.value)
+                    TextField(valuePlaceholder, text: pair.value)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                     if showEnvPicker {
-                        envReferenceMenu(into: $pair.value)
+                        envReferenceMenu(into: pair.value)
                     }
                     // Explicit per-row delete: empty rows go immediately; rows
                     // with content ask first (swipe-to-delete still works too).
                     Button {
-                        requestDelete(pair, in: pairs)
+                        requestDelete(pair.wrappedValue, in: pairs)
                     } label: {
                         Image(systemName: "minus.circle.fill")
                             .foregroundStyle(.red)
@@ -374,7 +541,7 @@ struct MCPFormSheet: View {
             Button {
                 pairs.wrappedValue.append(KeyValue())
             } label: {
-                Label(String(localized: "Add"), systemImage: "plus.circle")
+                Label(AppLocalized("Add"), systemImage: "plus.circle")
             }
         }
         .confirmationDialog(
@@ -382,10 +549,10 @@ struct MCPFormSheet: View {
             isPresented: deleteConfirmBinding(for: pairs),
             titleVisibility: .visible
         ) {
-            Button(String(localized: "Delete"), role: .destructive) {
+            Button(AppLocalized("Delete"), role: .destructive) {
                 confirmDelete(in: pairs)
             }
-            Button(String(localized: "Cancel"), role: .cancel) {
+            Button(AppLocalized("Cancel"), role: .cancel) {
                 pendingDeleteId = nil
             }
         }

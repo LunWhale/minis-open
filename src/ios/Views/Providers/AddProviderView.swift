@@ -146,16 +146,25 @@ struct AddProviderView: View {
     /// True once the user has manually edited the label. We use this to
     /// stop `defaultLabel(for:)` from clobbering a label the user just
     /// typed (often a Chinese / non-ASCII name) when they go back and
-    /// re-tap the provider-type row. The Telegram report
-    /// `T-provider-name-chinese-34602` originated from this footgun:
+    /// re-tap the provider-type row. The user report
+    /// `T-provider-name-chinese` originated from this footgun:
     /// users perceived the new-instance label as "ASCII only" because
     /// re-touching the provider type silently overwrote whatever they
     /// had typed.
     @State private var labelEdited = false
+    /// [T-provider-label-stale-type] True for the duration of a programmatic
+    /// `labelInput` seed, so the field's `onChange` can tell our own write from
+    /// the user typing. Without it the seed marked the label user-edited and
+    /// froze it at the first provider type picked.
+    @State private var isSeedingLabel = false
     /// True when the configure step was entered via a Voice Chat Provider
     /// template (credential picker was skipped). Back should then return
     /// straight to the type list, not to a credential step the user never saw.
     @State private var enteredViaVoiceTemplate = false
+    /// [T-ios-voice-provider-title] Vendor name to show in the configure step's
+    /// title, supplied by the step that opened it. Nil means "the provider type
+    /// is the vendor", and the title falls back to `selectedType.displayName`.
+    @State private var configuringVendorName: String?
     @State private var customBaseURLInput = ""
     @State private var appendV1SuffixInput = true
     @State private var useResponsesAPI = false
@@ -168,6 +177,8 @@ struct AddProviderView: View {
     // [T-kimi-oauth] Present the device-code login sheet (user code +
     // verification URL + polling) for Kimi's RFC 8628 flow.
     @State private var showKimiLogin = false
+    /// [T-copilot-provider] Same device-code shape as Kimi's.
+    @State private var showCopilotLogin = false
     @State private var oauthAuthTime: Date?
     @State private var showDataSharingConsent = false
     @State private var importMessage: String?
@@ -222,10 +233,27 @@ struct AddProviderView: View {
     /// Whether the current input is complete enough that "Save & Exit" can
     /// perform a real save (mirrors the enabled conditions of the visible
     /// save buttons for the three credential paths).
+    /// [T-empty-key-compat-endpoints] An empty API key is a valid input when the
+    /// instance targets a third-party OpenAI/Anthropic-compatible endpoint
+    /// (custom base URL filled in): ollama / LM Studio / LiteLLM / private
+    /// relays commonly need no key. Mirrors ProviderInstance.allowsEmptyAPIKey —
+    /// OAuth flows and official endpoints keep requiring a credential.
+    private var emptyKeyAllowedForCurrentInput: Bool {
+        guard selectedCredential == .apiKey,
+              !customBaseURLInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let type = selectedType else { return false }
+        switch type {
+        case .openAI, .openAIResponses, .anthropic:
+            return true
+        default:
+            return false
+        }
+    }
+
     private var canSaveCurrentInput: Bool {
         if pendingOAuthDone { return true }
         if selectedCredential == .apiKey,
-           !apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
+           !apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || emptyKeyAllowedForCurrentInput { return true }
         if !manualOAuthTokenInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
         return false
     }
@@ -234,7 +262,7 @@ struct AddProviderView: View {
         if pendingOAuthDone {
             saveOAuthInstance()
         } else if selectedCredential == .apiKey,
-                  !apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                  !apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || emptyKeyAllowedForCurrentInput {
             saveApiKeyInstance()
         } else if !manualOAuthTokenInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             saveManualOAuthInstance()
@@ -286,19 +314,19 @@ struct AddProviderView: View {
         // then go through requestExit()'s confirmation.
         .interactiveDismissDisabled(hasUnsavedInput)
         .confirmationDialog(
-            String(localized: "You have unsaved provider settings."),
+            AppLocalized("You have unsaved provider settings."),
             isPresented: $showUnsavedExitDialog,
             titleVisibility: .visible
         ) {
             if canSaveCurrentInput {
-                Button(String(localized: "Save & Exit")) {
+                Button(AppLocalized("Save & Exit")) {
                     saveCurrentInputAndExit()
                 }
             }
-            Button(String(localized: "Discard Changes"), role: .destructive) {
+            Button(AppLocalized("Discard Changes"), role: .destructive) {
                 cleanupAndDismiss()
             }
-            Button(String(localized: "Keep Editing"), role: .cancel) {}
+            Button(AppLocalized("Keep Editing"), role: .cancel) {}
         }
         .sheet(isPresented: $showDataSharingConsent) {
             AIDataSharingConsentView(
@@ -323,9 +351,20 @@ struct AddProviderView: View {
                 }
             }
         }
+        .sheet(isPresented: $showCopilotLogin) {
+            // [T-copilot-provider] Device-code login, gated behind the risk
+            // notice inside the sheet.
+            CopilotDeviceLoginSheet(instanceId: pendingInstanceId) { success in
+                if success {
+                    oauthAuthTime = Date()
+                    oauthMaskedToken = loadMaskedToken(type: .githubCopilot)
+                    pendingOAuthDone = true
+                }
+            }
+        }
         // [T-uikit-docpicker] Import goes through the UIKit picker bridge — the
         // SwiftUI .fileImporter presented a picker that swallowed taps.
-        .alert(String(localized: "Import"), isPresented: $showImportResult) {
+        .alert(AppLocalized("Import"), isPresented: $showImportResult) {
             Button("OK") {
                 if importSucceeded { dismiss() }
             }
@@ -367,19 +406,59 @@ struct AddProviderView: View {
     }
 
     private var navigationTitle: String {
-        if let type = selectedType, selectedCredential != nil {
-            return String(localized: "Configure \(type.displayName)")
+        if selectedType != nil, selectedCredential != nil {
+            // [T-ios-voice-provider-title] Render the name the CALLER supplied;
+            // never re-derive it from the provider type here.
+            //
+            // `selectedType` is the wire PROTOCOL, not the vendor. Every voice
+            // vendor in VoiceProviderTemplate.all — ElevenLabs, Deepgram,
+            // Azure TTS — speaks the OpenAI-compatible API, so they all carry
+            // `providerType: .openAI` and `type.displayName` reported "OpenAI"
+            // for all of them: the sheet said "Configure OpenAI" over a form
+            // labelled ElevenLabs with an api.elevenlabs.io base URL.
+            //
+            // Switching on the vendor here would only move the guess inside
+            // this view and would need editing for every vendor added later.
+            // The step that KNOWS which vendor was tapped sets
+            // `configuringDisplayName` instead, and this just renders it.
+            return AppLocalized("Configure \(configuringDisplayName)")
         } else if selectedType != nil {
-            return String(localized: "Auth Method")
+            return AppLocalized("Auth Method")
         }
-        return String(localized: "Add Provider")
+        return AppLocalized("Add Provider")
+    }
+
+    /// Vendor name for the configure step's title, set by whichever step
+    /// advanced into it. Falls back to the provider type's own display name,
+    /// which is correct whenever the type IS the vendor (the plain
+    /// "Add Provider" path, where the user picked OpenAI/Anthropic/… directly).
+    private var configuringDisplayName: String {
+        if let explicit = configuringVendorName, !explicit.isEmpty {
+            return explicit
+        }
+        return selectedType?.displayName ?? ""
     }
 
     // MARK: - Step 1: Pick Provider Type
 
     private var visibleProviderTypes: [ProviderType] {
         ProviderType.allCases.filter {
-            $0 != .openAIResponses && $0 != .antigravity
+            // [T-copilot-provider] The kill switch. Hiding the entry here is
+            // [T-copilot-row-consent-only] Copilot is a plain row, like every
+            // other OAuth provider here (Claude Code, Codex, xAI, Kimi Code):
+            // tap it and the sign-in sheet opens on its consent page, which
+            // must be accepted before any request is made.
+            //
+            // It used to be hidden behind a `copilotProviderEnabled` opt-in
+            // switch as well. That was removed: the switch and the consent page
+            // carried the SAME warning, so the user read it twice and tapped
+            // twice to reach one result, and the switch's own section occupied a
+            // permanent block of this screen to control the visibility of a
+            // single row. The row's subtitle already states "unofficial — use at
+            // your own risk", and `CopilotDeviceLoginSheet`'s consent page is
+            // the gate that actually matters, since it stands between the user
+            // and the first network call.
+            return $0 != .openAIResponses && $0 != .antigravity
                 && !$0.isUnsupported
         }
     }
@@ -395,6 +474,11 @@ struct AddProviderView: View {
                     // forth between provider types silently overwrites
                     // a Chinese / custom label the user just entered.
                     if !labelEdited {
+                        // [T-provider-label-stale-type] Suppress the onChange
+                        // that this assignment triggers, so seeding does not
+                        // mark the field as user-edited. Set before the write
+                        // and cleared by the observer.
+                        isSeedingLabel = true
                         labelInput = defaultLabel(for: type)
                     }
                 } label: {
@@ -520,6 +604,11 @@ struct AddProviderView: View {
         }
         selectedCredential = .apiKey
         enteredViaVoiceTemplate = true
+        // [T-ios-voice-provider-title] This is the one place that knows which
+        // vendor was tapped — `template.providerType` is only the protocol it
+        // speaks. Hand the name to the configure step rather than letting it
+        // guess from the type.
+        configuringVendorName = template.name
     }
 
     // MARK: - Step 2: Pick Credential Type
@@ -585,10 +674,18 @@ struct AddProviderView: View {
                     // decides the username/password pairing from the PASSWORD
                     // field, so the real opt-out lives on the SecureField in
                     // `apiKeySection` (and the Bearer Token one). Kept here as
-                    // the matching half — the field genuinely has no content
-                    // type — and paired with `.username` being explicitly NOT
-                    // used, so nothing re-associates it.
-                    .textContentType(.none)
+                    // the matching half, paired with `.username` being explicitly
+                    // NOT used, so nothing re-associates it.
+                    //
+                    // [issue #364] Upgraded from `.none` to `.nickname`. `.none`
+                    // compiles to nil — byte identical to declaring nothing — so it
+                    // only withheld an explicit type and left the heuristic free to
+                    // guess. A positive non-credential marker states what the field
+                    // is. Defence in depth: the credential-side `.oneTimeCode`
+                    // below remains the load-bearing half, but #364 was reported on
+                    // iOS 27 against a build that already had it, so the Label side
+                    // should not merely be silent.
+                    .textContentType(.nickname)
                     // A label is a proper noun the user is naming, and AutoFill
                     // must never offer to save it as a credential.
                     .autocorrectionDisabled()
@@ -596,6 +693,27 @@ struct AddProviderView: View {
                     .onChange(of: labelInput) { _ in
                         // Mark the field as user-edited so subsequent
                         // provider-type taps no longer clobber it.
+                        //
+                        // [T-provider-label-stale-type] This must ignore OUR OWN
+                        // writes. `onChange` cannot tell typing from a
+                        // programmatic assignment, and the type-tap handler
+                        // assigns `labelInput` too — so seeding marked the field
+                        // "edited" immediately, and every LATER type tap was
+                        // refused by the `!labelEdited` guard. Result: pick
+                        // Anthropic, go back, pick GitHub Copilot, and the label
+                        // still read "Anthropic 5" under a "GitHub Copilot" title
+                        // — then saved the instance under that wrong name.
+                        //
+                        // An explicit flag rather than comparing the new value
+                        // against `defaultLabel`: a user who deliberately types
+                        // the default text ("GitHub Copilot") means it, and
+                        // value-comparison would read that as not-edited and let
+                        // the next type tap overwrite it — the very clobbering
+                        // `labelEdited` exists to prevent.
+                        if isSeedingLabel {
+                            isSeedingLabel = false
+                            return
+                        }
                         labelEdited = true
                     }
             }
@@ -706,7 +824,7 @@ struct AddProviderView: View {
                         Spacer()
                     }
                 }
-                .disabled(apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
+                .disabled((apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !emptyKeyAllowedForCurrentInput) || isSaving)
             }
         }
     }
@@ -753,6 +871,8 @@ struct AddProviderView: View {
                     // provider drives its redirect/PKCE flow inline via startOAuth.
                     if selectedType == .kimiCode {
                         showKimiLogin = true
+                    } else if selectedType == .githubCopilot {
+                        showCopilotLogin = true
                     } else {
                         Task { await startOAuth() }
                     }
@@ -770,7 +890,16 @@ struct AddProviderView: View {
         }
 
         // Manual OAuth entry — available for all providers (supports proxy services, Coding Plan tokens, etc.)
-        if selectedType != .antigravity && !pendingOAuthDone {
+        //
+        // [T-copilot-oauth-only] …except Copilot, which is excluded for the same
+        // reason Antigravity is: its factory branch never looks the token up.
+        // Most providers read the `manual-oauth-token` Keychain entry this block
+        // writes; `makeCopilotProvider` does not — it wires `oauthTokenProvider`
+        // to the session-token minter unconditionally. So a token pasted here was
+        // stored, shown as a configured credential, and then ignored on every
+        // request. There is also no token a user could paste: the credential is
+        // minted from a GitHub OAuth token and lives ~25 minutes.
+        if selectedType != .antigravity && selectedType != .githubCopilot && !pendingOAuthDone {
             Section {
                 TextField(defaultBaseURL, text: $customBaseURLInput)
                     .font(.system(.body, design: .monospaced))
@@ -859,6 +988,7 @@ struct AddProviderView: View {
         case .openAIResponses: return "https://api.openai.com"
         case .xAI: return "https://api.x.ai/v1"
         case .kimiCode: return "https://api.kimi.com/coding"
+        case .githubCopilot: return CopilotConstants.apiBaseURL
         default: return "https://api.example.com"
         }
     }
@@ -870,7 +1000,9 @@ struct AddProviderView: View {
         let trimmedKey = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedLabel = labelInput.trimmingCharacters(in: .whitespaces)
         let trimmedBase = customBaseURLInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedKey.isEmpty else { return }
+        // [T-empty-key-compat-endpoints] Empty key is allowed for third-party
+        // compatible endpoints (see emptyKeyAllowedForCurrentInput).
+        guard !trimmedKey.isEmpty || emptyKeyAllowedForCurrentInput else { return }
 
         // Map OpenAI + Responses API format to .openAIResponses provider type
         let effectiveType: ProviderType = (type == .openAI && useResponsesAPI) ? .openAIResponses : type
@@ -884,7 +1016,11 @@ struct AddProviderView: View {
             customBaseURL: base,
             appendV1Suffix: appendV1SuffixInput
         )
-        ProviderKeychainHelper.saveAPIKey(trimmedKey, instanceId: instance.id)
+        // Nothing to store for a keyless endpoint — and never write an empty
+        // string to the Keychain (hasAnyCredential treats empty as absent).
+        if !trimmedKey.isEmpty {
+            ProviderKeychainHelper.saveAPIKey(trimmedKey, instanceId: instance.id)
+        }
         store.addInstance(instance)
         isSaving = false
         dismiss()
@@ -938,6 +1074,9 @@ struct AddProviderView: View {
             case .openAIResponses: break // API key only, no OAuth
             case .xAI: try await XAIOAuthManager.shared.login(instanceId: pendingInstanceId)
             case .kimiCode: break // device-code flow runs in KimiDeviceLoginSheet, not here
+            // [T-copilot-provider] Same shape — the device flow lives in
+            // CopilotDeviceLoginSheet so the risk notice is shown before it starts.
+            case .githubCopilot: break
             case .unsupported: break // free / unsupported — no OAuth
             }
             oauthAuthTime = Date()
@@ -969,6 +1108,10 @@ struct AddProviderView: View {
             token = ProviderKeychainHelper.loadOAuthToken(instanceId: pendingInstanceId, as: XAITokenStorage.self)?.accessToken
         case .kimiCode:
             token = ProviderKeychainHelper.loadOAuthToken(instanceId: pendingInstanceId, as: KimiTokenStorage.self)?.accessToken
+        case .githubCopilot:
+            // The GitHub token is the credential worth showing; the session
+            // token is derived and rotates every ~25 minutes.
+            token = ProviderKeychainHelper.loadOAuthToken(instanceId: pendingInstanceId, as: CopilotTokenStorage.self)?.githubToken
         case .unsupported:
             token = nil // free / unsupported — no token
         }
@@ -982,6 +1125,7 @@ struct AddProviderView: View {
         // than dropping the user onto a credential picker they never saw.
         if enteredViaVoiceTemplate {
             enteredViaVoiceTemplate = false
+            configuringVendorName = nil
             selectedType = nil
             selectedCredential = nil
             apiKeyInput = ""
@@ -1037,17 +1181,18 @@ struct AddProviderView: View {
     // MARK: - Helpers
 
     private var oauthSignInLabel: String {
-        guard let type = selectedType else { return String(localized: "Sign In") }
+        guard let type = selectedType else { return AppLocalized("Sign In") }
         switch type {
-        case .anthropic: return String(localized: "Sign in with Claude")
-        case .gemini: return String(localized: "Sign in with Google")
-        case .openAI: return String(localized: "Sign in with OpenAI")
-        case .antigravity: return String(localized: "Sign in with Google")
-        case .openRouter: return String(localized: "Sign in with OpenRouter")
-        case .openAIResponses: return String(localized: "Sign In") // Not reachable — API key only
-        case .xAI: return String(localized: "Sign in with xAI")
-        case .kimiCode: return String(localized: "Sign in with Kimi Code")
-        case .unsupported: return String(localized: "Sign In")
+        case .anthropic: return AppLocalized("Sign in with Claude")
+        case .gemini: return AppLocalized("Sign in with Google")
+        case .openAI: return AppLocalized("Sign in with OpenAI")
+        case .antigravity: return AppLocalized("Sign in with Google")
+        case .openRouter: return AppLocalized("Sign in with OpenRouter")
+        case .openAIResponses: return AppLocalized("Sign In") // Not reachable — API key only
+        case .xAI: return AppLocalized("Sign in with xAI")
+        case .kimiCode: return AppLocalized("Sign in with Kimi Code")
+        case .githubCopilot: return AppLocalized("Sign in with GitHub")
+        case .unsupported: return AppLocalized("Sign In")
         }
     }
 
@@ -1062,21 +1207,23 @@ struct AddProviderView: View {
         case .openAIResponses: return "sk-..."
         case .xAI: return "xai-..."
         case .kimiCode: return "" // OAuth only
+        case .githubCopilot: return "" // OAuth only
         case .unsupported: return ""
         }
     }
 
     private func providerPickerLabel(_ type: ProviderType) -> String {
         switch type {
-        case .anthropic: return String(localized: "Anthropic / Compatible API")
-        case .openAI:    return String(localized: "OpenAI / Compatible API")
+        case .anthropic: return AppLocalized("Anthropic / Compatible API")
+        case .openAI:    return AppLocalized("OpenAI / Compatible API")
         case .gemini:    return type.displayName
         case .antigravity: return type.displayName
         case .openRouter: return "OpenRouter"
         case .openAIResponses: return "Responses API"
         case .xAI: return "xAI (Grok)"
         case .kimiCode: return "Kimi Code"
-        case .unsupported: return String(localized: "Unsupported")
+        case .githubCopilot: return "GitHub Copilot"
+        case .unsupported: return AppLocalized("Unsupported")
         }
     }
 
@@ -1092,6 +1239,20 @@ struct AddProviderView: View {
         switch type {
         case .antigravity:
             return [.oauth]
+        // [T-copilot-oauth-only] Copilot has no API-key form. There is no key a
+        // user can obtain for `api.githubcopilot.com`: the only credential is a
+        // short-lived session token minted from a GitHub OAuth token, which is
+        // why `makeCopilotProvider` wires `oauthTokenProvider` unconditionally
+        // and never reads `credentialType`, and why the model fetch is a single
+        // `case (.githubCopilot, _)` OAuth branch.
+        //
+        // Falling into the `default` below offered an "Or configure manually"
+        // Base URL + Bearer Token block that could never work — anything typed
+        // there was ignored by the factory. Offering a credential the provider
+        // cannot use is worse than offering none: it looks like the supported
+        // path and fails with no explanation.
+        case .githubCopilot:
+            return [.oauth]
         case .openAIResponses, .gemini:
             return [.apiKey]
         default:
@@ -1102,31 +1263,35 @@ struct AddProviderView: View {
     private func credentialDescription(type: ProviderType, credential: ProviderCredential) -> String {
         switch (type, credential) {
         case (.openAI, .apiKey):
-            return String(localized: "Supports OpenAI official API and third-party services like OpenRouter, MiniMax, etc.")
+            return AppLocalized("Supports OpenAI official API and third-party services like OpenRouter, MiniMax, etc.")
         case (.openAIResponses, .apiKey):
-            return String(localized: "Use an API key for a Responses API endpoint")
+            return AppLocalized("Use an API key for a Responses API endpoint")
         case (_, .apiKey):
-            return String(localized: "Use an API key from your \(type.displayName) account")
+            return AppLocalized("Use an API key from your \(type.displayName) account")
         case (.anthropic, .oauth):
-            return String(localized: "Sign in with your Claude account")
+            return AppLocalized("Sign in with your Claude account")
         case (.gemini, .oauth):
-            return String(localized: "Sign in with Google for Cloud Code Assist")
+            return AppLocalized("Sign in with Google for Cloud Code Assist")
         case (.openAI, .oauth):
-            return String(localized: "Sign in with OpenAI Codex")
+            return AppLocalized("Sign in with OpenAI Codex")
         case (.antigravity, .oauth):
-            return String(localized: "Sign in with Google for Antigravity Cloud Code")
+            return AppLocalized("Sign in with Google for Antigravity Cloud Code")
         case (.openRouter, .oauth):
-            return String(localized: "Sign in with your OpenRouter account")
+            return AppLocalized("Sign in with your OpenRouter account")
         case (.openAIResponses, .oauth):
             return "" // Not reachable — API key only
         case (.xAI, .oauth):
-            return String(localized: "Sign in with your SuperGrok / X Premium+ subscription. xAI may restrict API access on some plans — if you hit HTTP 403, switch to an API key.")
+            return AppLocalized("Sign in with your SuperGrok / X Premium+ subscription. xAI may restrict API access on some plans — if you hit HTTP 403, switch to an API key.")
         case (.kimiCode, .oauth):
-            return String(localized: "Sign in with your Kimi Code / Coding Plan subscription.")
+            return AppLocalized("Sign in with your Kimi Code / Coding Plan subscription.")
         case (.kimiCode, .apiKey):
-            return String(localized: "Use a Kimi Coding API key.")
+            return AppLocalized("Use a Kimi Coding API key.")
+        case (.githubCopilot, _):
+            // [T-copilot-provider] The risk warning belongs where the user
+            // decides, not only inside the sign-in sheet.
+            return AppLocalized("Unofficial integration. Using it may get your GitHub Copilot account restricted — use at your own risk.")
         case (.unsupported, _):
-            return String(localized: "This provider isn't supported in this app version.")
+            return AppLocalized("This provider isn't supported in this app version.")
         }
     }
 
@@ -1157,6 +1322,9 @@ struct AddProviderView: View {
         case .kimiCode:
             Image(systemName: "moon.stars")
                 .foregroundStyle(.indigo)
+        case .githubCopilot:
+            Image(systemName: "chevron.left.forwardslash.chevron.right")
+                .foregroundStyle(.primary)
         case .unsupported:
             Image(systemName: "questionmark.circle")
                 .foregroundStyle(.gray)
@@ -1173,6 +1341,7 @@ struct AddProviderView: View {
         case .openAIResponses: return .mint
         case .xAI: return .gray
         case .kimiCode: return .indigo
+        case .githubCopilot: return .primary
         case .unsupported: return .gray
         }
     }

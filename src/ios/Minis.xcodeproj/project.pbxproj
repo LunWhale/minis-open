@@ -23,6 +23,7 @@
 		7A49962E84F115865D41B933 /* AudioSessionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE154CF628D8699BD99CF9CB /* AudioSessionCoordinator.swift */; };
 		891443CAA4679D09A6D32AE4 /* RealTimeCutVADLibrary in Frameworks */ = {isa = PBXBuildFile; productRef = C42120806C66A2C804F89620 /* RealTimeCutVADLibrary */; };
 		8B886DA8A270E8FB58A9A1FA /* SpeechPlayerControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A302B074A0BE0AFED8EC7E9 /* SpeechPlayerControl.swift */; };
+		A11Y0001 /* ChatAccessibilityAnnouncer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11Y0002 /* ChatAccessibilityAnnouncer.swift */; };
 		A1B2C3D4E5F60718293A4B5C /* SystemVoiceCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B5D /* SystemVoiceCatalog.swift */; };
 		AA0838A02F3B941A00049557 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0838A12F3B941A00049557 /* AboutView.swift */; };
 		AA0838C02F3B941A00049557 /* RootfsResetButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0838BF2F3B941A00049557 /* RootfsResetButton.swift */; };
@@ -60,6 +61,34 @@
 		B02B7ADBAB47BDB33F664A21 /* VoiceProvider+Vendors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BB45FC87D39AE9AB4495BE9 /* VoiceProvider+Vendors.swift */; };
 		BB1000100F700000000000AA /* ContextPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB1000110F700000000000AA /* ContextPolicy.swift */; };
 		BB1000120F700000000000AA /* ContextPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB1000110F700000000000AA /* ContextPolicy.swift */; };
+		BKP000101 /* BackupFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = BKP000201 /* BackupFormat.swift */; };
+		BKP000102 /* BackupBlobStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BKP000202 /* BackupBlobStore.swift */; };
+		BKP000103 /* BackupJSONLWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = BKP000203 /* BackupJSONLWriter.swift */; };
+		BKP000104 /* BackupFileTreeExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = BKP000204 /* BackupFileTreeExporter.swift */; };
+		BKP000105 /* BackupExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = BKP000205 /* BackupExporter.swift */; };
+		BKP000106 /* BackupPackageReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = BKP000206 /* BackupPackageReader.swift */; };
+		BKP000107 /* DebugRPCBackup.swift in Sources */ = {isa = PBXBuildFile; fileRef = BKP000207 /* DebugRPCBackup.swift */; };
+		BKP000109 /* BackupImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = BKP000209 /* BackupImporter.swift */; };
+		BKP000110 /* BackupZipExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = BKP000210 /* BackupZipExtractor.swift */; };
+		BKP000111 /* BackupImporter+Categories.swift in Sources */ = {isa = PBXBuildFile; fileRef = BKP000211 /* BackupImporter+Categories.swift */; };
+		BKP000112 /* BackupSecrets.swift in Sources */ = {isa = PBXBuildFile; fileRef = BKP000212 /* BackupSecrets.swift */; };
+		BKP000113 /* BackupCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = BKP000213 /* BackupCrypto.swift */; };
+		BKP000114 /* BackupDelivery.swift in Sources */ = {isa = PBXBuildFile; fileRef = BKP000214 /* BackupDelivery.swift */; };
+		BKP000115 /* BackupSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BKP000215 /* BackupSettingsView.swift */; };
+		BKP000116 /* BackupRestoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BKP000216 /* BackupRestoreView.swift */; };
+		BKP000117 /* BackupOpenRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = BKP000217 /* BackupOpenRouter.swift */; };
+		BKP000118 /* BackupSecretsImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = BKP000218 /* BackupSecretsImporter.swift */; };
+		BKP000119 /* BackupRestoreJournal.swift in Sources */ = {isa = PBXBuildFile; fileRef = BKP000219 /* BackupRestoreJournal.swift */; };
+		BKP000130 /* BackupDestinations.swift in Sources */ = {isa = PBXBuildFile; fileRef = BKP000230 /* BackupDestinations.swift */; };
+		BKP000131 /* BackupActivityLock.swift in Sources */ = {isa = PBXBuildFile; fileRef = BKP000231 /* BackupActivityLock.swift */; };
+		BKP000132 /* BackupExportJournal.swift in Sources */ = {isa = PBXBuildFile; fileRef = BKP000232 /* BackupExportJournal.swift */; };
+		BKP000133 /* BackupRescueIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = BKP000233 /* BackupRescueIndex.swift */; };
+		BKP000134 /* BackupAndRestoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BKP000234 /* BackupAndRestoreView.swift */; };
+		BKP000140 /* BackupKeepAlive.swift in Sources */ = {isa = PBXBuildFile; fileRef = BKP000240 /* BackupKeepAlive.swift */; };
+		BKP000141 /* BackupProgressReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = BKP000241 /* BackupProgressReporter.swift */; };
+		BKP000142 /* BackupZipWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = BKP000242 /* BackupZipWriter.swift */; };
+		BKP000143 /* BackupTransferStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = BKP000243 /* BackupTransferStatus.swift */; };
+		BKP000144 /* BackupSkippedFilesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BKP000244 /* BackupSkippedFilesView.swift */; };
 		C0B1AF9A75C90C3C178A8804 /* VoiceTextSanitizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7656F4130247E4002A3AC0C /* VoiceTextSanitizer.swift */; };
 		E51000001 /* MinisApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = E51000011 /* MinisApp.swift */; };
 		E51000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E51000012 /* ContentView.swift */; };
@@ -116,6 +145,13 @@
 		E59000002 /* AnthropicAgentProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = E59000012 /* AnthropicAgentProvider.swift */; };
 		E59000003 /* GeminiAgentProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = E59000013 /* GeminiAgentProvider.swift */; };
 		E5A000001 /* default_mount in Resources */ = {isa = PBXBuildFile; fileRef = E5A000011 /* default_mount */; };
+		E5ACB0001 /* AgentCallback.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5ACB0011 /* AgentCallback.swift */; };
+		E5ACB0002 /* AgentCallbackCellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5ACB0012 /* AgentCallbackCellView.swift */; };
+		E5AJR0001 /* AgentJobRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5AJR0011 /* AgentJobRegistry.swift */; };
+		E5AJR0002 /* HelperRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5AJR0012 /* HelperRunner.swift */; };
+		E5AJR0003 /* ModelTierResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5AJR0013 /* ModelTierResolver.swift */; };
+		E5AJR0004 /* HelperSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5AJR0014 /* HelperSheet.swift */; };
+		E5AMI0001 /* HelperModelIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5AMI0011 /* HelperModelIdentity.swift */; };
 		E5AS00001 /* AppShortcuts.strings in Resources */ = {isa = PBXBuildFile; fileRef = E5AS00010 /* AppShortcuts.strings */; };
 		E5AT00003 /* AudioTogglePlaybackIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5AT00011 /* AudioTogglePlaybackIntent.swift */; };
 		E5AT00004 /* AudioTogglePlaybackIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5AT00011 /* AudioTogglePlaybackIntent.swift */; };
@@ -130,6 +166,7 @@
 		E5C000002 /* OpenAIAgentProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5C000012 /* OpenAIAgentProvider.swift */; };
 		E5C000003 /* OpenAIModelsAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5C000013 /* OpenAIModelsAPI.swift */; };
 		E5C000004 /* CodexOAuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5C000014 /* CodexOAuthManager.swift */; };
+		E5C0DE9A1 /* OpenCodeChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5C0DE9B1 /* OpenCodeChannel.swift */; };
 		E5CADM01 /* CorrectionAdmission.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CADM03 /* CorrectionAdmission.swift */; };
 		E5CADM02 /* CorrectionAdmission.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CADM03 /* CorrectionAdmission.swift */; };
 		E5CAL0001 /* CookieAuditLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CAL0002 /* CookieAuditLogger.swift */; };
@@ -175,6 +212,7 @@
 		E5D00037 /* AgentLoopModelsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5D00038 /* AgentLoopModelsView.swift */; };
 		E5D00050 /* models-dev-api.json in Resources */ = {isa = PBXBuildFile; fileRef = E5D00060 /* models-dev-api.json */; };
 		E5D00099 /* ProviderConfigDB.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5D00199 /* ProviderConfigDB.swift */; };
+		E5D000F1 /* SwipeEditDestination.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5D000F2 /* SwipeEditDestination.swift */; };
 		E5D0A101 /* ModelReleaseIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5D0A102 /* ModelReleaseIndex.swift */; };
 		E5DA0001 /* VisionGroupResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5DA0002 /* VisionGroupResolver.swift */; };
 		E5DRC0010 /* DebugRPCConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5DRC0020 /* DebugRPCConfig.swift */; };
@@ -211,6 +249,8 @@
 		E5FP00009 /* MinisFileProvider.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = E5FP00010 /* MinisFileProvider.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		E5FP00100 /* AppGroupChangeWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5FP00101 /* AppGroupChangeWatcher.swift */; };
 		E5FP00200 /* FPSyncTraceLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5FP00201 /* FPSyncTraceLog.swift */; };
+		E5FPBH01 /* FileProviderBootHealth.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5FPBH03 /* FileProviderBootHealth.swift */; };
+		E5FPBH02 /* FileProviderBootHealth.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5FPBH03 /* FileProviderBootHealth.swift */; };
 		E5G000001 /* BackgroundKeepAliveManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5G000011 /* BackgroundKeepAliveManager.swift */; };
 		E5G000002 /* AgentLiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5G000012 /* AgentLiveActivityManager.swift */; };
 		E5G000003 /* EnhancedBackgroundSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5G000013 /* EnhancedBackgroundSettingsView.swift */; };
@@ -221,6 +261,7 @@
 		E5H000002 /* AgentLiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5H000012 /* AgentLiveActivityWidget.swift */; };
 		E5H000003 /* AgentActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5G000014 /* AgentActivityAttributes.swift */; };
 		E5H000009 /* AgentWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = E5H000010 /* AgentWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		E5HBV0001 /* HelperBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5HBV0011 /* HelperBlockView.swift */; };
 		E5I000001 /* SpeechRecognitionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5I000011 /* SpeechRecognitionManager.swift */; };
 		E5I000002 /* AudioWaveformView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5I000012 /* AudioWaveformView.swift */; };
 		E5IP00001 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = E5IP00010 /* InfoPlist.strings */; };
@@ -229,7 +270,6 @@
 		E5J000003 /* ConfigAuditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5J000013 /* ConfigAuditView.swift */; };
 		E5J000020 /* FileHandleSafeWrite.m in Sources */ = {isa = PBXBuildFile; fileRef = E5J000021 /* FileHandleSafeWrite.m */; };
 		E5J000030 /* NSTextContainerSetSizeGuard.m in Sources */ = {isa = PBXBuildFile; fileRef = E5J000031 /* NSTextContainerSetSizeGuard.m */; };
-		E5J000040 /* AttributeQueryRecorder.m in Sources */ = {isa = PBXBuildFile; fileRef = E5J000041 /* AttributeQueryRecorder.m */; };
 		E5J000050 /* ObjCExceptionCatcher.m in Sources */ = {isa = PBXBuildFile; fileRef = E5J000051 /* ObjCExceptionCatcher.m */; };
 		E5JB00001 /* JiebaWrapper.mm in Sources */ = {isa = PBXBuildFile; fileRef = E5JB00012 /* JiebaWrapper.mm */; };
 		E5JB00002 /* TextSegmenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5JB00013 /* TextSegmenter.swift */; };
@@ -285,6 +325,7 @@
 		E5L200SS2 /* SessionsOffload.m in Sources */ = {isa = PBXBuildFile; fileRef = E5L200SS1 /* SessionsOffload.m */; };
 		E5L200SS4 /* SessionsOffloadBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5L200SS3 /* SessionsOffloadBridge.swift */; };
 		E5LC00001 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = E5LC00002 /* Localizable.xcstrings */; };
+		E5LC00003 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = E5LC00002 /* Localizable.xcstrings */; };
 		E5LD00001 /* ToolLoopDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5LD00003 /* ToolLoopDetector.swift */; };
 		E5LD00002 /* ToolLoopDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5LD00003 /* ToolLoopDetector.swift */; };
 		E5LOCK001 /* SessionLockStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5LOCK101 /* SessionLockStore.swift */; };
@@ -300,6 +341,7 @@
 		E5MNT0002 /* MountedFolderCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5MNT0102 /* MountedFolderCoordinator.swift */; };
 		E5MNT0003 /* MountedFoldersSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5MNT0103 /* MountedFoldersSettingsView.swift */; };
 		E5MSC0001 /* MarkdownSnapshotCollector.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5MSC0011 /* MarkdownSnapshotCollector.swift */; };
+		E5MSS0001 /* ModelSearchScorer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5MSS0011 /* ModelSearchScorer.swift */; };
 		E5N0000012F3B941A00049557 /* SkillStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5N0000112F3B941A00049557 /* SkillStore.swift */; };
 		E5N0000022F3B941A00049557 /* SessionSkillsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5N0000122F3B941A00049557 /* SessionSkillsView.swift */; };
 		E5N0000032F3B941A00049557 /* SkillsManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5N0000132F3B941A00049557 /* SkillsManagementView.swift */; };
@@ -318,6 +360,8 @@
 		E5P000002 /* EnvironmentVariablesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5P000012 /* EnvironmentVariablesView.swift */; };
 		E5P000003 /* DeepLinkCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5P000013 /* DeepLinkCoordinator.swift */; };
 		E5P000004 /* DeepLinkRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5P000014 /* DeepLinkRouter.swift */; };
+		E5PPB0001 /* PerfProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5PPB0011 /* PerfProbe.swift */; };
+		E5PPR0001 /* AIChatViewModel+ProgrammaticPrompt.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5PPR0011 /* AIChatViewModel+ProgrammaticPrompt.swift */; };
 		E5PRIV01 /* EnvVarPrivacyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5PRIV11 /* EnvVarPrivacyStore.swift */; };
 		E5PRIV02 /* EnvVarRedactor.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5PRIV12 /* EnvVarRedactor.swift */; };
 		E5PV00001 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = E5PV00002 /* PrivacyInfo.xcprivacy */; };
@@ -329,21 +373,32 @@
 		E5QA0002 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5QA0102 /* AppDelegate.swift */; };
 		E5QA0003 /* QuickActionWorkflow.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5QA0103 /* QuickActionWorkflow.swift */; };
 		E5QT00001 /* ModelQuickTestSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5QT00011 /* ModelQuickTestSheet.swift */; };
+		E5R000001 /* ICloudBackupManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5R000011 /* ICloudBackupManager.swift */; };
+		E5R000002 /* ICloudBackupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5R000012 /* ICloudBackupView.swift */; };
+		E5RSD0001 /* ResourceDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5RSD0011 /* ResourceDiagnostics.swift */; };
 		E5S000001 /* DeviceIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5S000011 /* DeviceIdentity.swift */; };
 		E5S000002 /* CloudSyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5S000012 /* CloudSyncEngine.swift */; };
 		E5S000003 /* SessionForkManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5S000013 /* SessionForkManager.swift */; };
 		E5S000004 /* CloudSyncSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5S000014 /* CloudSyncSettingsView.swift */; };
 		E5S000005 /* CloudKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E5S000015 /* CloudKit.framework */; };
 		E5S000006 /* SyncDirtyScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5S000016 /* SyncDirtyScanner.swift */; };
+		E5SAC0010 /* SubAgentsCollection.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SAC0020 /* SubAgentsCollection.swift */; };
+		E5SCH0001 /* ScheduledJobRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SCH0011 /* ScheduledJobRunner.swift */; };
+		E5SCH0002 /* ScheduledOffload.m in Sources */ = {isa = PBXBuildFile; fileRef = E5SCH0012 /* ScheduledOffload.m */; };
+		E5SCH0003 /* ScheduledOffloadBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SCH0013 /* ScheduledOffloadBridge.swift */; };
+		E5SCH0004 /* HelperSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SCH0014 /* HelperSettingsView.swift */; };
 		E5SD00009 /* ShortcutRunTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SD00019 /* ShortcutRunTracker.swift */; };
+		E5SDS0001 /* SessionDeletionSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SDS0011 /* SessionDeletionSupport.swift */; };
 		E5SHV0001 /* SharedFolderVisibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SHV0101 /* SharedFolderVisibility.swift */; };
 		E5SHV0002 /* SharedFolderVisibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SHV0101 /* SharedFolderVisibility.swift */; };
 		E5SHV0003 /* SharedFoldersSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SHV0103 /* SharedFoldersSettingsView.swift */; };
 		E5SHV0004 /* MountDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SHV0104 /* MountDetailView.swift */; };
 		E5SOUL001 /* SoulStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SOUL101 /* SoulStore.swift */; };
 		E5SOUL002 /* SoulSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SOUL102 /* SoulSettingsView.swift */; };
-		E5SUBRV2 /* SubagentRolesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SUBRV1 /* SubagentRolesView.swift */; };
 		E5EXTMV2 /* ExtensionManagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5EXTMV1 /* ExtensionManagerView.swift */; };
+		E5SRS0001 /* SessionRefreshScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SRS0011 /* SessionRefreshScheduler.swift */; };
+		E5SUB0002 /* SubAgentDefinition.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SUB0001 /* SubAgentDefinition.swift */; };
+		E5SUB0011 /* SubAgentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SUB0010 /* SubAgentStore.swift */; };
 		E5SVP0021 /* ShadowVoiceProviderDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SVP0031 /* ShadowVoiceProviderDetailView.swift */; };
 		E5T000001 /* SessionEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5T000011 /* SessionEntity.swift */; };
 		E5T000002 /* ListSessionsIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5T000012 /* ListSessionsIntent.swift */; };
@@ -358,6 +413,7 @@
 		E5T00000B /* UserMessageEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5T00001B /* UserMessageEntity.swift */; };
 		E5T0000A1 /* AskMinisIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5T0000A2 /* AskMinisIntent.swift */; };
 		E5TLC0001 /* ThinkingLevelCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5TLC0002 /* ThinkingLevelCatalog.swift */; };
+		E5TLS0001 /* ToolsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5TLS0011 /* ToolsSettingsView.swift */; };
 		E5TRC001 /* ThinkingRuleCoding.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5TRC002 /* ThinkingRuleCoding.swift */; };
 		E5TRC0010 /* ThinkingRulesCollection.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5TRC0020 /* ThinkingRulesCollection.swift */; };
 		E5TRE001 /* ThinkingRuleEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5TRE002 /* ThinkingRuleEditorView.swift */; };
@@ -392,6 +448,7 @@
 		E5VC1001A /* ConversationContextTruncator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VC00018 /* ConversationContextTruncator.swift */; };
 		E5VC1001D /* VoiceCorrectionDiff.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VC0001D /* VoiceCorrectionDiff.swift */; };
 		E5VC1001E /* VocabularyFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VC0001E /* VocabularyFilter.swift */; };
+		E5VCTR001 /* VoiceCorrectionTrace.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VCTR002 /* VoiceCorrectionTrace.swift */; };
 		E5VIC0001 /* VoiceInputCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VIC0011 /* VoiceInputCapture.swift */; };
 		E5VIC1001 /* VoiceInputCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VIC0011 /* VoiceInputCapture.swift */; };
 		E5VMA0001 /* AIChatViewModel+Attachments.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMA0011 /* AIChatViewModel+Attachments.swift */; };
@@ -402,10 +459,6 @@
 		E5TODO002 /* AIChatViewModel+TodoTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5TODO001 /* AIChatViewModel+TodoTools.swift */; };
 		E5TODOS2 /* TodoStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5TODOS1 /* TodoStore.swift */; };
 		E5TODOM2 /* TodoModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5TODOM1 /* TodoModels.swift */; };
-		E5SUBAR1B /* AgentRole.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SUBAR1 /* AgentRole.swift */; };
-		E5SUBAR2B /* AgentRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SUBAR2 /* AgentRunner.swift */; };
-		E5SUBAR3B /* SubagentCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SUBAR3 /* SubagentCoordinator.swift */; };
-		E5SUBAT1B /* AIChatViewModel+SubagentTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SUBAT1 /* AIChatViewModel+SubagentTools.swift */; };
 		E5VMA0006 /* AIChatViewModel+ProviderFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMA0016 /* AIChatViewModel+ProviderFactory.swift */; };
 		E5VMA0007 /* AIChatViewModel+ToolDefinitions.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMA0017 /* AIChatViewModel+ToolDefinitions.swift */; };
 		E5VMA0008 /* AIChatViewModel+ToolPreflight.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMA0018 /* AIChatViewModel+ToolPreflight.swift */; };
@@ -465,11 +518,16 @@
 		EXA000002 /* XAITokenStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = EXA000012 /* XAITokenStorage.swift */; };
 		EXA000003 /* XAIOAuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = EXA000013 /* XAIOAuthManager.swift */; };
 		F1A00020 /* MessageListInfrastructure.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A00021 /* MessageListInfrastructure.swift */; };
+		F1CPCONSTB /* CopilotConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1CPCONST /* CopilotConstants.swift */; };
+		F1CPMGRB /* CopilotOAuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1CPMGR /* CopilotOAuthManager.swift */; };
+		F1CPMODELSB /* CopilotModelsAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1CPMODELS /* CopilotModelsAPI.swift */; };
+		F1CPSHEETB /* CopilotDeviceLoginSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1CPSHEET /* CopilotDeviceLoginSheet.swift */; };
 		F1M00012 /* AudioPlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1M00011 /* AudioPlayback.swift */; };
 		F1M00014 /* VideoPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1M00013 /* VideoPlayer.swift */; };
 		F1M00016 /* ImagePreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1M00015 /* ImagePreview.swift */; };
 		F1M00018 /* AudioPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1M00017 /* AudioPreview.swift */; };
 		F1M00020 /* MessageImageGallery.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1M00019 /* MessageImageGallery.swift */; };
+		F1MCPDCRB /* MCPOAuthDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1MCPDCR /* MCPOAuthDiscovery.swift */; };
 		F1MCPOAUTHB /* MCPOAuthController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1MCPOAUTH /* MCPOAuthController.swift */; };
 		F1MCPSTOREB /* MCPStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1MCPSTORE /* MCPStore.swift */; };
 		F1S00012 /* ChatSessionIdEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1S00011 /* ChatSessionIdEnvironment.swift */; };
@@ -482,12 +540,34 @@
 		F1W00013 /* WebPreviewSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1W00012 /* WebPreviewSheet.swift */; };
 		F1W00061 /* PaginatedMarkdownView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1W00060 /* PaginatedMarkdownView.swift */; };
 		F1W00101 /* PrintHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1W00100 /* PrintHelper.swift */; };
+		F1W00901 /* LazyLongTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1W00900 /* LazyLongTextView.swift */; };
 		F1W0E101 /* WebLoadError.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1W0E100 /* WebLoadError.swift */; };
 		FDD896F80E0A14A7B60B12EF /* VoiceLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28E23EA0E199D6D50EBC76F2 /* VoiceLog.swift */; };
+		LOC00001 /* AppLocalization.swift in Sources */ = {isa = PBXBuildFile; fileRef = LOC00002 /* AppLocalization.swift */; };
+		RCL000010 /* Rclone.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = RCL000020 /* Rclone.xcframework */; };
+		RCL000110 /* RcloneBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = RCL000210 /* RcloneBridge.swift */; };
+		RCL000111 /* RcloneRemoteStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = RCL000211 /* RcloneRemoteStore.swift */; };
+		RCL000112 /* RcloneChunkedUpload.swift in Sources */ = {isa = PBXBuildFile; fileRef = RCL000212 /* RcloneChunkedUpload.swift */; };
+		RCL000113 /* RcloneBackendCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = RCL000213 /* RcloneBackendCatalog.swift */; };
+		RCL000114 /* RcloneAddServerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = RCL000214 /* RcloneAddServerView.swift */; };
+		RCL000115 /* BackupDestinationPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = RCL000215 /* BackupDestinationPicker.swift */; };
+		RCL000116 /* BackupDestinationDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = RCL000216 /* BackupDestinationDetailView.swift */; };
+		RCL000117 /* BackupHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = RCL000217 /* BackupHistory.swift */; };
+		RCL000118 /* BackupRunController.swift in Sources */ = {isa = PBXBuildFile; fileRef = RCL000218 /* BackupRunController.swift */; };
+		RCL000119 /* BackupHistoryDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = RCL000219 /* BackupHistoryDetailView.swift */; };
+		RCL000120 /* BackupCategoryIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = RCL000220 /* BackupCategoryIcon.swift */; };
+		RCL000121 /* BackupHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = RCL000221 /* BackupHUD.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
 		AA8A56912F6FBB7A00A3E54E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E51000060 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E51000040;
+			remoteInfo = Minis;
+		};
+		BB1000B10F700000000000AA /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = E51000060 /* Project object */;
 			proxyType = 1;
@@ -574,6 +654,7 @@
 		84758F712C9B9178FA9D0EF2 /* VoiceProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VoiceProvider.swift; sourceTree = "<group>"; };
 		86DD7E40E65177AB39C55882 /* VoiceProviderResolver.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VoiceProviderResolver.swift; sourceTree = "<group>"; };
 		88993FC8E3F0199C6638F664 /* VoiceProvider+System.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "VoiceProvider+System.swift"; sourceTree = "<group>"; };
+		A11Y0002 /* ChatAccessibilityAnnouncer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatAccessibilityAnnouncer.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B5D /* SystemVoiceCatalog.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SystemVoiceCatalog.swift; sourceTree = "<group>"; };
 		AA0838A12F3B941A00049557 /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
 		AA0838BE2F3B941A00049557 /* RootfsManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootfsManagementView.swift; sourceTree = "<group>"; };
@@ -666,6 +747,34 @@
 		B7E2CB0D0D63E6D6FDB45568 /* VoiceActivityDetector.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VoiceActivityDetector.swift; sourceTree = "<group>"; };
 		BB1000010F700000000000AA /* MinisTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MinisTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		BB1000110F700000000000AA /* ContextPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextPolicy.swift; sourceTree = "<group>"; };
+		BKP000201 /* BackupFormat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupFormat.swift; sourceTree = "<group>"; };
+		BKP000202 /* BackupBlobStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupBlobStore.swift; sourceTree = "<group>"; };
+		BKP000203 /* BackupJSONLWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupJSONLWriter.swift; sourceTree = "<group>"; };
+		BKP000204 /* BackupFileTreeExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupFileTreeExporter.swift; sourceTree = "<group>"; };
+		BKP000205 /* BackupExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupExporter.swift; sourceTree = "<group>"; };
+		BKP000206 /* BackupPackageReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupPackageReader.swift; sourceTree = "<group>"; };
+		BKP000207 /* DebugRPCBackup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugRPCBackup.swift; sourceTree = "<group>"; };
+		BKP000209 /* BackupImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupImporter.swift; sourceTree = "<group>"; };
+		BKP000210 /* BackupZipExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupZipExtractor.swift; sourceTree = "<group>"; };
+		BKP000211 /* BackupImporter+Categories.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BackupImporter+Categories.swift"; sourceTree = "<group>"; };
+		BKP000212 /* BackupSecrets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupSecrets.swift; sourceTree = "<group>"; };
+		BKP000213 /* BackupCrypto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupCrypto.swift; sourceTree = "<group>"; };
+		BKP000214 /* BackupDelivery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupDelivery.swift; sourceTree = "<group>"; };
+		BKP000215 /* BackupSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupSettingsView.swift; sourceTree = "<group>"; };
+		BKP000216 /* BackupRestoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupRestoreView.swift; sourceTree = "<group>"; };
+		BKP000217 /* BackupOpenRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupOpenRouter.swift; sourceTree = "<group>"; };
+		BKP000218 /* BackupSecretsImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupSecretsImporter.swift; sourceTree = "<group>"; };
+		BKP000219 /* BackupRestoreJournal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupRestoreJournal.swift; sourceTree = "<group>"; };
+		BKP000230 /* BackupDestinations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupDestinations.swift; sourceTree = "<group>"; };
+		BKP000231 /* BackupActivityLock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupActivityLock.swift; sourceTree = "<group>"; };
+		BKP000232 /* BackupExportJournal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupExportJournal.swift; sourceTree = "<group>"; };
+		BKP000233 /* BackupRescueIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupRescueIndex.swift; sourceTree = "<group>"; };
+		BKP000234 /* BackupAndRestoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupAndRestoreView.swift; sourceTree = "<group>"; };
+		BKP000240 /* BackupKeepAlive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupKeepAlive.swift; sourceTree = "<group>"; };
+		BKP000241 /* BackupProgressReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupProgressReporter.swift; sourceTree = "<group>"; };
+		BKP000242 /* BackupZipWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupZipWriter.swift; sourceTree = "<group>"; };
+		BKP000243 /* BackupTransferStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupTransferStatus.swift; sourceTree = "<group>"; };
+		BKP000244 /* BackupSkippedFilesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupSkippedFilesView.swift; sourceTree = "<group>"; };
 		D7656F4130247E4002A3AC0C /* VoiceTextSanitizer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VoiceTextSanitizer.swift; sourceTree = "<group>"; };
 		DE154CF628D8699BD99CF9CB /* AudioSessionCoordinator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AudioSessionCoordinator.swift; sourceTree = "<group>"; };
 		E51000010 /* Minis.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Minis.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -726,6 +835,13 @@
 		E59000012 /* AnthropicAgentProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnthropicAgentProvider.swift; sourceTree = "<group>"; };
 		E59000013 /* GeminiAgentProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeminiAgentProvider.swift; sourceTree = "<group>"; };
 		E5A000011 /* default_mount */ = {isa = PBXFileReference; lastKnownFileType = folder; path = default_mount; sourceTree = "<group>"; };
+		E5ACB0011 /* AgentCallback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCallback.swift; sourceTree = "<group>"; };
+		E5ACB0012 /* AgentCallbackCellView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCallbackCellView.swift; sourceTree = "<group>"; };
+		E5AJR0011 /* AgentJobRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentJobRegistry.swift; sourceTree = "<group>"; };
+		E5AJR0012 /* HelperRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperRunner.swift; sourceTree = "<group>"; };
+		E5AJR0013 /* ModelTierResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelTierResolver.swift; sourceTree = "<group>"; };
+		E5AJR0014 /* HelperSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperSheet.swift; sourceTree = "<group>"; };
+		E5AMI0011 /* HelperModelIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperModelIdentity.swift; sourceTree = "<group>"; };
 		E5AS00011 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/AppShortcuts.strings; sourceTree = "<group>"; };
 		E5AS00012 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/AppShortcuts.strings"; sourceTree = "<group>"; };
 		E5AS00013 /* zh-Hant */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hant"; path = "zh-Hant.lproj/AppShortcuts.strings"; sourceTree = "<group>"; };
@@ -741,6 +857,7 @@
 		E5C000012 /* OpenAIAgentProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIAgentProvider.swift; sourceTree = "<group>"; };
 		E5C000013 /* OpenAIModelsAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIModelsAPI.swift; sourceTree = "<group>"; };
 		E5C000014 /* CodexOAuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexOAuthManager.swift; sourceTree = "<group>"; };
+		E5C0DE9B1 /* OpenCodeChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenCodeChannel.swift; sourceTree = "<group>"; };
 		E5CADM03 /* CorrectionAdmission.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CorrectionAdmission.swift; sourceTree = "<group>"; };
 		E5CAL0002 /* CookieAuditLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CookieAuditLogger.swift; sourceTree = "<group>"; };
 		E5CCB0011 /* CorrectionContextBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CorrectionContextBuilder.swift; sourceTree = "<group>"; };
@@ -784,6 +901,7 @@
 		E5D00036 /* OnboardingModelSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingModelSelectionView.swift; sourceTree = "<group>"; };
 		E5D00038 /* AgentLoopModelsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLoopModelsView.swift; sourceTree = "<group>"; };
 		E5D00060 /* models-dev-api.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = "models-dev-api.json"; path = "Resources/models-dev-api.json"; sourceTree = "<group>"; };
+		E5D000F2 /* SwipeEditDestination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwipeEditDestination.swift; sourceTree = "<group>"; };
 		E5D00199 /* ProviderConfigDB.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderConfigDB.swift; sourceTree = "<group>"; };
 		E5D0A102 /* ModelReleaseIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelReleaseIndex.swift; sourceTree = "<group>"; };
 		E5DA0002 /* VisionGroupResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisionGroupResolver.swift; sourceTree = "<group>"; };
@@ -824,6 +942,7 @@
 		E5FP00015 /* FileProvider.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FileProvider.entitlements; sourceTree = "<group>"; };
 		E5FP00101 /* AppGroupChangeWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppGroupChangeWatcher.swift; sourceTree = "<group>"; };
 		E5FP00201 /* FPSyncTraceLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FPSyncTraceLog.swift; sourceTree = "<group>"; };
+		E5FPBH03 /* FileProviderBootHealth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileProviderBootHealth.swift; sourceTree = "<group>"; };
 		E5G000011 /* BackgroundKeepAliveManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundKeepAliveManager.swift; sourceTree = "<group>"; };
 		E5G000012 /* AgentLiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLiveActivityManager.swift; sourceTree = "<group>"; };
 		E5G000013 /* EnhancedBackgroundSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnhancedBackgroundSettingsView.swift; sourceTree = "<group>"; };
@@ -834,6 +953,7 @@
 		E5H000012 /* AgentLiveActivityWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLiveActivityWidget.swift; sourceTree = "<group>"; };
 		E5H000013 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		E5H000014 /* AgentWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AgentWidget.entitlements; sourceTree = "<group>"; };
+		E5HBV0011 /* HelperBlockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperBlockView.swift; sourceTree = "<group>"; };
 		E5I000011 /* SpeechRecognitionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechRecognitionManager.swift; sourceTree = "<group>"; };
 		E5I000012 /* AudioWaveformView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioWaveformView.swift; sourceTree = "<group>"; };
 		E5IP00011 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
@@ -843,6 +963,17 @@
 		E5IP00015 /* fr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fr; path = fr.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		E5IP00016 /* de */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = de; path = de.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		E5IP00017 /* zh-Hant */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hant"; path = "zh-Hant.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
+		E5IP00018 /* es */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = es; path = es.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		E5IP00019 /* ru */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ru; path = ru.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		E5IP00020 /* id */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = id; path = id.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		E5IP00021 /* ms */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ms; path = ms.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		E5IP00022 /* fil */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fil; path = fil.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		E5IP00023 /* th */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = th; path = th.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		E5IP00024 /* tr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = tr; path = tr.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		E5IP00025 /* pl */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = pl; path = pl.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		E5IP00026 /* ro */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ro; path = ro.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		E5IP00027 /* pt-BR */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "pt-BR"; path = "pt-BR.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
+		E5IP00028 /* hr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = hr; path = hr.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		E5J000011 /* LoggingManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoggingManager.swift; sourceTree = "<group>"; };
 		E5J000012 /* LogManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogManagementView.swift; sourceTree = "<group>"; };
 		E5J000013 /* ConfigAuditView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigAuditView.swift; sourceTree = "<group>"; };
@@ -850,8 +981,6 @@
 		E5J000022 /* FileHandleSafeWrite.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = FileHandleSafeWrite.h; sourceTree = "<group>"; };
 		E5J000031 /* NSTextContainerSetSizeGuard.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = NSTextContainerSetSizeGuard.m; sourceTree = "<group>"; };
 		E5J000032 /* NSTextContainerSetSizeGuard.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = NSTextContainerSetSizeGuard.h; sourceTree = "<group>"; };
-		E5J000041 /* AttributeQueryRecorder.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = AttributeQueryRecorder.m; sourceTree = "<group>"; };
-		E5J000042 /* AttributeQueryRecorder.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AttributeQueryRecorder.h; sourceTree = "<group>"; };
 		E5J000051 /* ObjCExceptionCatcher.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ObjCExceptionCatcher.m; sourceTree = "<group>"; };
 		E5J000052 /* ObjCExceptionCatcher.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ObjCExceptionCatcher.h; sourceTree = "<group>"; };
 		E5JB00011 /* JiebaWrapper.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = JiebaWrapper.h; sourceTree = "<group>"; };
@@ -944,14 +1073,13 @@
 		E5MNT0102 /* MountedFolderCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MountedFolderCoordinator.swift; sourceTree = "<group>"; };
 		E5MNT0103 /* MountedFoldersSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MountedFoldersSettingsView.swift; sourceTree = "<group>"; };
 		E5MSC0011 /* MarkdownSnapshotCollector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownSnapshotCollector.swift; sourceTree = "<group>"; };
+		E5MSS0011 /* ModelSearchScorer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelSearchScorer.swift; sourceTree = "<group>"; };
 		E5N0000112F3B941A00049557 /* SkillStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillStore.swift; sourceTree = "<group>"; };
 		E5N0000122F3B941A00049557 /* SessionSkillsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionSkillsView.swift; sourceTree = "<group>"; };
 		E5N0000132F3B941A00049557 /* SkillsManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillsManagementView.swift; sourceTree = "<group>"; };
 		E5N0000142F3B941A00049557 /* MemoryManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryManagementView.swift; sourceTree = "<group>"; };
 		E5N0000152F3B941A00049557 /* SessionMemoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionMemoryView.swift; sourceTree = "<group>"; };
 		E5TODOV1 /* TodoPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoPanelView.swift; sourceTree = "<group>"; };
-		E5SUBAB1 /* SubagentBlockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubagentBlockView.swift; sourceTree = "<group>"; };
-		E5SUBAB1B /* SubagentBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SUBAB1 /* SubagentBlockView.swift */; };
 		E5EXTWV1 /* ExtensionWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionWebView.swift; sourceTree = "<group>"; };
 		E5EXTMC1 /* ExtensionWidgetMessageCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionWidgetMessageCenter.swift; sourceTree = "<group>"; };
 		E5EXTMC1B /* ExtensionWidgetMessageCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5EXTMC1 /* ExtensionWidgetMessageCenter.swift */; };
@@ -968,6 +1096,8 @@
 		E5P000012 /* EnvironmentVariablesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnvironmentVariablesView.swift; sourceTree = "<group>"; };
 		E5P000013 /* DeepLinkCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepLinkCoordinator.swift; sourceTree = "<group>"; };
 		E5P000014 /* DeepLinkRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepLinkRouter.swift; sourceTree = "<group>"; };
+		E5PPB0011 /* PerfProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerfProbe.swift; sourceTree = "<group>"; };
+		E5PPR0011 /* AIChatViewModel+ProgrammaticPrompt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+ProgrammaticPrompt.swift"; sourceTree = "<group>"; };
 		E5PRIV11 /* EnvVarPrivacyStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnvVarPrivacyStore.swift; sourceTree = "<group>"; };
 		E5PRIV12 /* EnvVarRedactor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnvVarRedactor.swift; sourceTree = "<group>"; };
 		E5PV00002 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
@@ -979,20 +1109,32 @@
 		E5QA0102 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		E5QA0103 /* QuickActionWorkflow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickActionWorkflow.swift; sourceTree = "<group>"; };
 		E5QT00011 /* ModelQuickTestSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelQuickTestSheet.swift; sourceTree = "<group>"; };
+		E5R000011 /* ICloudBackupManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ICloudBackupManager.swift; sourceTree = "<group>"; };
+		E5R000012 /* ICloudBackupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ICloudBackupView.swift; sourceTree = "<group>"; };
+		E5RSD0011 /* ResourceDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResourceDiagnostics.swift; sourceTree = "<group>"; };
 		E5S000011 /* DeviceIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceIdentity.swift; sourceTree = "<group>"; };
 		E5S000012 /* CloudSyncEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudSyncEngine.swift; sourceTree = "<group>"; };
 		E5S000013 /* SessionForkManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionForkManager.swift; sourceTree = "<group>"; };
 		E5S000014 /* CloudSyncSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudSyncSettingsView.swift; sourceTree = "<group>"; };
 		E5S000015 /* CloudKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CloudKit.framework; path = System/Library/Frameworks/CloudKit.framework; sourceTree = SDKROOT; };
 		E5S000016 /* SyncDirtyScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncDirtyScanner.swift; sourceTree = "<group>"; };
+		E5SAC0020 /* SubAgentsCollection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SubAgentsCollection.swift; path = Config/Collections/SubAgentsCollection.swift; sourceTree = "<group>"; };
+		E5SCH0010 /* ScheduledOffload.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ScheduledOffload.h; sourceTree = "<group>"; };
+		E5SCH0011 /* ScheduledJobRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduledJobRunner.swift; sourceTree = "<group>"; };
+		E5SCH0012 /* ScheduledOffload.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ScheduledOffload.m; sourceTree = "<group>"; };
+		E5SCH0013 /* ScheduledOffloadBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduledOffloadBridge.swift; sourceTree = "<group>"; };
+		E5SCH0014 /* HelperSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperSettingsView.swift; sourceTree = "<group>"; };
 		E5SD00019 /* ShortcutRunTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutRunTracker.swift; sourceTree = "<group>"; };
+		E5SDS0011 /* SessionDeletionSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionDeletionSupport.swift; sourceTree = "<group>"; };
 		E5SHV0101 /* SharedFolderVisibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedFolderVisibility.swift; sourceTree = "<group>"; };
 		E5SHV0103 /* SharedFoldersSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedFoldersSettingsView.swift; sourceTree = "<group>"; };
 		E5SHV0104 /* MountDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MountDetailView.swift; sourceTree = "<group>"; };
 		E5SOUL101 /* SoulStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoulStore.swift; sourceTree = "<group>"; };
 		E5SOUL102 /* SoulSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoulSettingsView.swift; sourceTree = "<group>"; };
-		E5SUBRV1 /* SubagentRolesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubagentRolesView.swift; sourceTree = "<group>"; };
 		E5EXTMV1 /* ExtensionManagerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionManagerView.swift; sourceTree = "<group>"; };
+		E5SRS0011 /* SessionRefreshScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRefreshScheduler.swift; sourceTree = "<group>"; };
+		E5SUB0001 /* SubAgentDefinition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubAgentDefinition.swift; sourceTree = "<group>"; };
+		E5SUB0010 /* SubAgentStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubAgentStore.swift; sourceTree = "<group>"; };
 		E5SVP0031 /* ShadowVoiceProviderDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShadowVoiceProviderDetailView.swift; sourceTree = "<group>"; };
 		E5T000011 /* SessionEntity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionEntity.swift; sourceTree = "<group>"; };
 		E5T000012 /* ListSessionsIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListSessionsIntent.swift; sourceTree = "<group>"; };
@@ -1007,6 +1149,7 @@
 		E5T00001B /* UserMessageEntity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserMessageEntity.swift; sourceTree = "<group>"; };
 		E5T0000A2 /* AskMinisIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AskMinisIntent.swift; sourceTree = "<group>"; };
 		E5TLC0002 /* ThinkingLevelCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThinkingLevelCatalog.swift; sourceTree = "<group>"; };
+		E5TLS0011 /* ToolsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolsSettingsView.swift; sourceTree = "<group>"; };
 		E5TRC002 /* ThinkingRuleCoding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ThinkingRuleCoding.swift; path = Thinking/ThinkingRuleCoding.swift; sourceTree = "<group>"; };
 		E5TRC0020 /* ThinkingRulesCollection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ThinkingRulesCollection.swift; path = Config/Collections/ThinkingRulesCollection.swift; sourceTree = "<group>"; };
 		E5TRE002 /* ThinkingRuleEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThinkingRuleEditorView.swift; sourceTree = "<group>"; };
@@ -1033,6 +1176,7 @@
 		E5VC0001B /* zh_background_wordfreq.txt */ = {isa = PBXFileReference; lastKnownFileType = text; name = zh_background_wordfreq.txt; path = Resources/zh_background_wordfreq.txt; sourceTree = "<group>"; };
 		E5VC0001D /* VoiceCorrectionDiff.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceCorrectionDiff.swift; sourceTree = "<group>"; };
 		E5VC0001E /* VocabularyFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VocabularyFilter.swift; sourceTree = "<group>"; };
+		E5VCTR002 /* VoiceCorrectionTrace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceCorrectionTrace.swift; sourceTree = "<group>"; };
 		E5VIC0011 /* VoiceInputCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceInputCapture.swift; sourceTree = "<group>"; };
 		E5VMA0011 /* AIChatViewModel+Attachments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+Attachments.swift"; sourceTree = "<group>"; };
 		E5VMA0012 /* AIChatViewModel+SlashCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+SlashCommands.swift"; sourceTree = "<group>"; };
@@ -1044,9 +1188,6 @@
 		E5TODO001 /* AIChatViewModel+TodoTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+TodoTools.swift"; sourceTree = "<group>"; };
 		E5TODOS1 /* TodoStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoStore.swift; sourceTree = "<group>"; };
 		E5TODOM1 /* TodoModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoModels.swift; sourceTree = "<group>"; };
-		E5SUBAR1 /* AgentRole.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRole.swift; sourceTree = "<group>"; };
-		E5SUBAR2 /* AgentRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunner.swift; sourceTree = "<group>"; };
-		E5SUBAR3 /* SubagentCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubagentCoordinator.swift; sourceTree = "<group>"; };
 		E5EXTM01 /* ExtensionManifest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionManifest.swift; sourceTree = "<group>"; };
 		E5EXTS01 /* ExtensionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionStore.swift; sourceTree = "<group>"; };
 		E5EVTBS1 /* ExtensionEventBus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionEventBus.swift; sourceTree = "<group>"; };
@@ -1165,7 +1306,6 @@
 		E5NEW01B /* ExtensionSettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5NEW01 /* ExtensionSettingsStore.swift */; };
 		E5NEW00B /* BuiltinExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5NEW00 /* BuiltinExtension.swift */; };
 
-		E5SUBAT1 /* AIChatViewModel+SubagentTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+SubagentTools.swift"; sourceTree = "<group>"; };
 		E5VMA0016 /* AIChatViewModel+ProviderFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+ProviderFactory.swift"; sourceTree = "<group>"; };
 		E5VMA0017 /* AIChatViewModel+ToolDefinitions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+ToolDefinitions.swift"; sourceTree = "<group>"; };
 		E5VMA0018 /* AIChatViewModel+ToolPreflight.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+ToolPreflight.swift"; sourceTree = "<group>"; };
@@ -1225,11 +1365,16 @@
 		EXA000012 /* XAITokenStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAITokenStorage.swift; sourceTree = "<group>"; };
 		EXA000013 /* XAIOAuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAIOAuthManager.swift; sourceTree = "<group>"; };
 		F1A00021 /* MessageListInfrastructure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageListInfrastructure.swift; sourceTree = "<group>"; };
+		F1CPCONST /* CopilotConstants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CopilotConstants.swift; path = ../../Providers/Copilot/CopilotConstants.swift; sourceTree = "<group>"; };
+		F1CPMGR /* CopilotOAuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CopilotOAuthManager.swift; path = ../../Providers/Copilot/OAuth/CopilotOAuthManager.swift; sourceTree = "<group>"; };
+		F1CPMODELS /* CopilotModelsAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CopilotModelsAPI.swift; path = ../../Providers/Copilot/CopilotModelsAPI.swift; sourceTree = "<group>"; };
+		F1CPSHEET /* CopilotDeviceLoginSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CopilotDeviceLoginSheet.swift; path = ../../Views/Providers/CopilotDeviceLoginSheet.swift; sourceTree = "<group>"; };
 		F1M00011 /* AudioPlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPlayback.swift; sourceTree = "<group>"; };
 		F1M00013 /* VideoPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPlayer.swift; sourceTree = "<group>"; };
 		F1M00015 /* ImagePreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePreview.swift; sourceTree = "<group>"; };
 		F1M00017 /* AudioPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPreview.swift; sourceTree = "<group>"; };
 		F1M00019 /* MessageImageGallery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageImageGallery.swift; sourceTree = "<group>"; };
+		F1MCPDCR /* MCPOAuthDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPOAuthDiscovery.swift; sourceTree = "<group>"; };
 		F1MCPOAUTH /* MCPOAuthController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPOAuthController.swift; sourceTree = "<group>"; };
 		F1MCPSTORE /* MCPStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPStore.swift; sourceTree = "<group>"; };
 		F1S00011 /* ChatSessionIdEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatSessionIdEnvironment.swift; sourceTree = "<group>"; };
@@ -1242,14 +1387,40 @@
 		F1W00012 /* WebPreviewSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebPreviewSheet.swift; sourceTree = "<group>"; };
 		F1W00060 /* PaginatedMarkdownView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaginatedMarkdownView.swift; sourceTree = "<group>"; };
 		F1W00100 /* PrintHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrintHelper.swift; sourceTree = "<group>"; };
+		F1W00900 /* LazyLongTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LazyLongTextView.swift; sourceTree = "<group>"; };
 		F1W0E100 /* WebLoadError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebLoadError.swift; sourceTree = "<group>"; };
 		F2941B643B8A2F048A2B154E /* VoiceProviderFactory.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VoiceProviderFactory.swift; sourceTree = "<group>"; };
+		LOC00002 /* AppLocalization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLocalization.swift; sourceTree = "<group>"; };
+		RCL000020 /* Rclone.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = Rclone.xcframework; path = ../../deps/frameworks/Rclone.xcframework; sourceTree = "<group>"; };
+		RCL000210 /* RcloneBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RcloneBridge.swift; path = Remote/RcloneBridge.swift; sourceTree = "<group>"; };
+		RCL000211 /* RcloneRemoteStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RcloneRemoteStore.swift; path = Remote/RcloneRemoteStore.swift; sourceTree = "<group>"; };
+		RCL000212 /* RcloneChunkedUpload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RcloneChunkedUpload.swift; path = Remote/RcloneChunkedUpload.swift; sourceTree = "<group>"; };
+		RCL000213 /* RcloneBackendCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RcloneBackendCatalog.swift; path = Remote/RcloneBackendCatalog.swift; sourceTree = "<group>"; };
+		RCL000214 /* RcloneAddServerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RcloneAddServerView.swift; sourceTree = "<group>"; };
+		RCL000215 /* BackupDestinationPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupDestinationPicker.swift; sourceTree = "<group>"; };
+		RCL000216 /* BackupDestinationDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupDestinationDetailView.swift; sourceTree = "<group>"; };
+		RCL000217 /* BackupHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupHistory.swift; sourceTree = "<group>"; };
+		RCL000218 /* BackupRunController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupRunController.swift; sourceTree = "<group>"; };
+		RCL000219 /* BackupHistoryDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupHistoryDetailView.swift; sourceTree = "<group>"; };
+		RCL000220 /* BackupCategoryIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupCategoryIcon.swift; sourceTree = "<group>"; };
+		RCL000221 /* BackupHUD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupHUD.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
 		E5EXC0001 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				Standalone/BackupPackageNameTests.swift,
+				Standalone/BackupZipContainmentTests.swift,
+				Standalone/BackupZipStoredOnlyTests.swift,
+				Standalone/BrowserUseDOMRectCloneTests.swift,
+				Standalone/CJKPaginationThresholdTests.swift,
+				Standalone/InLoopCompactOrderTests.swift,
+				Standalone/RestoreSymlinkContainmentTests.swift,
+				Standalone/SkillDescriptionStaleTests.swift,
+				Standalone/SoulIconSourceTests.swift,
+				Standalone/UsageAttributionClobberTests.swift,
+				Standalone/VADStartRollbackTests.swift,
 				ThinkingLevelTests.swift,
 			);
 			target = BB1000070F700000000000AA /* MinisTests */;
@@ -1283,6 +1454,7 @@
 			files = (
 				AA9C2BF92F65996900F41633 /* SwiftMath in Frameworks */,
 				AAF00F012F50A00000049557 /* FFmpeg.framework in Frameworks */,
+				RCL000010 /* Rclone.xcframework in Frameworks */,
 				AAF10F012F50A00000049557 /* libavcodec.framework in Frameworks */,
 				AAF10F032F50A00000049557 /* libavformat.framework in Frameworks */,
 				AAF10F062F50A00000049557 /* libavutil.framework in Frameworks */,
@@ -1342,6 +1514,7 @@
 			isa = PBXGroup;
 			children = (
 				AAF00F002F50A00000049557 /* FFmpeg.framework */,
+				RCL000020 /* Rclone.xcframework */,
 				AAF10F002F50A00000049557 /* libavcodec.framework */,
 				AAF10F042F50A00000049557 /* libavformat.framework */,
 				AAF10F072F50A00000049557 /* libavutil.framework */,
@@ -1423,6 +1596,42 @@
 				AC0000001 /* ProviderCustomization.xcconfig */,
 			);
 			name = "Recovered References";
+			sourceTree = "<group>";
+		};
+		BKP000010 /* Backup */ = {
+			isa = PBXGroup;
+			children = (
+				BKP000201 /* BackupFormat.swift */,
+				BKP000219 /* BackupRestoreJournal.swift */,
+				BKP000218 /* BackupSecretsImporter.swift */,
+				BKP000214 /* BackupDelivery.swift */,
+				BKP000230 /* BackupDestinations.swift */,
+				BKP000231 /* BackupActivityLock.swift */,
+				BKP000240 /* BackupKeepAlive.swift */,
+				BKP000241 /* BackupProgressReporter.swift */,
+				BKP000242 /* BackupZipWriter.swift */,
+				BKP000243 /* BackupTransferStatus.swift */,
+				BKP000232 /* BackupExportJournal.swift */,
+				BKP000233 /* BackupRescueIndex.swift */,
+				RCL000218 /* BackupRunController.swift */,
+				RCL000217 /* BackupHistory.swift */,
+				RCL000210 /* RcloneBridge.swift */,
+				RCL000213 /* RcloneBackendCatalog.swift */,
+				RCL000212 /* RcloneChunkedUpload.swift */,
+				RCL000211 /* RcloneRemoteStore.swift */,
+				BKP000217 /* BackupOpenRouter.swift */,
+				BKP000213 /* BackupCrypto.swift */,
+				BKP000212 /* BackupSecrets.swift */,
+				BKP000209 /* BackupImporter.swift */,
+				BKP000210 /* BackupZipExtractor.swift */,
+				BKP000211 /* BackupImporter+Categories.swift */,
+				BKP000206 /* BackupPackageReader.swift */,
+				BKP000204 /* BackupFileTreeExporter.swift */,
+				BKP000205 /* BackupExporter.swift */,
+				BKP000202 /* BackupBlobStore.swift */,
+				BKP000203 /* BackupJSONLWriter.swift */,
+			);
+			path = Backup;
 			sourceTree = "<group>";
 		};
 		E51000030 = {
@@ -1513,6 +1722,8 @@
 				E5TWF002 /* ThinkingWireFormat.swift */,
 				E5TRC002 /* ThinkingRuleCoding.swift */,
 				E5TWR002 /* ThinkingRule.swift */,
+				E5SUB0001 /* SubAgentDefinition.swift */,
+				E5SUB0010 /* SubAgentStore.swift */,
 				E5TWS002 /* ThinkingRuleResolver.swift */,
 				E5D00015 /* ProviderConfigStore.swift */,
 				E5D00199 /* ProviderConfigDB.swift */,
@@ -1562,10 +1773,12 @@
 			isa = PBXGroup;
 			children = (
 				F1A00014 /* Background */,
+				BKP000010 /* Backup */,
 				E57000030 /* BrowserUse */,
 				F1A00010 /* Chat */,
 				E5T000030 /* Intents */,
 				F1A00016 /* ISH */,
+				E5AJR0030 /* Jobs */,
 				F1A00012 /* Markdown */,
 				F1A00011 /* MessageList */,
 				F1A00017 /* Offload */,
@@ -1593,9 +1806,6 @@
 		E5SUBAG1 /* Subagent */ = {
 			isa = PBXGroup;
 			children = (
-				E5SUBAR1 /* AgentRole.swift */,
-				E5SUBAR2 /* AgentRunner.swift */,
-				E5SUBAR3 /* SubagentCoordinator.swift */,
 			);
 			path = Subagent;
 			sourceTree = "<group>";
@@ -1690,6 +1900,7 @@
 			isa = PBXGroup;
 			children = (
 				E54000011 /* DebugServer.swift */,
+				BKP000207 /* DebugRPCBackup.swift */,
 				E54000AB2 /* DebugAuth.swift */,
 				E54000041 /* DebugLocalDispatch.swift */,
 				E54000051 /* MinisDebugLogReader.swift */,
@@ -1701,6 +1912,7 @@
 				E54000019 /* DebugRPCProviderChat.swift */,
 				E5DRC0020 /* DebugRPCConfig.swift */,
 				E5VC00014 /* VoiceCorrectionDebugRPC.swift */,
+				E5VCTR002 /* VoiceCorrectionTrace.swift */,
 				E5400009B /* DebugRPCMCP.swift */,
 				E54000014 /* AgentRequestTrace.swift */,
 				E5VIC0011 /* VoiceInputCapture.swift */,
@@ -1711,8 +1923,6 @@
 				E54000017 /* AutoTouch.m */,
 				E5400001B /* HangDetector.h */,
 				E5400001A /* HangDetector.m */,
-				E5J000042 /* AttributeQueryRecorder.h */,
-				E5J000041 /* AttributeQueryRecorder.m */,
 				E5400001C /* DebugRPCHangDetector.swift */,
 				E5400003A /* PerfTrace.swift */,
 				E5400003B /* DebugRPCPerfTrace.swift */,
@@ -1768,6 +1978,19 @@
 			path = OAuth;
 			sourceTree = "<group>";
 		};
+		E5AJR0030 /* Jobs */ = {
+			isa = PBXGroup;
+			children = (
+				E5AJR0011 /* AgentJobRegistry.swift */,
+				E5AJR0012 /* HelperRunner.swift */,
+				E5ACB0011 /* AgentCallback.swift */,
+				E5AMI0011 /* HelperModelIdentity.swift */,
+				E5AJR0013 /* ModelTierResolver.swift */,
+				E5SCH0011 /* ScheduledJobRunner.swift */,
+			);
+			path = Jobs;
+			sourceTree = "<group>";
+		};
 		E5B000030 /* iSH */ = {
 			isa = PBXGroup;
 			children = (
@@ -1800,6 +2023,7 @@
 			isa = PBXGroup;
 			children = (
 				E5C000011 /* OpenAIProvider.swift */,
+				E5C0DE9B1 /* OpenCodeChannel.swift */,
 				E5C000012 /* OpenAIAgentProvider.swift */,
 				E5C000013 /* OpenAIModelsAPI.swift */,
 				E5C000031 /* OAuth */,
@@ -1819,6 +2043,8 @@
 			isa = PBXGroup;
 			children = (
 				E5BRM0011 /* BrowserResourceMonitor.swift */,
+				E5RSD0011 /* ResourceDiagnostics.swift */,
+				E5PPB0011 /* PerfProbe.swift */,
 				E5CR00012 /* CrashReporter.swift */,
 				E5CR00014 /* CrashSignalHandler.h */,
 				E5CR00013 /* CrashSignalHandler.m */,
@@ -1830,6 +2056,7 @@
 			isa = PBXGroup;
 			children = (
 				E51000012 /* ContentView.swift */,
+				E5SRS0011 /* SessionRefreshScheduler.swift */,
 				F1V00014 /* Alarms */,
 				F1V00015 /* Backup */,
 				F1V00010 /* Chat */,
@@ -1874,6 +2101,7 @@
 				E5G000014 /* AgentActivityAttributes.swift */,
 				E5AT00011 /* AudioTogglePlaybackIntent.swift */,
 				E5Q000013 /* AppLogger.swift */,
+				LOC00002 /* AppLocalization.swift */,
 				E5Q000011 /* BPETokenizer.swift */,
 				E5MDS0013 /* MarkdownStripper.swift */,
 				E5Q000012 /* cl100k_base.tiktoken */,
@@ -1898,6 +2126,7 @@
 				E5CFG001F /* ModelsCollection.swift */,
 				E5CFG0030 /* GroupsCollection.swift */,
 				E5TRC0020 /* ThinkingRulesCollection.swift */,
+				E5SAC0020 /* SubAgentsCollection.swift */,
 				E5CFG0031 /* EnvVarsCollection.swift */,
 				E5S000011 /* DeviceIdentity.swift */,
 				F1S00010 /* Environment */,
@@ -1941,6 +2170,7 @@
 				E5FP00015 /* FileProvider.entitlements */,
 				E5FP00101 /* AppGroupChangeWatcher.swift */,
 				E5FP00201 /* FPSyncTraceLog.swift */,
+				E5FPBH03 /* FileProviderBootHealth.swift */,
 			);
 			path = FileProvider;
 			sourceTree = "<group>";
@@ -2004,6 +2234,9 @@
 				E5L200NF0 /* NFCOffload.h */,
 				E5L200NF1 /* NFCOffload.m */,
 				E5L200SS0 /* SessionsOffload.h */,
+				E5SCH0010 /* ScheduledOffload.h */,
+				E5SCH0012 /* ScheduledOffload.m */,
+				E5SCH0013 /* ScheduledOffloadBridge.swift */,
 				E5L200CG0 /* ConfigOffload.h */,
 				E5L200SS1 /* SessionsOffload.m */,
 				E5L200SS3 /* SessionsOffloadBridge.swift */,
@@ -2135,11 +2368,11 @@
 				E5VMA0015 /* AIChatViewModel+MemoryTools.swift */,
 				E5M4WS01 /* AIChatViewModel+WorkspaceContext.swift */,
 				E5TODO001 /* AIChatViewModel+TodoTools.swift */,
-				E5SUBAT1 /* AIChatViewModel+SubagentTools.swift */,
 				E5VMA0016 /* AIChatViewModel+ProviderFactory.swift */,
 				E5VMA0017 /* AIChatViewModel+ToolDefinitions.swift */,
 				E5VMA0018 /* AIChatViewModel+ToolPreflight.swift */,
 				E5VMB0011 /* AIChatViewModel+Compaction.swift */,
+				E5PPR0011 /* AIChatViewModel+ProgrammaticPrompt.swift */,
 				E5VMB0012 /* AIChatViewModel+Fallback.swift */,
 				E5VMB0013 /* AIChatViewModel+Misc.swift */,
 				E5VMB0014 /* AIChatViewModel+RequestBudget.swift */,
@@ -2155,6 +2388,7 @@
 				E5VMC0016 /* AIChatViewModel+BackgroundTask.swift */,
 				E5VMC0017 /* AIChatViewModel+ConcurrentTools.swift */,
 				E53000014 /* ChatStore.swift */,
+				E5SDS0011 /* SessionDeletionSupport.swift */,
 				BB1000110F700000000000AA /* ContextPolicy.swift */,
 				E5FMI0011 /* FileMentionIndex.swift */,
 			);
@@ -2186,6 +2420,7 @@
 			isa = PBXGroup;
 			children = (
 				E5S000012 /* CloudSyncEngine.swift */,
+				E5R000011 /* ICloudBackupManager.swift */,
 				E5S000016 /* SyncDirtyScanner.swift */,
 				F1A00099 /* V2 */,
 			);
@@ -2210,6 +2445,11 @@
 				E5N0000112F3B941A00049557 /* SkillStore.swift */,
 				F1MCPSTORE /* MCPStore.swift */,
 				F1MCPOAUTH /* MCPOAuthController.swift */,
+				F1MCPDCR /* MCPOAuthDiscovery.swift */,
+				F1CPMODELS /* CopilotModelsAPI.swift */,
+				F1CPMGR /* CopilotOAuthManager.swift */,
+				F1CPCONST /* CopilotConstants.swift */,
+				F1CPSHEET /* CopilotDeviceLoginSheet.swift */,
 				E5SOUL101 /* SoulStore.swift */,
 			);
 			path = Session;
@@ -2308,6 +2548,7 @@
 				E5M000017 /* MarkdownRenderView.swift */,
 				F1M00010 /* Media */,
 				F1W00010 /* MinisShareSheet.swift */,
+				F1W00900 /* LazyLongTextView.swift */,
 				F1W00100 /* PrintHelper.swift */,
 				F1W00060 /* PaginatedMarkdownView.swift */,
 				E8A000012 /* OffloadPermissionDialog.swift */,
@@ -2315,11 +2556,14 @@
 				E5K000012 /* ChatTurnScreenshot.swift */,
 				E5N0000152F3B941A00049557 /* SessionMemoryView.swift */,
 				E5TODOV1 /* TodoPanelView.swift */,
-				E5SUBAB1 /* SubagentBlockView.swift */,
 				E5N0000122F3B941A00049557 /* SessionSkillsView.swift */,
 				F1T00010 /* ToolLiveSheet.swift */,
+				E5AJR0014 /* HelperSheet.swift */,
+				E5HBV0011 /* HelperBlockView.swift */,
+				E5ACB0012 /* AgentCallbackCellView.swift */,
 				E53000015 /* UsageStatsView.swift */,
 				F1W00012 /* WebPreviewSheet.swift */,
+				A11Y0002 /* ChatAccessibilityAnnouncer.swift */,
 				F1W0E100 /* WebLoadError.swift */,
 				A44D403A6D05BD06BBADC1CF /* Voice */,
 			);
@@ -2338,6 +2582,16 @@
 				E5N0000142F3B941A00049557 /* MemoryManagementView.swift */,
 				E8A000013 /* OffloadPermissionSettingsView.swift */,
 				AA0838CD2F3B941A00049557 /* StorageManagementView.swift */,
+				BKP000215 /* BackupSettingsView.swift */,
+				BKP000234 /* BackupAndRestoreView.swift */,
+				RCL000214 /* RcloneAddServerView.swift */,
+				RCL000215 /* BackupDestinationPicker.swift */,
+				RCL000219 /* BackupHistoryDetailView.swift */,
+				BKP000244 /* BackupSkippedFilesView.swift */,
+				RCL000220 /* BackupCategoryIcon.swift */,
+				RCL000221 /* BackupHUD.swift */,
+				RCL000216 /* BackupDestinationDetailView.swift */,
+				BKP000216 /* BackupRestoreView.swift */,
 				E5MNT0101 /* MountedFoldersManager.swift */,
 				E5MNT0102 /* MountedFolderCoordinator.swift */,
 				E5MNT0103 /* MountedFoldersSettingsView.swift */,
@@ -2345,8 +2599,9 @@
 				E5SHV0103 /* SharedFoldersSettingsView.swift */,
 				E5SHV0104 /* MountDetailView.swift */,
 				E5SOUL102 /* SoulSettingsView.swift */,
-				E5SUBRV1 /* SubagentRolesView.swift */,
 				E5EXTMV1 /* ExtensionManagerView.swift */,
+				E5SCH0014 /* HelperSettingsView.swift */,
+				E5TLS0011 /* ToolsSettingsView.swift */,
 				E5LOCK102 /* FaceIDProtectionSettingsView.swift */,
 				E5LOCK103 /* AppLockOverlay.swift */,
 			);
@@ -2361,6 +2616,7 @@
 				E5D00038 /* AgentLoopModelsView.swift */,
 				E5D00034 /* ModelGroupDetailView.swift */,
 				E5D00033 /* ModelGroupsView.swift */,
+				E5D000F2 /* SwipeEditDestination.swift */,
 				E5QT00011 /* ModelQuickTestSheet.swift */,
 				E5D00036 /* OnboardingModelSelectionView.swift */,
 				E5D00031 /* ProviderInstanceDetailView.swift */,
@@ -2370,6 +2626,7 @@
 				E5SVP0031 /* ShadowVoiceProviderDetailView.swift */,
 				E5D00035 /* SessionModelPicker.swift */,
 				E5UMP0011 /* UnifiedModelPicker.swift */,
+				E5MSS0011 /* ModelSearchScorer.swift */,
 				E5MDT0011 /* ModelDisplayTraits.swift */,
 				0ED149397BEA7E0408C92688 /* GroupVoiceModelsView.swift */,
 				0F5379380323FA8C6477708C /* GroupSlotPicker.swift */,
@@ -2400,6 +2657,7 @@
 		F1V00015 /* Backup */ = {
 			isa = PBXGroup;
 			children = (
+				E5R000012 /* ICloudBackupView.swift */,
 			);
 			path = Backup;
 			sourceTree = "<group>";
@@ -2458,6 +2716,7 @@
 			buildRules = (
 			);
 			dependencies = (
+				BB1000B00F700000000000AA /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				BB1000012F700000000000AA /* MinisTests */,
@@ -2593,6 +2852,16 @@
 				fr,
 				de,
 				ru,
+				es,
+				id,
+				ms,
+				fil,
+				th,
+				tr,
+				pl,
+				ro,
+				"pt-BR",
+				hr,
 			);
 			mainGroup = E51000030;
 			packageReferences = (
@@ -2680,6 +2949,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E5LC00003 /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2783,6 +3053,7 @@
 				BB1000100F700000000000AA /* ContextPolicy.swift in Sources */,
 				AADDA9E12F6ECCF400B66649 /* ThumbnailCache.swift in Sources */,
 				E51000002 /* ContentView.swift in Sources */,
+				E5SRS0001 /* SessionRefreshScheduler.swift in Sources */,
 				AA26CCBA2F31080100AECF2D /* ISHKernel.m in Sources */,
 				E5JB00001 /* JiebaWrapper.mm in Sources */,
 				E5JB00002 /* TextSegmenter.swift in Sources */,
@@ -2803,11 +3074,13 @@
 				E5VC00002 /* PhoneticNormalizer.swift in Sources */,
 				E5VC00003 /* SentenceSplitter.swift in Sources */,
 				E5VC00004 /* VoiceCorrectionDebugRPC.swift in Sources */,
+				E5VCTR001 /* VoiceCorrectionTrace.swift in Sources */,
 				AA0838D02F3B941A00049557 /* CurrentRoot.m in Sources */,
 				AA26CCBC2F31080100AECF2D /* ISHTerminalView.swift in Sources */,
 				AA26CCBC2F324FE400AECF2D /* FileBrowserView.swift in Sources */,
 				AA26CCBE2F31080100AECF2D /* RootfsManager.swift in Sources */,
 				E51000001 /* MinisApp.swift in Sources */,
+				E5FPBH02 /* FileProviderBootHealth.swift in Sources */,
 				E5QA0001 /* QuickActionRouter.swift in Sources */,
 				E5QA0003 /* QuickActionWorkflow.swift in Sources */,
 				E5QA0002 /* AppDelegate.swift in Sources */,
@@ -2846,9 +3119,6 @@
 				E5TODO002 /* AIChatViewModel+TodoTools.swift in Sources */,
 				E5TODOS2 /* TodoStore.swift in Sources */,
 				E5TODOM2 /* TodoModels.swift in Sources */,
-				E5SUBAR1B /* AgentRole.swift in Sources */,
-				E5SUBAR2B /* AgentRunner.swift in Sources */,
-				E5SUBAR3B /* SubagentCoordinator.swift in Sources */,
 				E5EXTM01B /* ExtensionManifest.swift in Sources */,
 				E5EXTS01B /* ExtensionStore.swift in Sources */,
 				E5EVTBS1B /* ExtensionEventBus.swift in Sources */,
@@ -2895,11 +3165,26 @@
 				E5LUA032B /* lua_compat.c in Sources */,
 
 
-				E5SUBAT1B /* AIChatViewModel+SubagentTools.swift in Sources */,
 				E5VMA0006 /* AIChatViewModel+ProviderFactory.swift in Sources */,
 				E5VMA0007 /* AIChatViewModel+ToolDefinitions.swift in Sources */,
 				E5VMA0008 /* AIChatViewModel+ToolPreflight.swift in Sources */,
 				E5VMB0001 /* AIChatViewModel+Compaction.swift in Sources */,
+				E5PPR0001 /* AIChatViewModel+ProgrammaticPrompt.swift in Sources */,
+				E5AJR0001 /* AgentJobRegistry.swift in Sources */,
+				E5AJR0002 /* HelperRunner.swift in Sources */,
+				E5AJR0003 /* ModelTierResolver.swift in Sources */,
+				E5SUB0002 /* SubAgentDefinition.swift in Sources */,
+				E5SUB0011 /* SubAgentStore.swift in Sources */,
+				E5AJR0004 /* HelperSheet.swift in Sources */,
+				E5HBV0001 /* HelperBlockView.swift in Sources */,
+				E5ACB0001 /* AgentCallback.swift in Sources */,
+				E5AMI0001 /* HelperModelIdentity.swift in Sources */,
+				E5ACB0002 /* AgentCallbackCellView.swift in Sources */,
+				E5SCH0001 /* ScheduledJobRunner.swift in Sources */,
+				E5SCH0002 /* ScheduledOffload.m in Sources */,
+				E5SCH0003 /* ScheduledOffloadBridge.swift in Sources */,
+				E5SCH0004 /* HelperSettingsView.swift in Sources */,
+				E5TLS0001 /* ToolsSettingsView.swift in Sources */,
 				E5VMB0002 /* AIChatViewModel+Fallback.swift in Sources */,
 				E5VMB0003 /* AIChatViewModel+Misc.swift in Sources */,
 				E5VMB0004 /* AIChatViewModel+RequestBudget.swift in Sources */,
@@ -2931,9 +3216,11 @@
 				F1M00018 /* AudioPreview.swift in Sources */,
 				F1M00020 /* MessageImageGallery.swift in Sources */,
 				F1W00011 /* MinisShareSheet.swift in Sources */,
+				F1W00901 /* LazyLongTextView.swift in Sources */,
 				F1W00101 /* PrintHelper.swift in Sources */,
 				F1W00061 /* PaginatedMarkdownView.swift in Sources */,
 				F1W00013 /* WebPreviewSheet.swift in Sources */,
+				A11Y0001 /* ChatAccessibilityAnnouncer.swift in Sources */,
 				F1W0E101 /* WebLoadError.swift in Sources */,
 				F1T00011 /* ToolLiveSheet.swift in Sources */,
 				E5V300001 /* CollectionViewMessageListV3.swift in Sources */,
@@ -2969,6 +3256,8 @@
 				E5F000002 /* MinisFsRouter.swift in Sources */,
 				E5CR00001 /* ShellCommandRingBuffer.swift in Sources */,
 				E5BRM0001 /* BrowserResourceMonitor.swift in Sources */,
+				E5RSD0001 /* ResourceDiagnostics.swift in Sources */,
+				E5PPB0001 /* PerfProbe.swift in Sources */,
 				E5CR00002 /* CrashReporter.swift in Sources */,
 				E5CR00003 /* CrashSignalHandler.m in Sources */,
 				E5KVC0003 /* SafeKVCSetTrue.m in Sources */,
@@ -2976,6 +3265,7 @@
 				E5F100002 /* LLMSessionRegistry.swift in Sources */,
 				E5F100003 /* MinisUserAgent.swift in Sources */,
 				E53000004 /* ChatStore.swift in Sources */,
+				E5SDS0001 /* SessionDeletionSupport.swift in Sources */,
 				E5FMI0001 /* FileMentionIndex.swift in Sources */,
 				E53000005 /* UsageStatsView.swift in Sources */,
 				E53000006 /* CacheKeepAliveManager.swift in Sources */,
@@ -3058,6 +3348,7 @@
 				E59000003 /* GeminiAgentProvider.swift in Sources */,
 				E5GWF0003 /* GeminiWireFormat.swift in Sources */,
 				E5C000001 /* OpenAIProvider.swift in Sources */,
+				E5C0DE9A1 /* OpenCodeChannel.swift in Sources */,
 				E5C000002 /* OpenAIAgentProvider.swift in Sources */,
 				E5C000003 /* OpenAIModelsAPI.swift in Sources */,
 				E5C000004 /* CodexOAuthManager.swift in Sources */,
@@ -3091,10 +3382,12 @@
 				E5D00022 /* AddProviderView.swift in Sources */,
 				E5KIMIUI1 /* KimiDeviceLoginSheet.swift in Sources */,
 				E5D00023 /* ModelGroupsView.swift in Sources */,
+				E5D000F1 /* SwipeEditDestination.swift in Sources */,
 				E5QT00001 /* ModelQuickTestSheet.swift in Sources */,
 				E5D00024 /* ModelGroupDetailView.swift in Sources */,
 				E5D00025 /* SessionModelPicker.swift in Sources */,
 				E5UMP0001 /* UnifiedModelPicker.swift in Sources */,
+				E5MSS0001 /* ModelSearchScorer.swift in Sources */,
 				E5MDT0001 /* ModelDisplayTraits.swift in Sources */,
 				E5D00026 /* OnboardingModelSelectionView.swift in Sources */,
 				E5E000006 /* PendingShare.swift in Sources */,
@@ -3115,7 +3408,6 @@
 				E5J000020 /* FileHandleSafeWrite.m in Sources */,
 				E5J000050 /* ObjCExceptionCatcher.m in Sources */,
 				E5J000030 /* NSTextContainerSetSizeGuard.m in Sources */,
-				E5J000040 /* AttributeQueryRecorder.m in Sources */,
 				E5K000001 /* SelectableMarkdownView.swift in Sources */,
 				E5K000002 /* ChatTurnScreenshot.swift in Sources */,
 				E5M000007 /* MarkdownRenderView.swift in Sources */,
@@ -3126,6 +3418,11 @@
 				E5N0000012F3B941A00049557 /* SkillStore.swift in Sources */,
 				F1MCPSTOREB /* MCPStore.swift in Sources */,
 				F1MCPOAUTHB /* MCPOAuthController.swift in Sources */,
+				F1MCPDCRB /* MCPOAuthDiscovery.swift in Sources */,
+				F1CPMODELSB /* CopilotModelsAPI.swift in Sources */,
+				F1CPMGRB /* CopilotOAuthManager.swift in Sources */,
+				F1CPCONSTB /* CopilotConstants.swift in Sources */,
+				F1CPSHEETB /* CopilotDeviceLoginSheet.swift in Sources */,
 				E5N0000022F3B941A00049557 /* SessionSkillsView.swift in Sources */,
 				E5N0000032F3B941A00049557 /* SkillsManagementView.swift in Sources */,
 				F1VMCPB1 /* MCPIntegrationsView.swift in Sources */,
@@ -3135,14 +3432,12 @@
 				E5LOCK001 /* SessionLockStore.swift in Sources */,
 				E5SOUL001 /* SoulStore.swift in Sources */,
 				E5SOUL002 /* SoulSettingsView.swift in Sources */,
-				E5SUBRV2 /* SubagentRolesView.swift in Sources */,
 				E5EXTMV2 /* ExtensionManagerView.swift in Sources */,
 				E5LOCK002 /* FaceIDProtectionSettingsView.swift in Sources */,
 				E5LOCK003 /* AppLockOverlay.swift in Sources */,
 				E5N0000042F3B941A00049557 /* MemoryManagementView.swift in Sources */,
 				E5N0000052F3B941A00049557 /* SessionMemoryView.swift in Sources */,
 				E5TODOV2 /* TodoPanelView.swift in Sources */,
-				E5SUBAB1B /* SubagentBlockView.swift in Sources */,
 				E5EXTWV1B /* ExtensionWebView.swift in Sources */,
 				E5EXTMC1B /* ExtensionWidgetMessageCenter.swift in Sources */,
 				E5EXTDV1B /* ExtensionDebugView.swift in Sources */,
@@ -3171,18 +3466,62 @@
 				E5CFG000F /* ModelsCollection.swift in Sources */,
 				E5CFG0020 /* GroupsCollection.swift in Sources */,
 				E5TRC0010 /* ThinkingRulesCollection.swift in Sources */,
+				E5SAC0010 /* SubAgentsCollection.swift in Sources */,
 				E5CFG0021 /* EnvVarsCollection.swift in Sources */,
 				E5Q000001 /* BPETokenizer.swift in Sources */,
 				E5MDS0003 /* MarkdownStripper.swift in Sources */,
 				E5Q000003 /* AppLogger.swift in Sources */,
+				LOC00001 /* AppLocalization.swift in Sources */,
 				F1S00012 /* ChatSessionIdEnvironment.swift in Sources */,
 				E5Q000004 /* FontSettings.swift in Sources */,
+				E5R000001 /* ICloudBackupManager.swift in Sources */,
+				E5R000002 /* ICloudBackupView.swift in Sources */,
 				E5S000001 /* DeviceIdentity.swift in Sources */,
 				E5S000002 /* CloudSyncEngine.swift in Sources */,
 				E5S000003 /* SessionForkManager.swift in Sources */,
 				E5S000004 /* CloudSyncSettingsView.swift in Sources */,
 				E5S000006 /* SyncDirtyScanner.swift in Sources */,
 				E5W000001 /* PortableRecord.swift in Sources */,
+				BKP000101 /* BackupFormat.swift in Sources */,
+				BKP000119 /* BackupRestoreJournal.swift in Sources */,
+				BKP000118 /* BackupSecretsImporter.swift in Sources */,
+				BKP000117 /* BackupOpenRouter.swift in Sources */,
+				BKP000116 /* BackupRestoreView.swift in Sources */,
+				BKP000114 /* BackupDelivery.swift in Sources */,
+				BKP000130 /* BackupDestinations.swift in Sources */,
+				BKP000131 /* BackupActivityLock.swift in Sources */,
+				BKP000140 /* BackupKeepAlive.swift in Sources */,
+				BKP000141 /* BackupProgressReporter.swift in Sources */,
+				BKP000142 /* BackupZipWriter.swift in Sources */,
+				BKP000143 /* BackupTransferStatus.swift in Sources */,
+				BKP000144 /* BackupSkippedFilesView.swift in Sources */,
+				BKP000132 /* BackupExportJournal.swift in Sources */,
+				BKP000133 /* BackupRescueIndex.swift in Sources */,
+				RCL000118 /* BackupRunController.swift in Sources */,
+				RCL000117 /* BackupHistory.swift in Sources */,
+				RCL000110 /* RcloneBridge.swift in Sources */,
+				RCL000113 /* RcloneBackendCatalog.swift in Sources */,
+				RCL000112 /* RcloneChunkedUpload.swift in Sources */,
+				RCL000111 /* RcloneRemoteStore.swift in Sources */,
+				BKP000115 /* BackupSettingsView.swift in Sources */,
+				BKP000134 /* BackupAndRestoreView.swift in Sources */,
+				RCL000114 /* RcloneAddServerView.swift in Sources */,
+				RCL000115 /* BackupDestinationPicker.swift in Sources */,
+				RCL000119 /* BackupHistoryDetailView.swift in Sources */,
+				RCL000120 /* BackupCategoryIcon.swift in Sources */,
+				RCL000121 /* BackupHUD.swift in Sources */,
+				RCL000116 /* BackupDestinationDetailView.swift in Sources */,
+				BKP000113 /* BackupCrypto.swift in Sources */,
+				BKP000112 /* BackupSecrets.swift in Sources */,
+				BKP000109 /* BackupImporter.swift in Sources */,
+				BKP000110 /* BackupZipExtractor.swift in Sources */,
+				BKP000111 /* BackupImporter+Categories.swift in Sources */,
+				BKP000106 /* BackupPackageReader.swift in Sources */,
+				BKP000107 /* DebugRPCBackup.swift in Sources */,
+				BKP000104 /* BackupFileTreeExporter.swift in Sources */,
+				BKP000105 /* BackupExporter.swift in Sources */,
+				BKP000102 /* BackupBlobStore.swift in Sources */,
+				BKP000103 /* BackupJSONLWriter.swift in Sources */,
 				E5W000002 /* Syncable.swift in Sources */,
 				E5W000003 /* SyncableTypeRegistry.swift in Sources */,
 				E5W000004 /* SyncTransport.swift in Sources */,
@@ -3241,6 +3580,7 @@
 				E5FP00002 /* FileProviderEnumerator.swift in Sources */,
 				E5FP00003 /* FileProviderItem.swift in Sources */,
 				E5FP00200 /* FPSyncTraceLog.swift in Sources */,
+				E5FPBH01 /* FileProviderBootHealth.swift in Sources */,
 				E5SHV0002 /* SharedFolderVisibility.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -3263,6 +3603,11 @@
 			isa = PBXTargetDependency;
 			target = E51000040 /* Minis */;
 			targetProxy = AA8A56912F6FBB7A00A3E54E /* PBXContainerItemProxy */;
+		};
+		BB1000B00F700000000000AA /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = E51000040 /* Minis */;
+			targetProxy = BB1000B10F700000000000AA /* PBXContainerItemProxy */;
 		};
 		E5E000080 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -3302,6 +3647,17 @@
 				E5IP00014 /* ko */,
 				E5IP00015 /* fr */,
 				E5IP00016 /* de */,
+				E5IP00018 /* es */,
+				E5IP00019 /* ru */,
+				E5IP00020 /* id */,
+				E5IP00021 /* ms */,
+				E5IP00022 /* fil */,
+				E5IP00023 /* th */,
+				E5IP00024 /* tr */,
+				E5IP00025 /* pl */,
+				E5IP00026 /* ro */,
+				E5IP00027 /* pt-BR */,
+				E5IP00028 /* hr */,
 			);
 			name = InfoPlist.strings;
 			sourceTree = "<group>";
@@ -3582,7 +3938,7 @@
 					"@executable_path/Frameworks",
 				);
 				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/../../deps/libs";
-				MARKETING_VERSION = 1.13.2;
+				MARKETING_VERSION = 1.14;
 				OTHER_LDFLAGS = (
 					"-lish_emu",
 					"-lish",
@@ -3637,7 +3993,7 @@
 					"@executable_path/Frameworks",
 				);
 				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/../../deps/libs";
-				MARKETING_VERSION = 1.13.2;
+				MARKETING_VERSION = 1.14;
 				OTHER_LDFLAGS = (
 					"-lish_emu",
 					"-lish",
@@ -3670,7 +4026,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.13.2;
+				MARKETING_VERSION = 1.14;
 				PRODUCT_BUNDLE_IDENTIFIER = com.openminis.app.ShareExtension;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -3697,7 +4053,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.13.2;
+				MARKETING_VERSION = 1.14;
 				PRODUCT_BUNDLE_IDENTIFIER = com.openminis.app.ShareExtension;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -3724,7 +4080,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.13.2;
+				MARKETING_VERSION = 1.14;
 				PRODUCT_BUNDLE_IDENTIFIER = com.openminis.app.FileProvider;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -3751,7 +4107,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.13.2;
+				MARKETING_VERSION = 1.14;
 				PRODUCT_BUNDLE_IDENTIFIER = com.openminis.app.FileProvider;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -3778,7 +4134,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.13.2;
+				MARKETING_VERSION = 1.14;
 				PRODUCT_BUNDLE_IDENTIFIER = com.openminis.app.AgentWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -3805,7 +4161,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.13.2;
+				MARKETING_VERSION = 1.14;
 				PRODUCT_BUNDLE_IDENTIFIER = com.openminis.app.AgentWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;

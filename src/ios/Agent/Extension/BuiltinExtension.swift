@@ -96,7 +96,7 @@ enum BuiltinExtension {
         // Feature plugins — say what disappears when switched off, because
         // that is the contract the user can actually observe.
         case todoID: return "Session-scoped todo list: create/update/list/clear tools plus the Todos panel and its menu entry."
-        case subagentsID: return "Delegate work to bounded sub-agents (agent_delegate/agent_status) with run history and roles UI."
+        case subagentsID: return "Delegate work to sub-agents (subagent_task) with background runs, steering and per-agent definitions."
         case soulID: return "Assistant identity + personality (SOUL.md): the Settings → Soul editor, the name shown in the sidebar and chat headers, and persona injection into the system prompt."
         case mcpID: return "Model Context Protocol servers: Settings → MCP Integrations, the minis-mcp-cli bridge, and the per-session server list injected into the prompt."
         case mountsID: return "Bind host folders into the sandbox at /var/minis/mounts: Settings → Mount External Folders plus the mounts paragraph in the workspace guidance."
@@ -316,10 +316,11 @@ enum BuiltinExtension {
                 + "- Keep the todo list concise — one line per step, no more than ~10 items. The user can view the list in the chat UI at any time.\n"
                 + "- Clear completed items with todo_clear status=done to keep the list focused.\n\n"
         case subagentsID:
-            return "Sub-agent delegation:\n"
-                + "- Use agent_delegate for well-scoped subtasks that would bloat this conversation: research, isolated coding tasks, reviews, or planning. The sub-agent runs with its own context and returns a summary.\n"
-                + "- Pick a role (researcher/coder/reviewer/planner) or pass a custom system_prompt. Use foreground mode to wait for the result; background mode to continue while it runs.\n"
-                + "- Delegate only when it clearly helps — small tasks are faster done directly. Sub-agents cannot spawn sub-agents.\n\n"
+            // Upstream v1.14 ships its own subagent system (`subagent_task` +
+            // SubAgentStore) and describes it in baseSystemPrompt's tool list,
+            // gated by the same plugin switch. Nothing extra is appended here;
+            // the textarea stays live so a user can add their own guidance.
+            return ""
         default:
             return ""
         }

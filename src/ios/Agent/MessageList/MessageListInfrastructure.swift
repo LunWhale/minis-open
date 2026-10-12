@@ -512,6 +512,31 @@ class SelfSizingCell: UICollectionViewCell {
                 + "excess=\(String(format: "%.1f", proposed - fittingSize.height))pt "
                 + "key=\(contentKey ?? "-") — layout reserved more than the cell renders (blank strip)")
         }
+        // [BottomGapDiag][seed-drift] Long-user-message report: log the SIGNED
+        // disagreement between the height the layout came in holding (from the
+        // estimator / precalc seed) and what the cell actually needs, for BOTH
+        // directions and at a much lower threshold than the 24pt strip probe.
+        //
+        // Direction matters and the two are different bugs:
+        //   held > needs  → layout reserved dead space (visible blank strip)
+        //   held < needs  → cell laid out SHORT; SwiftUI Text truncates, then
+        //                   expands on re-measure, shoving neighbours around.
+        // The estimator's own comments admit boundingRect runs ~2.4pt/line
+        // tighter than SwiftUI's rendered line box and that the CJK correction
+        // is a FLAT +7 calibrated on 1–4 line bubbles, so the drift should grow
+        // with line count. Printing `perLine` makes that testable directly:
+        // if it is roughly constant across short and long bubbles, the error is
+        // per-line and the flat correction is the bug.
+        let delta = proposed - fittingSize.height
+        if abs(delta) >= 4, fittingSize.height > 4, proposed > 4 {
+            let approxLines = max(1, Int((fittingSize.height / 20).rounded()))
+            Self.sizingLogger.info(
+                "[BottomGapDiag][seed-drift] idx=\(idx) held=\(String(format: "%.1f", proposed)) "
+                + "actual=\(String(format: "%.1f", fittingSize.height)) "
+                + "delta=\(String(format: "%+.1f", delta))pt "
+                + "approxLines=\(approxLines) perLine=\(String(format: "%+.2f", delta / CGFloat(approxLines)))pt "
+                + "dir=\(delta > 0 ? "RESERVED-TOO-MUCH" : "LAID-OUT-SHORT") key=\(contentKey ?? "-")")
+        }
         #endif
         attrs.size.height = fittingSize.height
         // Don't cache very small heights (< 4pt) — these typically represent
@@ -859,6 +884,25 @@ final class NoAnimationCollectionView: UICollectionView {
     /// Tracks whether a SelectableMarkdownTextView currently has an active text selection.
     var hasActiveTextSelection: Bool = false
 
+    /// [T-ios-preapply-endediting] The message-list text view (if any) that is
+    /// currently first responder. Set in becomeFirstResponder / cleared in
+    /// resignFirstResponder by SelectableMarkdownTextView and TableCellTextView.
+    ///
+    /// This exists so applySnapshot can end editing BEFORE a structural
+    /// `dataSource.apply`, outside the batch-update transaction. Both TestFlight
+    /// crash families require a live first responder inside the collection view
+    /// at apply time: the AttributeGraph re-entry (super.resignFirstResponder's
+    /// responder-chain walk reads the graph mid-transaction) and the
+    /// _resignOrRebaseFirstResponderViewWithIndexPathMapping assertion (our
+    /// deferred resign returned false, refusing the rebase). Resigning up front
+    /// removes the shared precondition for both.
+    ///
+    /// Deliberately NOT `hasActiveTextSelection`: a text view can hold first
+    /// responder with no selection yet (long-press menu just presented), and the
+    /// gate must track responder status, not selection status. Weak, so cell
+    /// reuse or teardown can never leave a dangling pointer.
+    weak var trackedTextResponder: UIView?
+
     // MARK: - Text-selection edge auto-scroll
     //
     // [T-ios-text-selection-autoscroll-followthrough] UITextView's native
@@ -1002,6 +1046,19 @@ final class MessageListViewController: UIViewController {
         collectionView.keyboardDismissMode = .onDrag
         collectionView.alwaysBounceVertical = true
         collectionView.contentInsetAdjustmentBehavior = .automatic
+        // [T-chat-statusbar-scrolltotop-mistap] `scrollsToTop` is left at its
+        // default (true) ON PURPOSE — tapping the iOS status bar must still
+        // scroll this list to the top, which is standard platform behaviour
+        // users expect.
+        //
+        // An earlier revision of this fix turned it off here to stop a mis-tap
+        // of the trailing "..." menu (which sits just below the status bar)
+        // from throwing the conversation to its oldest message. That was too
+        // blunt: it removed the deliberate gesture along with the accidental
+        // one. The mis-tap is addressed at its source instead — see
+        // `HitPaddedButton`, which pads the "..." touch target out to the
+        // 44x44pt HIG minimum so a normal tap lands on the button rather than
+        // slipping onto the status bar above it.
         view.addSubview(collectionView)
     }
 
@@ -1103,6 +1160,7 @@ final class CellStateBridgeV2: ObservableObject {
     @Published var onStop: (() -> Void)?
     @Published var onRetry: (() -> Void)?
     @Published var onEdit: (() -> Void)?
+    @Published var onDeleteFrom: (() -> Void)?
     @Published var onWithdraw: (() -> Void)?
     @Published var autoRetryAttempt: Int = 0
     @Published var autoRetryCountdown: Int = 0

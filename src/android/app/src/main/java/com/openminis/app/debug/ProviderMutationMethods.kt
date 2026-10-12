@@ -207,20 +207,28 @@ internal object ProviderMutationMethods {
         val baseURL = instance.effectiveBaseURL ?: when (instance.providerType) {
             ProviderType.anthropic -> "https://api.anthropic.com"
             ProviderType.gemini -> "https://generativelanguage.googleapis.com"
-            ProviderType.openAI -> "https://api.openai.com/v1"
+            // [T-android-provider-type-parity] Responses API shares the host.
+            ProviderType.openAI, ProviderType.openAIResponses -> "https://api.openai.com/v1"
             ProviderType.openRouter -> "https://openrouter.ai/api/v1"
             ProviderType.xAI -> "https://api.x.ai/v1"
             ProviderType.kimiCode -> "https://api.kimi.com/coding/v1"
+            ProviderType.githubCopilot -> com.openminis.app.auth.CopilotDeviceFlow.API_BASE
+            ProviderType.antigravity, ProviderType.unsupported -> ""
         }
         val probeURL = when (instance.providerType) {
             ProviderType.anthropic -> "$baseURL/v1/models"
             ProviderType.gemini -> "$baseURL/v1beta/models?key=" + (repo.loadApiKey(id) ?: "")
-            ProviderType.openAI -> if (baseURL.endsWith("/v1")) "$baseURL/models" else "$baseURL/v1/models"
+            ProviderType.openAI, ProviderType.openAIResponses ->
+                if (baseURL.endsWith("/v1")) "$baseURL/models" else "$baseURL/v1/models"
             ProviderType.openRouter -> "$baseURL/models"
             // xAI exposes an OpenAI-compatible /models endpoint at the same base.
             ProviderType.xAI -> if (baseURL.endsWith("/v1")) "$baseURL/models" else "$baseURL/v1/models"
             // Kimi Coding: OpenAI-compatible /models under /coding/v1.
             ProviderType.kimiCode -> if (baseURL.endsWith("/v1")) "$baseURL/models" else "$baseURL/v1/models"
+            // [T-copilot-provider] /models sits at the API root, no /v1.
+            ProviderType.githubCopilot -> "$baseURL/models"
+            // No probe endpoint for a type this build cannot drive.
+            ProviderType.antigravity, ProviderType.unsupported -> baseURL
         }
         val client = okhttp3.OkHttpClient.Builder()
             .connectTimeout(timeoutMs.toLong(), java.util.concurrent.TimeUnit.MILLISECONDS)
@@ -231,7 +239,8 @@ internal object ProviderMutationMethods {
         val key = repo.loadApiKey(id)
         when (instance.providerType) {
             ProviderType.anthropic -> if (!key.isNullOrEmpty()) builder.header("x-api-key", key).header("anthropic-version", "2023-06-01")
-            ProviderType.openAI -> if (!key.isNullOrEmpty()) builder.header("Authorization", "Bearer $key")
+            ProviderType.openAI, ProviderType.openAIResponses ->
+                if (!key.isNullOrEmpty()) builder.header("Authorization", "Bearer $key")
             ProviderType.openRouter -> if (!key.isNullOrEmpty()) builder.header("Authorization", "Bearer $key")
             ProviderType.gemini -> { /* key in URL */ }
             // xAI: OpenAI-compat bearer header. Manual API key OR OAuth
@@ -239,6 +248,15 @@ internal object ProviderMutationMethods {
             ProviderType.xAI -> if (!key.isNullOrEmpty()) builder.header("Authorization", "Bearer $key")
             // Kimi Coding: OpenAI-compat bearer (OAuth access token or key).
             ProviderType.kimiCode -> if (!key.isNullOrEmpty()) builder.header("Authorization", "Bearer $key")
+            // [T-copilot-provider] The mirrored `apikey_<id>` slot holds the
+            // GITHUB account token, which /models does not accept — it wants
+            // the short-lived session token. A meaningful probe would have to
+            // run the exchange, so this one is left unauthenticated and is
+            // expected to 401; Quick Test is the real check.
+            ProviderType.githubCopilot -> { /* session token not available here */ }
+            // [T-android-provider-type-parity] No auth scheme known for a type
+            // this build cannot drive; the probe will simply fail.
+            ProviderType.antigravity, ProviderType.unsupported -> { /* no auth */ }
         }
         val start = System.currentTimeMillis()
         try {
@@ -409,7 +427,10 @@ internal object ProviderMutationMethods {
         val before = repo.entriesFor(instanceId).map { it.baseModel.id }.toSet()
         val start = System.currentTimeMillis()
         try {
-            repo.refreshModels(instance)
+            // [T-codex-dynamic-discovery GH#319] Mirror the in-app Refresh
+            // button, which forces. Defaulted false so existing callers of this
+            // RPC keep exercising the cached path.
+            repo.refreshModels(instance, forceRefresh = params.optBoolean("forceRefresh", false))
         } catch (e: Exception) {
             throw RPCException(-32000, "refreshModels failed: ${e.message}")
         }
@@ -480,7 +501,11 @@ internal object ProviderMutationMethods {
             val knownEntryIds = repo.config.value.modelEntries.map { it.id }.toSet()
             for (i in 0 until membersRaw.length()) {
                 val id = membersRaw.optString(i)
-                if (id.isNotEmpty() && id in knownEntryIds) members.add(id)
+                // Built-in System voice members are valid but never stored in
+                // modelEntries (see groupsUpdate).
+                if (id.isNotEmpty() &&
+                    (id in knownEntryIds || com.openminis.app.data.model.SystemVoiceEntries.resolve(id) != null)
+                ) members.add(id)
             }
         }
         val strategy = parseStrategy(params.optString("strategy", "fallback"))
@@ -525,7 +550,13 @@ internal object ProviderMutationMethods {
             current.memberEntryIds.clear()
             for (i in 0 until arr.length()) {
                 val mid = arr.optString(i)
-                if (mid.isNotEmpty() && mid in knownIds) current.memberEntryIds.add(mid)
+                // Built-in System voice members ("__builtin_system_speech__/…")
+                // are synthesized, never stored in modelEntries, yet are valid
+                // members of voice groups; dropping them here silently removed
+                // them from a group on any update that listed them.
+                if (mid.isNotEmpty() &&
+                    (mid in knownIds || com.openminis.app.data.model.SystemVoiceEntries.resolve(mid) != null)
+                ) current.memberEntryIds.add(mid)
             }
         }
         if (params.has("strategy")) current.strategy = parseStrategy(params.optString("strategy"))

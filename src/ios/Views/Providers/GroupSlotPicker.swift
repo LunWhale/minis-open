@@ -23,17 +23,46 @@ struct GroupSlotPicker: View {
 
     private var selectedName: String {
         if let id = selection, let g = store.group(for: id) { return g.name }
-        return String(localized: "None", comment: "No group selected")
+        return AppLocalized("None", comment: "No group selected")
     }
 
     var body: some View {
         Menu {
-            Picker(selection: $selection) {
-                Text("None", comment: "No group selected").tag(String?.none)
-                ForEach(store.modelGroups) { group in
-                    Text(group.name).tag(Optional(group.id))
+            // [T-ios-groupslot-ipad-submenu] The group list is emitted as plain
+            // Buttons, NOT as a nested `Picker`.
+            //
+            // A `Picker` inside a `Menu` is rendered by the idiom, not by us:
+            // on iPhone UIKit inlines its options into the parent menu, but on
+            // iPad and Mac it becomes a SUBMENU whose title comes from the
+            // Picker's own label. This one passed `EmptyView()` as that label
+            // (it is never meant to be seen -- the row's own label is drawn in
+            // the `Menu`'s label below), so the submenu was titled with nothing:
+            // an unnamed row that has to be opened before the groups appear.
+            //
+            // Buttons carry no such label requirement and are inlined
+            // identically on every idiom, so the list looks the same
+            // everywhere. The checkmark that `Picker` drew for the current
+            // value is reproduced explicitly.
+            Button {
+                selection = nil
+            } label: {
+                if selection == nil {
+                    Label(AppLocalized("None", comment: "No group selected"), systemImage: "checkmark")
+                } else {
+                    Text("None", comment: "No group selected")
                 }
-            } label: { EmptyView() }
+            }
+            ForEach(store.modelGroups) { group in
+                Button {
+                    selection = group.id
+                } label: {
+                    if selection == group.id {
+                        Label(group.name, systemImage: "checkmark")
+                    } else {
+                        Text(group.name)
+                    }
+                }
+            }
 
             Divider()
             Button {
@@ -72,7 +101,7 @@ struct GroupSlotPicker: View {
                 : dir.map { $0 == .input ? [.audioInput] : [.audioOutput] },
             groupScope: .none,
             headerNote: isVision
-                ? String(localized: "Showing models that can read images.", comment: "Vision group picker filter note")
+                ? AppLocalized("Showing models that can read images.", comment: "Vision group picker filter note")
                 : dir?.filterNote,
             onAddMulti: { ids in
                 guard !ids.isEmpty else { return }
@@ -87,12 +116,12 @@ struct GroupSlotPicker: View {
     private static func suggestedName(for dir: VoiceDirection?, isVision: Bool = false, store: ProviderConfigStore) -> String {
         let base: String
         if isVision {
-            base = String(localized: "Vision Input", comment: "Default vision group name")
+            base = AppLocalized("Vision Input", comment: "Default vision group name")
         } else {
             switch dir {
-            case .input:  base = String(localized: "Voice Input", comment: "Default voice input group name")
-            case .output: base = String(localized: "Voice Output", comment: "Default voice output group name")
-            case nil:     base = String(localized: "New Group", comment: "Default group name")
+            case .input:  base = AppLocalized("Voice Input", comment: "Default voice input group name")
+            case .output: base = AppLocalized("Voice Output", comment: "Default voice output group name")
+            case nil:     base = AppLocalized("New Group", comment: "Default group name")
             }
         }
         let existing = Set(store.modelGroups.map(\.name))

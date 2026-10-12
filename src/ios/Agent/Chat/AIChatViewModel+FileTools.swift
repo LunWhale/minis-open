@@ -23,6 +23,41 @@ extension AIChatViewModel {
         let success: Bool
     }
 
+    /// [T-offload-placeholder-write-guard issue #374] Refuse a write whose
+    /// payload is an offload placeholder rather than real content.
+    ///
+    /// `offloadContextIfNeeded` rewrites a historical `file_write`'s `content`
+    /// argument to the `[CONTEXT OFFLOADED] … saved to: <path>` stub to reclaim
+    /// the tokens. From then on that is what the model sees, so a re-issued call
+    /// carries a ~130-character reference where the file body used to be — and
+    /// nothing downstream could tell the difference, so the stub overwrote the
+    /// user's real file and was reported as a success whose byte count matched
+    /// the stub. Returns `nil` (write proceeds) for any genuine content.
+    ///
+    /// Leading whitespace is trimmed before the test so a payload the provider
+    /// prefixed with a newline is still caught.
+    static func offloadPlaceholderRefusal(
+        field: String, value: String, path: String
+    ) -> FileToolResult? {
+        // [T-offload-stub-system-reminder issue #374] Both stub formats are
+        // refused: the current <system-reminder> notice and the legacy
+        // "[CONTEXT OFFLOADED]" text still present in older persisted history
+        // and in sync payloads from a peer on an older build.
+        guard Self.isOffloadedStub(value) else { return nil }
+        let prefix = offloadedStubPrefix
+        logger.warning("[FileTools] REFUSED offload-placeholder write field=\(field) path=\(path)")
+        return FileToolResult(
+            output: """
+            Error: `\(field)` is an offload placeholder ("\(prefix) …"), not real content — \
+            the original text was moved out of context to free tokens and only this reference \
+            remains in the conversation. Nothing was written to \(path); the file is unchanged. \
+            Use file_read on the path named inside the placeholder to recover the real content, \
+            then re-issue this write with it.
+            """,
+            success: false
+        )
+    }
+
     /// Snapshot all files under /var/minis/ with their modification dates.
     func snapshotMinisFiles() -> [String: Date] {
         let fm = FileManager.default
@@ -80,7 +115,7 @@ extension AIChatViewModel {
         case "shared": base = Self.minisSharedPersistentDir
         case "mcp-servers": base = Self.minisMcpServersPersistentDir
         default:
-            guard let sid = sessionId else { return nil }
+            guard let sid = fsSessionId else { return nil }
             base = Self.minisPersistentBase
                 .appendingPathComponent(sid, isDirectory: true)
                 .appendingPathComponent(host, isDirectory: true)
@@ -117,6 +152,11 @@ extension AIChatViewModel {
                 logger.notice("📂[RESOLVE] stale mount entry, trying fallbacks…")
             }
             // Mount table has no entry — fall back to resolveMinisURL with self.sessionId
+            // [T-minisurl-wrong-active-session] This calls the INSTANCE
+            // overload above (String argument), which already scopes session
+            // hosts to self.sessionId — do not route it through the static
+            // resolver, whose activeSessionId fallback is the frontmost-UI
+            // session and wrong for background agent loops.
             if let minisURL = linuxPathToMinisURL(linuxPath),
                let resolved = resolveMinisURL(minisURL) {
                 let exists = FileManager.default.fileExists(atPath: resolved.path)
@@ -304,17 +344,63 @@ extension AIChatViewModel {
         }
         var content = selectedLines.joined(separator: "\n")
 
-        // Apply max_length truncation
+        // Apply max_length truncation.
+        //
+        // [T-fileread-truncation-header] The header used to keep reporting the
+        // line range chosen BEFORE this truncation, so a 1324-line file cut at
+        // 80 000 chars still announced "showing lines 1-1324 of 1324" — the
+        // agent read that as "the whole file arrived" and never paged on. The
+        // `(truncated at N chars)` note contradicted the range right next to
+        // it, and offered nothing actionable.
+        //
+        // So the truncated branch now recomputes which lines actually survived
+        // and hands back the offset to resume from. Everything here is inside
+        // `content.count > maxLength`; the untruncated path is byte-identical
+        // to before.
         var wasTruncated = false
+        var effectiveStart = displayStart
+        var effectiveEnd = displayEnd
+        var nextOffset: Int?
         if content.count > maxLength {
-            content = String(content.prefix(maxLength))
             wasTruncated = true
+            if direction == "tail" {
+                // tail means "the end of the file". Taking a prefix here threw
+                // away the very lines that were asked for and returned the
+                // start of the tail window instead.
+                content = String(content.suffix(maxLength))
+                // Drop a leading partial line so the first line is whole.
+                if let firstNewline = content.firstIndex(of: "\n"),
+                   content.distance(from: content.startIndex, to: firstNewline) < content.count - 1 {
+                    content = String(content[content.index(after: firstNewline)...])
+                }
+                effectiveStart = displayEnd - content.components(separatedBy: "\n").count + 1
+                // No next_offset for tail: paging forward from the end of the
+                // file is meaningless, and inventing one would send the agent
+                // somewhere it did not ask to go.
+            } else {
+                content = String(content.prefix(maxLength))
+                // Back off to the last complete line. A half-line would either
+                // be re-read whole on the next page (duplicated) or silently
+                // stitched onto the next chunk (corrupted).
+                if let lastNewline = content.lastIndex(of: "\n") {
+                    content = String(content[content.startIndex..<lastNewline])
+                }
+                effectiveEnd = displayStart + content.components(separatedBy: "\n").count - 1
+                if effectiveEnd < totalLines { nextOffset = effectiveEnd + 1 }
+            }
         }
 
-        let rangeInfo = "showing lines \(displayStart)-\(displayEnd) of \(totalLines)"
+        let rangeInfo = "showing lines \(effectiveStart)-\(effectiveEnd) of \(totalLines)"
         var header = "[\(path) | \(fileData.count) bytes | \(totalLines) lines | \(rangeInfo)"
         if wasTruncated {
-            header += " (truncated at \(maxLength) chars)"
+            header += " | truncated at \(maxLength) chars"
+            if let nextOffset {
+                // Named to match the tool's own `offset` parameter so the model
+                // can copy it straight into the next call.
+                header += ", next_offset=\(nextOffset)"
+            } else {
+                header += ", retry with a smaller lines value"
+            }
         }
         header += "]"
 
@@ -337,6 +423,19 @@ extension AIChatViewModel {
         #if DEBUG
         print("[FileWrite] ▶ START path=\(path) sessionId=\(self.sessionId ?? "<nil>") contentBytes=\(content.utf8.count)")
         #endif
+
+        // [T-offload-placeholder-write-guard issue #374] Refuse to write an
+        // offload placeholder as file content. Offloading rewrites a historical
+        // file_write's `content` to the stub, so a re-issued call carries the
+        // reference instead of the body and would overwrite the real file with
+        // it. The main gate is in +ConcurrentTools.swift before dispatch; this
+        // is defense-in-depth for every other caller of this handler (debug
+        // RPCs, sub-agent tool paths) so the check cannot be routed around.
+        if let offloadRefusal = Self.offloadPlaceholderRefusal(
+            field: "content", value: content, path: path
+        ) {
+            return offloadRefusal
+        }
 
         // Pre-reject writes to read-only mounts using the Linux path directly.
         // This avoids the firmlink / symlink / case-sensitivity pitfalls of
@@ -531,6 +630,15 @@ extension AIChatViewModel {
               let oldString = dict["old_string"] as? String,
               let newString = dict["new_string"] as? String else {
             return FileToolResult(output: "Error: Missing required parameters (path, old_string, new_string)", success: false)
+        }
+
+        // [T-offload-placeholder-write-guard issue #374] See executeFileWrite.
+        // Only the REPLACEMENT text is checked: a placeholder in `old_string` is
+        // just a search that will not match, which is reported normally below.
+        if let offloadRefusal = Self.offloadPlaceholderRefusal(
+            field: "new_string", value: newString, path: path
+        ) {
+            return offloadRefusal
         }
 
         // Pre-reject edits to read-only mounts via Linux path first — immune

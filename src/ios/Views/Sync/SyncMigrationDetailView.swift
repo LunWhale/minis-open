@@ -20,6 +20,11 @@ struct SyncMigrationDetailView: View {
     @State private var zonesList: [ZoneRow] = []
     @State private var zonesLoading = false
     @State private var zonesLoadError: String? = nil
+    /// [T-icloud-zone-delete-resurrect] Delete failures are kept SEPARATE from
+    /// `zonesLoadError`, which `refreshZones()` clears on every entry. Sharing
+    /// one slot meant the refresh that follows a delete always erased the
+    /// reason the delete failed.
+    @State private var zoneDeleteError: String? = nil
     @State private var pendingZoneDelete: ZoneRow? = nil
     /// Second-stage confirmation. First dialog ("are you sure?") flips
     /// pendingZoneDelete → zoneSecondConfirm so the user has to
@@ -174,19 +179,19 @@ struct SyncMigrationDetailView: View {
                         LabeledContent("Transport", value: vm.transportName)
                     }
                     if !vm.network.isEmpty {
-                        LabeledContent(String(localized: "Network"), value: vm.network)
+                        LabeledContent(AppLocalized("Network"), value: vm.network)
                     }
                     if !vm.throttleLabel.isEmpty {
-                        LabeledContent(String(localized: "Throttle"), value: vm.throttleLabel)
+                        LabeledContent(AppLocalized("Throttle"), value: vm.throttleLabel)
                     }
-                    LabeledContent(String(localized: "Rate (last 1 min)"), value: formatRate(vm.ratePerSecond))
+                    LabeledContent(AppLocalized("Rate (last 1 min)"), value: formatRate(vm.ratePerSecond))
                 }
             }
 
             if vm.v2Enabled {
                 Section {
                     if vm.pendingPush > 0 {
-                        LabeledContent(String(localized: "Pending push"), value: "\(vm.pendingPush)")
+                        LabeledContent(AppLocalized("Pending push"), value: "\(vm.pendingPush)")
                         if vm.pendingPushNew > 0 {
                             LabeledContent {
                                 Text("\(vm.pendingPushNew)").foregroundStyle(.secondary)
@@ -202,14 +207,14 @@ struct SyncMigrationDetailView: View {
                             }
                         }
                     } else {
-                        LabeledContent(String(localized: "Pending push")) {
+                        LabeledContent(AppLocalized("Pending push")) {
                             Text("Up to date").foregroundStyle(.secondary)
                         }
                     }
-                    LabeledContent(String(localized: "Sent this session"), value: "\(vm.totalSent)")
-                    LabeledContent(String(localized: "Received this session"), value: "\(vm.totalReceived)")
-                    LabeledContent(String(localized: "Last send"), value: relative(vm.lastSendAt))
-                    LabeledContent(String(localized: "Last fetch"), value: relative(vm.lastFetchAt))
+                    LabeledContent(AppLocalized("Sent this session"), value: "\(vm.totalSent)")
+                    LabeledContent(AppLocalized("Received this session"), value: "\(vm.totalReceived)")
+                    LabeledContent(AppLocalized("Last send"), value: relative(vm.lastSendAt))
+                    LabeledContent(AppLocalized("Last fetch"), value: relative(vm.lastFetchAt))
                 } header: {
                     Text("Sync Activity")
                 }
@@ -287,7 +292,7 @@ struct SyncMigrationDetailView: View {
                     LabeledContent("Phase", value: m.phase)
                     LabeledContent("Status", value: m.status)
                     progressRow(
-                        title: String(localized: "Records pushed"),
+                        title: AppLocalized("Records pushed"),
                         done: m.pushDone, total: m.pushTotal
                     )
                     // [T-icloud-migration-suspended-ui] A deferred phase leaves
@@ -305,7 +310,7 @@ struct SyncMigrationDetailView: View {
                                 .foregroundStyle(.secondary)
                         }
                     } else {
-                        LabeledContent(String(localized: "Estimated time"), value: estimateETA(remaining: max(0, m.pushTotal - m.pushDone), rps: vm.ratePerSecond))
+                        LabeledContent(AppLocalized("Estimated time"), value: estimateETA(remaining: max(0, m.pushTotal - m.pushDone), rps: vm.ratePerSecond))
                     }
                     Button(role: .destructive) {
                         showCancelMigrationConfirm = true
@@ -332,8 +337,8 @@ struct SyncMigrationDetailView: View {
                 }
 
                 Section {
-                    LabeledContent(String(localized: "Reclaimed (v1 records deleted)"), value: "\(m.v1Deleted)")
-                    LabeledContent(String(localized: "Pending delete"), value: "\(m.v1DeletePending)")
+                    LabeledContent(AppLocalized("Reclaimed (v1 records deleted)"), value: "\(m.v1Deleted)")
+                    LabeledContent(AppLocalized("Pending delete"), value: "\(m.v1DeletePending)")
                     if v1ZoneForceDeletedAtTs > 0 {
                         // Permanent confirmation row — once the user has
                         // force-deleted, the destructive action is no
@@ -346,7 +351,7 @@ struct SyncMigrationDetailView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("V1 zone deleted")
                                     .foregroundStyle(.primary)
-                                Text(String(localized: "Deleted \(deletedAtRelativeString())"))
+                                Text(AppLocalized("Deleted \(deletedAtRelativeString())"))
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
                             }
@@ -408,7 +413,7 @@ struct SyncMigrationDetailView: View {
         } message: {
             let count = vm?.unmigratedHistoryCount ?? 0
             let etaH = max(1, count / (50 * 60))   // 50 records/min ballpark, hours
-            Text(String(localized: "About \(count) local records will upload to iCloud. Estimated time ~\(etaH) hr depending on iCloud throttling. You can pause or cancel any time."))
+            Text(AppLocalized("About \(count) local records will upload to iCloud. Estimated time ~\(etaH) hr depending on iCloud throttling. You can pause or cancel any time."))
         }
         .confirmationDialog("Cancel Migration?", isPresented: $showCancelMigrationConfirm, titleVisibility: .visible) {
             Button("Cancel Migration", role: .destructive) {
@@ -586,6 +591,21 @@ struct SyncMigrationDetailView: View {
                     zoneRowView(row)
                 }
             }
+            // [T-icloud-zone-delete-resurrect] A delete that failed says so,
+            // right under the list it failed to change. Previously the message
+            // was written into a slot the following refresh cleared, so the
+            // row silently stayed and the user was left retrying forever.
+            if let zoneDeleteError {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                    Text(zoneDeleteError)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
             Button {
                 Task { await refreshZones(force: true) }
             } label: {
@@ -660,26 +680,26 @@ struct SyncMigrationDetailView: View {
     private func zoneDescription(for row: ZoneRow) -> String {
         switch row.name {
         case "minis-shared":
-            return String(localized: "V2 sync · chat sessions, messages, compact markers, attachments, skills. Shared by all your devices.")
+            return AppLocalized("V2 sync · chat sessions, messages, compact markers, attachments, skills. Shared by all your devices.")
         case "minis-devices":
-            return String(localized: "V2 sync · per-device presence records so each device knows the others online.")
+            return AppLocalized("V2 sync · per-device presence records so each device knows the others online.")
         case "minis-secrets":
-            return String(localized: "V2 sync · environment variables (API keys, etc.) used by your AI tools.")
+            return AppLocalized("V2 sync · environment variables (API keys, etc.) used by your AI tools.")
         default:
             break
         }
         switch row.kind {
         case .v1:
             if row.isOwn {
-                return String(localized: "V1 sync (legacy) · this device's pre-v2 chat backup. Safe to delete after V2 migration completes.")
+                return AppLocalized("V1 sync (legacy) · this device's pre-v2 chat backup. Safe to delete after V2 migration completes.")
             }
-            return String(localized: "V1 sync (legacy) · another device's pre-v2 backup. Safe to delete if that device has migrated to V2.")
+            return AppLocalized("V1 sync (legacy) · another device's pre-v2 backup. Safe to delete if that device has migrated to V2.")
         case .system:
-            return String(localized: "CloudKit built-in zone. Not used by Minis.")
+            return AppLocalized("CloudKit built-in zone. Not used by Minis.")
         case .other:
-            return String(localized: "Legacy or unknown zone. Inspect before deleting.")
+            return AppLocalized("Legacy or unknown zone. Inspect before deleting.")
         case .v2:
-            return String(localized: "V2 sync zone.")
+            return AppLocalized("V2 sync zone.")
         }
     }
 
@@ -702,17 +722,17 @@ struct SyncMigrationDetailView: View {
 
     private var zoneDeleteDialogTitle: String {
         guard let row = pendingZoneDelete else { return "" }
-        return String(localized: "Delete zone \"\(row.name)\"?")
+        return AppLocalized("Delete zone \"\(row.name)\"?")
     }
 
     private func zoneDeleteMessage(for row: ZoneRow) -> String {
         var lines: [String] = []
-        lines.append(String(localized: "This deletes every record + asset inside the zone. It cannot be undone."))
+        lines.append(AppLocalized("This deletes every record + asset inside the zone. It cannot be undone."))
         if row.isOwn {
-            lines.append(String(localized: "⚠️ This is THIS device's own zone."))
+            lines.append(AppLocalized("⚠️ This is THIS device's own zone."))
         }
         if row.kind == .v2 {
-            lines.append(String(localized: "⚠️ This is a V2 sync zone. Deleting it will stop iCloud sync for the affected category and other devices will lose access to its data."))
+            lines.append(AppLocalized("⚠️ This is a V2 sync zone. Deleting it will stop iCloud sync for the affected category and other devices will lose access to its data."))
         }
         return lines.joined(separator: "\n\n")
     }
@@ -721,7 +741,7 @@ struct SyncMigrationDetailView: View {
     /// of the final button so the user sees the same wording twice.
     private var zoneSecondConfirmTitle: String {
         guard let row = zoneSecondConfirm else { return "" }
-        return String(localized: "Permanently delete \"\(row.name)\"?")
+        return AppLocalized("Permanently delete \"\(row.name)\"?")
     }
 
     /// Second-stage hard-confirm message. Spells out the irreversible
@@ -730,12 +750,12 @@ struct SyncMigrationDetailView: View {
     /// user — V1 is legacy + likely already abandoned).
     private func zoneSecondConfirmMessage(for row: ZoneRow) -> String {
         var lines: [String] = []
-        lines.append(String(localized: "Last chance. Permanently deleting this zone removes every record and asset Apple holds for it. There is no recovery — even Apple cannot restore this data."))
+        lines.append(AppLocalized("Last chance. Permanently deleting this zone removes every record and asset Apple holds for it. There is no recovery — even Apple cannot restore this data."))
         if row.kind == .v2 {
-            lines.append(String(localized: "⚠️ Live sync warning: this is a V2 zone that this device may currently be writing to. Any in-flight backup, new chat data, or attachment upload could fail or appear corrupted on this device and its peers until the next full sync rebuilds state."))
+            lines.append(AppLocalized("⚠️ Live sync warning: this is a V2 zone that this device may currently be writing to. Any in-flight backup, new chat data, or attachment upload could fail or appear corrupted on this device and its peers until the next full sync rebuilds state."))
         }
         if row.isOwn {
-            lines.append(String(localized: "This device created this zone. Other devices of yours that haven't fetched everything yet will lose access to whatever they haven't pulled locally."))
+            lines.append(AppLocalized("This device created this zone. Other devices of yours that haven't fetched everything yet will lose access to whatever they haven't pulled locally."))
         }
         return lines.joined(separator: "\n\n")
     }
@@ -788,14 +808,28 @@ struct SyncMigrationDetailView: View {
         guard #available(iOS 17.0, *) else { return }
         pendingZoneDelete = nil
         zoneDeleteInProgress = row.name
+        zoneDeleteError = nil
         Task {
+            var failure: String? = nil
             do {
-                try await V1FetcherShim.deleteOwnZone(zoneName: row.name)
+                // [T-icloud-zone-delete-resurrect] purgeZone (not
+                // deleteOwnZone) — it stops the engine that owns the zone,
+                // deletes, then reads the zone list back to confirm the zone
+                // is really gone instead of trusting the delete call.
+                try await V1FetcherShim.purgeZone(zoneName: row.name)
             } catch {
-                zonesLoadError = error.localizedDescription
+                failure = error.localizedDescription
             }
             zoneDeleteInProgress = nil
+            // Refresh FIRST, then publish the error. refreshZones() clears
+            // `zonesLoadError` on entry, so setting it before the refresh —
+            // as this did — wiped the message every time and made a failed
+            // delete look exactly like a successful one: no error, and a row
+            // that stubbornly stays put. That silence is why this shipped.
             await refreshZones(force: true)
+            if let failure {
+                zoneDeleteError = failure
+            }
         }
     }
 
@@ -887,73 +921,73 @@ struct SyncMigrationDetailView: View {
     }
 
     private func pauseLabel(hours: Int) -> String {
-        if hours == 1 { return String(localized: "1 hour") }
-        if hours == 24 { return String(localized: "1 day") }
-        return String(localized: "\(hours) hours")
+        if hours == 1 { return AppLocalized("1 hour") }
+        if hours == 24 { return AppLocalized("1 day") }
+        return AppLocalized("\(hours) hours")
     }
 
     private func throttleRemaining(until: Date) -> String {
         let secs = max(0, Int(until.timeIntervalSinceNow))
-        if secs < 60 { return String(localized: "Throttled · \(secs)s") }
+        if secs < 60 { return AppLocalized("Throttled · \(secs)s") }
         let mins = (secs + 30) / 60
-        return String(localized: "Throttled · \(mins)m")
+        return AppLocalized("Throttled · \(mins)m")
     }
 
     /// ETA from current 1-min average rate. Returns "—" when rate is
     /// effectively zero (heavy throttle window). Formats: "<1 min",
     /// "12 min", "3 hr", "2 day".
     private func estimateETA(remaining: Int, rps: Double) -> String {
-        guard remaining > 0 else { return String(localized: "Done") }
+        guard remaining > 0 else { return AppLocalized("Done") }
         guard rps > 0.05 else { return "—" }
         let secs = Int(Double(remaining) / rps)
-        if secs < 60 { return String(localized: "<1 min") }
+        if secs < 60 { return AppLocalized("<1 min") }
         let mins = secs / 60
-        if mins < 60 { return String(localized: "\(mins) min") }
+        if mins < 60 { return AppLocalized("\(mins) min") }
         let hours = mins / 60
-        if hours < 24 { return String(localized: "\(hours) hr") }
+        if hours < 24 { return AppLocalized("\(hours) hr") }
         let days = hours / 24
-        return String(localized: "\(days) day")
+        return AppLocalized("\(days) day")
     }
 
     private func formatRate(_ rps: Double) -> String {
-        if rps < 0.05 { return String(localized: "0 rec/s") }
+        if rps < 0.05 { return AppLocalized("0 rec/s") }
         if rps < 10 { return String(format: "%.1f rec/s", rps) }
         return String(format: "%.0f rec/s", rps)
     }
 
     private func bootDelayRemaining(until: Date) -> String {
         let secs = max(0, Int(until.timeIntervalSinceNow))
-        if secs < 60 { return String(localized: "Starting in \(secs) sec") }
+        if secs < 60 { return AppLocalized("Starting in \(secs) sec") }
         let mins = (secs + 30) / 60
-        return String(localized: "Starting in \(mins) min")
+        return AppLocalized("Starting in \(mins) min")
     }
 
     private func pauseRemaining(until: Date) -> String {
         let secs = Int(until.timeIntervalSinceNow)
-        if secs < 60 { return String(localized: "Resume in <1 min") }
+        if secs < 60 { return AppLocalized("Resume in <1 min") }
         let mins = secs / 60
-        if mins < 60 { return String(localized: "Resume in \(mins) min") }
+        if mins < 60 { return AppLocalized("Resume in \(mins) min") }
         let hours = (mins + 30) / 60
-        return String(localized: "Resume in \(hours) hr")
+        return AppLocalized("Resume in \(hours) hr")
     }
 
     private func relative(_ date: Date?) -> String {
-        guard let date else { return String(localized: "Never") }
+        guard let date else { return AppLocalized("Never") }
         let secs = Int(Date().timeIntervalSince(date))
-        if secs < 60 { return String(localized: "Just now") }
+        if secs < 60 { return AppLocalized("Just now") }
         let mins = secs / 60
-        if mins < 60 { return String(localized: "\(mins) min ago") }
+        if mins < 60 { return AppLocalized("\(mins) min ago") }
         let hours = mins / 60
-        if hours < 24 { return String(localized: "\(hours) hr ago") }
+        if hours < 24 { return AppLocalized("\(hours) hr ago") }
         let days = hours / 24
-        return String(localized: "\(days) day ago")
+        return AppLocalized("\(days) day ago")
     }
 
     /// Renders the persisted v1-zone-deleted timestamp as a relative
     /// string (e.g. "2 min ago"). Falls back to "just now" when the
     /// timestamp is in the future or missing.
     private func deletedAtRelativeString() -> String {
-        guard v1ZoneForceDeletedAtTs > 0 else { return String(localized: "Just now") }
+        guard v1ZoneForceDeletedAtTs > 0 else { return AppLocalized("Just now") }
         return relative(Date(timeIntervalSince1970: v1ZoneForceDeletedAtTs))
     }
 

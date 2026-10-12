@@ -56,7 +56,13 @@ final class WebViewHolder: NSObject, ObservableObject {
 
         if localFile {
             let prefs = config.preferences
-            prefs.setValue(true, forKey: "allowFileAccessFromFileURLs")
+            // [T-ios-mac-uncaught-nsexception] Both keys are UNDOCUMENTED WKPreferences
+            // KVC keys. A raw setValue:forKey: throws NSUnknownKeyException the moment a
+            // WebKit release stops backing one — uncatchable from Swift, so it terminates
+            // the process. The sibling key below was already routed through the guard;
+            // this one was not, which is the whole hazard (same object, same risk, one
+            // line apart). Same treatment for both: keep the behaviour, survive removal.
+            SafeKVCSetTrue.apply(prefs, key: "allowFileAccessFromFileURLs")
             SafeKVCSetTrue.apply(prefs, key: "allowUniversalAccessFromFileURLs")
         }
 
@@ -72,6 +78,14 @@ final class WebViewHolder: NSObject, ObservableObject {
         // it can both keep the existing non-http scheme hand-off AND capture
         // load failures into `loadError` for the error overlay.
         webView.navigationDelegate = self
+
+        // [T-ios-js-dialogs-256] Without a uiDelegate WebKit silently discards
+        // alert()/confirm()/prompt(): confirm() returns false and prompt()
+        // returns null with nothing shown. This is a user-driven preview, so
+        // the dialogs are presented for real and the page waits for the answer.
+        // (The agent browser deliberately does NOT do this — see
+        // BrowserUseManager's WKUIDelegate.)
+        webView.uiDelegate = self
 
         // Receive the window.print() bridge message. Weak proxy avoids a
         // retain cycle (controller → holder → webView → configuration → controller).
@@ -276,34 +290,34 @@ struct WebPreviewMoreMenu: View {
                 Button {
                     holder.stopLoading()
                 } label: {
-                    Label(String(localized: "Stop"), systemImage: "xmark.circle")
+                    Label(AppLocalized("Stop"), systemImage: "xmark.circle")
                 }
             } else {
                 Button {
                     holder.reload()
                 } label: {
-                    Label(String(localized: "Reload"), systemImage: "arrow.clockwise")
+                    Label(AppLocalized("Reload"), systemImage: "arrow.clockwise")
                 }
             }
             if let onExpand {
                 Button {
                     onExpand()
                 } label: {
-                    Label(String(localized: "Fullscreen"), systemImage: "arrow.up.left.and.arrow.down.right")
+                    Label(AppLocalized("Fullscreen"), systemImage: "arrow.up.left.and.arrow.down.right")
                 }
             }
             if let onCollapse {
                 Button {
                     onCollapse()
                 } label: {
-                    Label(String(localized: "Exit Fullscreen"), systemImage: "arrow.down.right.and.arrow.up.left")
+                    Label(AppLocalized("Exit Fullscreen"), systemImage: "arrow.down.right.and.arrow.up.left")
                 }
             }
             if let onAddToHomeScreen {
                 Button {
                     onAddToHomeScreen()
                 } label: {
-                    Label(String(localized: "Add to Home Screen"), systemImage: "rectangle.stack.badge.plus")
+                    Label(AppLocalized("Add to Home Screen"), systemImage: "rectangle.stack.badge.plus")
                 }
             }
             Button {
@@ -311,32 +325,32 @@ struct WebPreviewMoreMenu: View {
                 holder.setDesktopMode(desktopMode)
             } label: {
                 if desktopMode {
-                    Label(String(localized: "Request Mobile Site"), systemImage: "iphone")
+                    Label(AppLocalized("Request Mobile Site"), systemImage: "iphone")
                 } else {
-                    Label(String(localized: "Request Desktop Site"), systemImage: "desktopcomputer")
+                    Label(AppLocalized("Request Desktop Site"), systemImage: "desktopcomputer")
                 }
             }
             if allowOpenInSafari {
                 Button {
                     UIApplication.shared.open(url)
                 } label: {
-                    Label(String(localized: "Open in Safari"), systemImage: "safari")
+                    Label(AppLocalized("Open in Safari"), systemImage: "safari")
                 }
             }
             Button {
                 holder.printPage()
             } label: {
-                Label(String(localized: "Print"), systemImage: "printer")
+                Label(AppLocalized("Print"), systemImage: "printer")
             }
             Button {
                 DeferredPresentation.afterMenuDismiss { showShareSheet = true }  // [T-menu-modal-race]
             } label: {
-                Label(String(localized: "Share"), systemImage: "square.and.arrow.up")
+                Label(AppLocalized("Share"), systemImage: "square.and.arrow.up")
             }
             Button {
                 UIPasteboard.general.string = url.absoluteString
             } label: {
-                Label(String(localized: "Copy Link"), systemImage: "doc.on.doc")
+                Label(AppLocalized("Copy Link"), systemImage: "doc.on.doc")
             }
         } label: {
             Image(systemName: "ellipsis.circle")
@@ -382,6 +396,126 @@ extension WebViewHolder: WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         loadError = WebLoadError(error: error, failedURL: pendingURL)
+    }
+}
+
+// MARK: - JS dialogs (alert / confirm / prompt)
+
+/// [T-ios-js-dialogs-256] Presents real system dialogs for the page's
+/// `alert()` / `confirm()` / `prompt()`.
+///
+/// Two rules govern every method here, because breaking either is worse than
+/// the bug being fixed:
+///
+///  1. **The completion handler must be called exactly once.** WebKit traps on
+///     a second call, and never calling it leaves the page's JS suspended
+///     forever. Each handler is therefore wrapped in `DialogReply`, which
+///     collapses repeat calls — a real hazard, since a UIAlertController can
+///     be dismissed out from under us (sheet closing, scene backgrounding)
+///     while its actions are still live.
+///  2. **A dialog that cannot be presented must still answer.** If there is no
+///     view controller to present from, we reply with the same default the
+///     no-delegate behaviour used, rather than stranding the page.
+extension WebViewHolder: WKUIDelegate {
+    /// Single-shot wrapper around a WebKit completion handler.
+    private final class DialogReply<T> {
+        private let lock = NSLock()
+        private var handler: ((T) -> Void)?
+        init(_ handler: @escaping (T) -> Void) { self.handler = handler }
+        func send(_ value: T) {
+            lock.lock()
+            let h = handler
+            handler = nil
+            lock.unlock()
+            h?(value)
+        }
+    }
+
+    /// The controller to present from: the one actually hosting this webview,
+    /// walked up to its topmost presented descendant. Anchoring on the webview
+    /// (rather than the key window's root) keeps the dialog attached to the
+    /// preview that raised it, which matters while the preview is itself a
+    /// sheet presented over the chat.
+    private func dialogPresenter() -> UIViewController? {
+        var responder: UIResponder? = webView
+        var owner: UIViewController?
+        while let r = responder {
+            if let vc = r as? UIViewController { owner = vc; break }
+            responder = r.next
+        }
+        if owner == nil {
+            owner = UIApplication.shared.connectedScenes
+                .compactMap { ($0 as? UIWindowScene)?.keyWindow }
+                .first?.rootViewController
+        }
+        guard var top = owner else { return nil }
+        while let presented = top.presentedViewController, !presented.isBeingDismissed {
+            top = presented
+        }
+        return top
+    }
+
+    /// Dialog title: the page title when there is one, else the host. Mirrors
+    /// what Safari shows, and tells the user which page is asking.
+    private var dialogTitle: String {
+        if !pageTitle.isEmpty { return pageTitle }
+        if let host = webView.url?.host, !host.isEmpty { return host }
+        return ""
+    }
+
+    func webView(_ webView: WKWebView,
+                 runJavaScriptAlertPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping () -> Void) {
+        let reply = DialogReply<Void> { completionHandler() }
+        guard let presenter = dialogPresenter() else { reply.send(()); return }
+
+        let alert = UIAlertController(title: dialogTitle, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: String(localized: "OK"), style: .default) { _ in
+            reply.send(())
+        })
+        presenter.present(alert, animated: true)
+    }
+
+    func webView(_ webView: WKWebView,
+                 runJavaScriptConfirmPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping (Bool) -> Void) {
+        let reply = DialogReply<Bool>(completionHandler)
+        guard let presenter = dialogPresenter() else { reply.send(false); return }
+
+        let alert = UIAlertController(title: dialogTitle, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: String(localized: "Cancel"), style: .cancel) { _ in
+            reply.send(false)
+        })
+        alert.addAction(UIAlertAction(title: String(localized: "OK"), style: .default) { _ in
+            reply.send(true)
+        })
+        presenter.present(alert, animated: true)
+    }
+
+    func webView(_ webView: WKWebView,
+                 runJavaScriptTextInputPanelWithPrompt prompt: String,
+                 defaultText: String?,
+                 initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping (String?) -> Void) {
+        let reply = DialogReply<String?>(completionHandler)
+        guard let presenter = dialogPresenter() else { reply.send(nil); return }
+
+        let alert = UIAlertController(title: dialogTitle, message: prompt, preferredStyle: .alert)
+        alert.addTextField { field in
+            field.text = defaultText
+            field.clearButtonMode = .whileEditing
+        }
+        alert.addAction(UIAlertAction(title: String(localized: "Cancel"), style: .cancel) { _ in
+            reply.send(nil)
+        })
+        alert.addAction(UIAlertAction(title: String(localized: "OK"), style: .default) { [weak alert] _ in
+            // JS distinguishes "" (user confirmed an empty box) from nil
+            // (cancelled), so an empty field must still come back as "".
+            reply.send(alert?.textFields?.first?.text ?? "")
+        })
+        presenter.present(alert, animated: true)
     }
 }
 
@@ -628,29 +762,29 @@ struct MinisSafariView: View {
                 Button {
                     exitFullscreen(returnToSheet: true)
                 } label: {
-                    Label(String(localized: "Exit Fullscreen"), systemImage: "arrow.down.right.and.arrow.up.left")
+                    Label(AppLocalized("Exit Fullscreen"), systemImage: "arrow.down.right.and.arrow.up.left")
                 }
             }
             Button {
                 reload()
             } label: {
-                Label(String(localized: "Reload"), systemImage: "arrow.clockwise")
+                Label(AppLocalized("Reload"), systemImage: "arrow.clockwise")
             }
             Button {
                 holder.printPage()
             } label: {
-                Label(String(localized: "Print"), systemImage: "printer")
+                Label(AppLocalized("Print"), systemImage: "printer")
             }
             Button {
                 DeferredPresentation.afterMenuDismiss { showShareSheet = true }  // [T-menu-modal-race]
             } label: {
-                Label(String(localized: "Share"), systemImage: "square.and.arrow.up")
+                Label(AppLocalized("Share"), systemImage: "square.and.arrow.up")
             }
             Divider()
             Button(role: .destructive) {
                 exitFullscreen(returnToSheet: false)
             } label: {
-                Label(String(localized: "Close"), systemImage: "xmark")
+                Label(AppLocalized("Close"), systemImage: "xmark")
             }
         } label: {
             Image(systemName: "ellipsis")

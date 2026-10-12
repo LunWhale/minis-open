@@ -135,6 +135,16 @@ enum DeepLinkRouter {
         case "skills":
             coord.pendingSettingsTarget = .skills
 
+        // [T-ios-assistant-header-open-soul] Previously fell through to the
+        // `default` branch and landed on Settings home, even though the Soul
+        // screen exists — so a `minis://settings/soul` link (or the agent
+        // generating one) quietly under-delivered.
+        case "soul":
+            coord.pendingSettingsTarget = .soul
+
+        case "tools":
+            coord.pendingSettingsTarget = .tools
+
         // [T-mcp-oauth-deeplink] minis://settings/mcp-servers/<serverId> —
         // jump straight to the server's edit form (Authorize button). The
         // AUTH_REQUIRED error from minis-mcp-cli embeds this link. Server

@@ -8,7 +8,6 @@ import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -35,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.openminis.app.logging.AppLogger
+import com.openminis.app.ui.theme.ChatColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -49,6 +49,15 @@ private const val TAG = "KaTeXView"
  */
 private const val MAX_BITMAP_EDGE_PX = 2048
 private const val MAX_BITMAP_PIXELS = 4_000_000
+
+/**
+ * [T-android-katex-webview-release] Marker set on the offscreen WebView in
+ * `AndroidView.onRelease` so a capture runnable that was already queued when
+ * the composable left (navigation mid-render) can tell the view is destroyed
+ * and skip — drawing a destroyed WebView yields a blank bitmap, and caching
+ * that under the formula's key would show an empty formula until eviction.
+ */
+private const val KATEX_WEBVIEW_RELEASED_TAG = "katex-webview-released"
 
 /**
  * Renders a LaTeX string using KaTeX in an offscreen WebView, capturing the result as a bitmap.
@@ -103,8 +112,16 @@ object KaTeXRendererCache {
         )
     }
 
-    fun cacheKey(latex: String, displayMode: Boolean): String =
-        (if (displayMode) "D:" else "I:") + latex
+    /**
+     * [T-android-inapp-theme-popups #187] `isDark` is part of the key because the
+     * cached value is a rendered BITMAP whose glyphs are baked light-on-dark or
+     * dark-on-light. Keying only on (latex, displayMode) meant flipping the app
+     * theme re-read the colour but still hit the previous theme's bitmap, so a
+     * formula kept its old ink until the entry was evicted. Mirrors the sibling
+     * cache in KatexWebViewPool.cacheKey, which has always included it.
+     */
+    fun cacheKey(latex: String, displayMode: Boolean, isDark: Boolean): String =
+        (if (displayMode) "D:" else "I:") + (if (isDark) "k:" else "l:") + latex
 }
 
 /**
@@ -138,10 +155,13 @@ fun KaTeXRenderView(
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
-    val isDark = isSystemInDarkTheme()
+    val isDark = ChatColors.isDark
     val fontSize = 16f
-    val cacheKey = remember(latex, displayMode) {
-        KaTeXRendererCache.cacheKey(latex, displayMode)
+    // [T-android-inapp-theme-popups #187] `isDark` must be a remember key too, not
+    // just a cacheKey ingredient: without it the memo survives a theme flip and
+    // hands back the previous theme's key, so the new key is never even computed.
+    val cacheKey = remember(latex, displayMode, isDark) {
+        KaTeXRendererCache.cacheKey(latex, displayMode, isDark)
     }
 
     // Check cache first
@@ -237,6 +257,7 @@ fun KaTeXRenderView(
                                 layoutParams = ViewGroup.LayoutParams(bitmapW, bitmapH)
                                 requestLayout()
                                 postDelayed({
+                                    if (tag == KATEX_WEBVIEW_RELEASED_TAG) return@postDelayed
                                     // [GH#206] Clamp the captured bitmap. bitmapW/H
                                     // were previously unbounded, so a wide display
                                     // formula allocated multi-MB of NATIVE heap.
@@ -297,6 +318,20 @@ fun KaTeXRenderView(
                     }, "AndroidBridge")
 
                     webViewClient = object : WebViewClient() {
+                        // [T-android-webview-render-process-gone] (GH#341) The
+                        // AndroidView factory rebuilds this on the next
+                        // recomposition, and `onRelease` still stamps
+                        // KATEX_WEBVIEW_RELEASED_TAG on the old instance, so a
+                        // queued capture runnable will not touch it.
+                        override fun onRenderProcessGone(
+                            view: WebView?,
+                            detail: android.webkit.RenderProcessGoneDetail?,
+                        ): Boolean {
+                            runCatching { view?.tag = KATEX_WEBVIEW_RELEASED_TAG }
+                            return com.openminis.app.ui.webview.WebViewRenderProcess
+                                .handle("KaTeXView", detail)
+                        }
+
                         override fun onPageFinished(view: WebView?, url: String?) {
                             super.onPageFinished(view, url)
                             val escapedLatex = latex
@@ -313,6 +348,17 @@ fun KaTeXRenderView(
 
                     loadUrl("file:///android_asset/katex/katex-render.html")
                 }
+            },
+            // [T-android-katex-webview-release] This composable creates ONE
+            // WebView PER FORMULA and used to pass only `factory`, so leaving
+            // composition dropped the Java reference but never called
+            // `destroy()`. A WebView's renderer state is native memory that is
+            // reclaimed only on destroy() (or, eventually, finalization), so a
+            // formula-dense document leaked a full KaTeX page per formula.
+            onRelease = { wv ->
+                wv.tag = KATEX_WEBVIEW_RELEASED_TAG
+                runCatching { wv.stopLoading() }
+                runCatching { wv.destroy() }
             },
             modifier = Modifier.height(0.dp), // Hidden
         )

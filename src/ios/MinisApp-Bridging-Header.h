@@ -8,6 +8,11 @@
 #ifndef MinisApp_Bridging_Header_h
 #define MinisApp_Bridging_Header_h
 
+// CommonCrypto: PBKDF2 for the backup passphrase KDF (BackupCrypto.swift).
+// CryptoKit has no PBKDF2 and the SDK ships no Argon2, so this is the
+// dependency-free path sanctioned by docs/backup-restore-design.md §5.2.
+#import <CommonCrypto/CommonKeyDerivation.h>
+
 // iSH umbrella header (includes all necessary headers)
 #include "ish/ish.h"
 
@@ -56,10 +61,7 @@
 // CppJieba Chinese word segmentation (ObjC++ wrapper)
 #import "JiebaWrapper.h"
 
-// Recorder for -[NSConcreteMutableAttributedString attribute:atIndex:
-// effectiveRange:] — captures the last 10 queries into a tiny ring so
-// the HangDetector dump can show what the typesetter was asking about
-// at stall time.
-#import "AttributeQueryRecorder.h"
-
 #endif /* MinisApp_Bridging_Header_h */
+
+// rclone static library (deps/frameworks/Rclone.xcframework) — see RcloneBridge.swift
+#import "librclone.h"

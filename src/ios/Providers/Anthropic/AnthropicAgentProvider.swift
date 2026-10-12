@@ -63,13 +63,28 @@ final class AnthropicAgentProvider: AgentProvider {
         let anthropicTools = convertTools(tools)
         let cachedMessages = messagesWithCacheBreakpoints(anthropicMessages)
 
-        // Pass tool result images to the patcher via thread-safe shared storage
+        // [T-anthropic-toolimages-cross-request] Tool-result images travel to the
+        // URLProtocol patcher through process-global storage, so they must be
+        // addressed to THIS request. Without a token the patcher consumed
+        // whatever was set last, and with several sessions streaming at once
+        // that is routinely another conversation's payload — see
+        // RequestBodyPatcher.setToolResultImages.
+        //
+        // The token rides on a header that the protocol strips before the
+        // request leaves the device, the same mechanism X-Minis-OAuth-UUID
+        // already uses.
+        let requestToken = UUID().uuidString
+        RequestBodyPatcher.setRequestToken(requestToken)
         if !pendingToolResultImages.isEmpty {
-            RequestBodyPatcher.setToolResultImages(pendingToolResultImages)
+            RequestBodyPatcher.setToolResultImages(pendingToolResultImages, requestToken: requestToken)
             #if DEBUG
-            AgentRequestTrace.shared.step("anthropic.setToolResultImages", detail: "ids=\(Array(pendingToolResultImages.keys))")
+            AgentRequestTrace.shared.step("anthropic.setToolResultImages", detail: "ids=\(Array(pendingToolResultImages.keys)) token=\(requestToken.prefix(8))")
             #endif
         }
+        // [T-agent-concurrency-probe] One line per outgoing Anthropic stream, so
+        // the interleaving of concurrent sessions is visible in a device log
+        // instead of being inferred from thread ids after a crash.
+        logger.info("[AgentConcurrency] stream START token=\(requestToken.prefix(8)) model=\(self.model.id) msgs=\(messages.count) images=\(self.pendingToolResultImages.count)")
 
         // Set thinking config for RequestBodyPatcher injection (SDK doesn't support thinking natively).
         //
@@ -105,8 +120,12 @@ final class AnthropicAgentProvider: AgentProvider {
             // call with max_tokens=256 → stop_reason=max_tokens,
             // thinking_tokens=256/256, empty body). Legacy (<=4.5) models
             // default to no thinking, so absence is fine there.
-            RequestBodyPatcher.setThinkingDisabled()
-            logger.info("Thinking explicitly DISABLED (adaptive default-on model, level=off)")
+            // [T-ios-thinking-flag-cross-request] Stamp the model this intent
+            // belongs to — the flag is process-global and another Anthropic
+            // request (e.g. title generation, also `.off`, possibly a different
+            // model) may reach the wire between this set and its take.
+            RequestBodyPatcher.setThinkingDisabled(modelId: model.id)
+            logger.info("Thinking explicitly DISABLED (adaptive default-on model, level=off) model=\(self.model.id)")
         }
 
         // Anthropic-compat proxies (e.g. DeepSeek's deepseek-v4-pro endpoint
@@ -392,6 +411,12 @@ final class AnthropicAgentProvider: AgentProvider {
                             }
 
                         case .messageStart:
+                            // [T-agent-model-identity] `message.model` is the
+                            // model the API says is answering — surfaced so an
+                            // agent's parent can show the effective model.
+                            if let reported = response.message?.model, !reported.isEmpty {
+                                continuation.yield(.responseModel(reported))
+                            }
                             if let usage = response.message?.usage {
                                 continuation.yield(.usage(usage.toLLMUsage()))
                             }
@@ -486,9 +511,9 @@ final class AnthropicAgentProvider: AgentProvider {
                 switch part {
                 case .text(let text):
                     return .text(text)
-                case .toolUse(let id, let name, let input):
+                case .toolUse(let id, let name, let input, _):
                     return .toolUse(sanitizeToolId(id), name, convertToInput(input))
-                case .toolResult(let id, _, let content, let isError, let imageData, let imageMimeType, _, _):
+                case .toolResult(let id, _, let content, let isError, let imageData, let imageMimeType, _, _, _):
                     let safeId = sanitizeToolId(id)
                     if let data = imageData {
                         // Downscale to Anthropic's recommended 1568px to avoid
@@ -554,7 +579,7 @@ final class AnthropicAgentProvider: AgentProvider {
             guard msg.role == .assistant else { i += 1; continue }
 
             let toolUses = msg.parts.compactMap { part -> (id: String, name: String)? in
-                if case .toolUse(let id, let name, _) = part { return (id, name) }
+                if case .toolUse(let id, let name, _, _) = part { return (id, name) }
                 return nil
             }
             guard !toolUses.isEmpty else { i += 1; continue }
@@ -565,7 +590,7 @@ final class AnthropicAgentProvider: AgentProvider {
             var satisfied: Set<String> = []
             if i + 1 < messages.count, messages[i + 1].role == .user {
                 for part in messages[i + 1].parts {
-                    if case .toolResult(let id, _, _, _, _, _, _, _) = part {
+                    if case .toolResult(let id, _, _, _, _, _, _, _, _) = part {
                         satisfied.insert(id)
                     }
                 }
@@ -611,13 +636,13 @@ final class AnthropicAgentProvider: AgentProvider {
             switch result[i].role {
             case .assistant:
                 liveToolUseIds = Set(result[i].parts.compactMap { part -> String? in
-                    if case .toolUse(let id, _, _) = part { return id }
+                    if case .toolUse(let id, _, _, _) = part { return id }
                     return nil
                 })
             case .user:
                 let original = result[i].parts
                 let kept = original.filter { part in
-                    if case .toolResult(let id, _, _, _, _, _, _, _) = part {
+                    if case .toolResult(let id, _, _, _, _, _, _, _, _) = part {
                         return liveToolUseIds.contains(id)
                     }
                     return true
@@ -639,7 +664,7 @@ final class AnthropicAgentProvider: AgentProvider {
                 // against. The set is naturally reset on the next assistant
                 // turn (top of this loop).
                 for part in kept {
-                    if case .toolResult(let id, _, _, _, _, _, _, _) = part {
+                    if case .toolResult(let id, _, _, _, _, _, _, _, _) = part {
                         liveToolUseIds.remove(id)
                     }
                 }
@@ -779,7 +804,47 @@ final class AnthropicAgentProvider: AgentProvider {
 
     /// Anthropic supports up to 8000×8000 / 5MB; we standardize at 2000 long edge
     /// across attachments / browser / read_image. Returns nil if already within bounds.
+    /// [T-ios-listsessions-perf] Cache of downscale results, keyed by a hash of
+    /// the source bytes.
+    ///
+    /// convertMessages runs over the WHOLE history on every turn, so an image
+    /// sent in turn 1 was decoded, redrawn through CoreGraphics and re-JPEG'd
+    /// again on turns 2, 3, 4 … — 2.7 G cycles in the profiled trace, growing
+    /// with conversation length for a result that is byte-identical each time.
+    ///
+    /// NSCache so the entries are evicted under memory pressure rather than
+    /// pinned: these are multi-megabyte values, and this process already has a
+    /// history of allocation-failure aborts.
+    ///
+    /// `NSNull` is the memo for "measured, needs no downscale" — the function
+    /// returns nil for that case, and without a distinct marker every
+    /// already-small image would miss the cache forever and pay a full
+    /// UIImage decode per turn, which is most of the cost being removed.
+    private static let downscaleCache: NSCache<NSNumber, AnyObject> = {
+        let c = NSCache<NSNumber, AnyObject>()
+        c.countLimit = 32
+        return c
+    }()
+
     private static func downscaleForAnthropic(_ data: Data, maxLongEdge: CGFloat = 2000) -> Data? {
+        // Hash the bytes rather than the whole Data as a key: identical image
+        // payloads recur across turns, and Data's own hashing already digests
+        // the contents.
+        var hasher = Hasher()
+        hasher.combine(data)
+        hasher.combine(maxLongEdge)
+        let key = NSNumber(value: hasher.finalize())
+
+        if let hit = downscaleCache.object(forKey: key) {
+            return (hit as? NSData) as Data?
+        }
+
+        let result = computeDownscaleForAnthropic(data, maxLongEdge: maxLongEdge)
+        downscaleCache.setObject((result as NSData?) ?? NSNull(), forKey: key)
+        return result
+    }
+
+    private static func computeDownscaleForAnthropic(_ data: Data, maxLongEdge: CGFloat) -> Data? {
         guard let image = UIImage(data: data), let cgImage = image.cgImage else { return nil }
         let pixelW = CGFloat(cgImage.width)
         let pixelH = CGFloat(cgImage.height)
@@ -937,8 +1002,12 @@ final class AnthropicAgentProvider: AgentProvider {
         let anthropicTools = convertTools(tools)
         let cachedMessages = messagesWithCacheBreakpoints(anthropicMessages)
 
+        // [T-anthropic-toolimages-cross-request] Same per-request addressing as
+        // the streaming path; a warm-up must not consume another turn's images.
+        let warmupToken = UUID().uuidString
+        RequestBodyPatcher.setRequestToken(warmupToken)
         if !pendingToolResultImages.isEmpty {
-            RequestBodyPatcher.setToolResultImages(pendingToolResultImages)
+            RequestBodyPatcher.setToolResultImages(pendingToolResultImages, requestToken: warmupToken)
         }
 
         // Append a lightweight user message to form a valid request

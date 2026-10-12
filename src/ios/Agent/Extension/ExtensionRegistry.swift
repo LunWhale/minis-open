@@ -153,16 +153,16 @@ final class ExtensionRegistry {
     /// Built-in default plugins (todo / sub-agents) are native capabilities
     /// registered like extensions. This returns their tool definitions when
     /// the corresponding built-in plugin is enabled. (MainActor because the
-    /// todo/sub-agent tool builders live in @MainActor AIChatViewModel.)
+    /// todo tool builders live in @MainActor AIChatViewModel.)
+    ///
+    /// Sub-agents are NOT here: upstream v1.14 ships its own Helper system
+    /// (`subagent_task`, HelperRunner), and the fork's plugin switch now gates
+    /// that definition instead — see `makeAgentTools()`.
     @MainActor
     func builtinToolDefinitions() -> [AgentToolDefinition] {
         var defs: [AgentToolDefinition] = []
         if isBuiltinEnabled(BuiltinExtension.todoID) {
             defs.append(contentsOf: AIChatViewModel.makeTodoToolDefinitions())
-        }
-        if isBuiltinEnabled(BuiltinExtension.subagentsID) {
-            defs.append(AIChatViewModel.makeSubagentToolDefinition())
-            defs.append(AIChatViewModel.makeAgentStatusToolDefinition())
         }
         return defs
     }
