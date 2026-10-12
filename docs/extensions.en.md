@@ -1,6 +1,6 @@
 # minis-open Plugin (Extension) Development Guide
 
-> Applies to **minis-open 1.13.2+ (iOS)**.
+> Applies to **minis-open 1.14+ (iOS)**.
 > One plugin = one `.minisx` file (a zip) = `manifest.json` + scripts/assets.
 > Agent-side scripts run in **JavaScriptCore** (nothing to do with a browser);
 > a bundled **Lua 5.4** runtime is also supported.
@@ -312,7 +312,7 @@ which map to real locations:
 | `/var/minis/offloads/**` | Current session | Session offloads |
 | `/var/minis/browser/**` | Current session | Browser downloads/screenshots |
 
-### 4.7 Request interception (new in 1.13.2)
+### 4.7 Request interception (introduced in 1.13.2, still current in 1.14)
 
 Plugins can rewrite the HTTP requests sent to AI model providers — URL, method,
 headers and body. This lets a pure-JS plugin do what previously required a local

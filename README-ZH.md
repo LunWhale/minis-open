@@ -24,18 +24,18 @@
 > **可插拔，省 token。** 原项目虽然功能全面，但实测下来很耗费 token。
 > 所以本项目模仿了 **pi-agent** 和 **deepseek harness** 的极简思路，将原作的一些功能（Todo、子代理、记忆、Skills、MCP、灵魂、外部文件夹挂载、环境变量、编程工具链等）做成了可插拔的插件，系统提示词也拆成了可开关的模块。在扩展管理里关闭用不到的插件、裁剪提示词模块，可能会降低 token 消耗。未来可能会整合成一个极简模式。
 
-相对上游 v1.12，本分支新增：
+相对上游 v1.14，本分支新增：
 
 | 模块 | 说明 |
 |---|---|
 | **Todo 系统** | 会话级 todo，四个 agent 工具（`todo_create/update/list/clear`）、聊天菜单面板、系统提示引导。agent 会把复杂任务拆成步骤并持续更新状态。 |
-| **子 agent 委派** | `agent_delegate` / `agent_status` 工具。父 agent 可以把一个有边界的子任务（最多约 25 轮，不能再派生子 agent）交给拥有独立上下文、按角色运行的子 agent。运行记录可在聊天菜单查看。 |
+| **子 agent 委派** | 上游 v1.14 自带 Helper 系统（`subagent_task`：delegate/status/steer/cancel/resume，后台运行，每个子 agent 可自定义）。本分支把它接入“子代理委派”插件开关，可关闭以省 token。 |
 | **扩展系统** | 从扩展管理器安装 `.minisx` 包（带 `manifest.json` 的 zip）。扩展可以添加 agent 工具、斜杠命令、事件钩子、WebView 组件和主题。脚本运行在 JavaScriptCore 或内置的 Lua 5.4 解释器里。 |
 | **扩展 API** | `minis.api.shell/file/permission/event/offload/ui.postMessage/settings` 和 `minis.http.fetch`——JS 和 Lua 两个运行时共用同一套原生桥。 |
 | **每个扩展的设置** | 扩展作者在 manifest 里声明 `settings`；管理器会显示一个齿轮按钮，打开按声明渲染的表单，agent 代码通过 `minis.api.settings.get` 读取。 |
 | **内置插件** | todo 和子 agent 是扩展管理器里的默认插件。关掉任何一个：它的 agent 工具消失、菜单入口消失、系统提示也不再提起它。 |
 | **编码工具链** | `minis-toolchain` 按需在沙箱里装 bun/node/python/git/ripgrep，支持 npm/pip/apk 镜像。工作区里的 `AGENTS.md` / `CLAUDE.md` 会注入 agent 上下文。 |
-| **iSH ARM64 内核工作** | `deps/ish` 固定到带 FCVTN/FCVTXN ARM64 解码和 `/proc/<pid>/mem` seek 支持的分支——上面的编码流程依赖它。 |
+| **iSH ARM64 内核工作** | 本分支贡献的 FCVTN/FCVTXN ARM64 解码和 `/proc/<pid>/mem` seek 支持已被上游吸收（PR #22 与 proc-seek 修复），因此 `deps/ish` 直接跟随上游。 |
 | **终端按钮** | iOS 和 Android 的聊天输入栏都有一步进入终端的按钮。 |
 
 ---

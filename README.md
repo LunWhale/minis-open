@@ -32,18 +32,18 @@ first-class extension system, and a coding toolchain inside the sandbox.
 > don't use — or trimming the prompt modules — can noticeably lower token
 > consumption. A single unified "minimal mode" may be added later.
 
-Compared to upstream v1.12, this fork ships:
+Compared to upstream v1.14, this fork ships:
 
 | Piece | What it does |
 |---|---|
 | **Todo system** | Session-scoped todos with four agent tools (`todo_create/update/list/clear`), a panel in the chat menu, and system-prompt guidance. The agent breaks work into steps and keeps them updated. |
-| **Sub-agent delegation** | `agent_delegate` / `agent_status` tools. The parent agent can hand a bounded subtask (max ~25 turns, no grandchildren) to a sub-agent with its own context and a chosen role. Runs show up in the chat menu. |
+| **Sub-agent delegation** | Upstream v1.14 ships its own Helper system (`subagent_task`: delegate/status/steer/cancel/resume, background runs, per-agent definitions). This fork gates it behind the "Sub-agent Delegation" plugin switch so it can be turned off token-lean. |
 | **Extension system** | Install `.minisx` bundles (a zip with a `manifest.json`) from the Extensions manager. Extensions can add agent tools, slash commands, event hooks, WebView widgets, and themes. Scripts run in JavaScriptCore or a vendored Lua 5.4 interpreter. |
 | **Extension APIs** | `minis.api.shell/file/permission/event/offload/ui.postMessage/settings` and `minis.http.fetch` — the same native bridge surface for both JS and Lua runtimes. |
 | **Per-extension settings** | An extension author declares `settings` in its manifest; the manager shows a gear button that opens a form, and agent code reads them via `minis.api.settings.get`. |
 | **Built-in plugins** | Todo and sub-agents are default plugins in the Extensions manager. Turn either off and its tools disappear from the agent, its menu entries vanish, and the system prompt stops mentioning it. |
 | **Coding toolchain** | `minis-toolchain` installs bun/node/python/git/ripgrep inside the sandbox on demand, with mirror support for npm/pip/apk. Workspace `AGENTS.md` / `CLAUDE.md` files are injected into the agent context. |
-| **iSH ARM64 kernel work** | Pinned `deps/ish` to a fork with FCVTN/FCVTXN ARM64 decoding and `/proc/<pid>/mem` seek support — required for the coding workflows above. |
+| **iSH ARM64 kernel work** | The fork contributed FCVTN/FCVTXN ARM64 decoding and `/proc/<pid>/mem` seek support to iSH — both are now upstream (PR #22 and the proc-seek fixes), so `deps/ish` tracks upstream directly. |
 | **Terminal buttons** | A one-tap terminal button in the chat composer on iOS and Android. |
 
 ---

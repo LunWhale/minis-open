@@ -1,7 +1,49 @@
 # Changelog
 
 All fork commits are listed here, newest first. The base is upstream
-OpenMinis v1.10 (`9cf3a85`), rebased onto upstream v1.12 (`09fc199`).
+OpenMinis v1.10 (`9cf3a85`), rebased onto upstream v1.12 (`09fc199`),
+then merged with upstream v1.14 (`b4c0661`).
+
+## [1.14] - 2026-09-13
+
+### Merge upstream v1.14
+
+Fork version bumped to 1.14 to track the upstream base (shown in About).
+The merge brings in all of upstream's v1.13/v1.14 work while keeping every
+fork feature.
+
+**From upstream** (26 commits, 1339 files):
+- iOS: agent/chat work, iCloud sync (V2), backup & restore to folders and
+  rclone remotes (new `Rclone.xcframework` dependency), usage tracking,
+  Shortcuts intents, localization (`AppLocalized`), scheduled jobs
+  (`minis-scheduled`), and a new Sub Agents / Helper system.
+- Providers: OAuth, thinking levels, voice, model routing.
+- Android: the full 1.14 feature set (chat, providers, backup, sandbox).
+- iSH: advanced to the upstream 1.14 source merge (68 commits beyond the
+  fork's previous pin).
+
+**Fork integration decisions**:
+- `deps/ish` switched back to upstream's pin (`e6521d9c`): upstream has
+  absorbed the fork's FCVTN/FCVTXN + `/proc/<pid>/mem` seek work, so the
+  fork's own ish branch is no longer needed.
+- `deps/proot` advanced to upstream's pin (`1b444ee1`).
+- Sub-agents: adopted upstream's Helper system (`subagent_task` +
+  `HelperRunner` + `SubAgentStore`, with background runs, steering,
+  resume, per-agent definitions). The fork's own `agent_delegate`
+  implementation was retired. The "Sub-agent Delegation" plugin switch
+  (Settings → Extensions) now gates upstream's tool instead.
+- Plugin gating preserved throughout: Todo, Memory, Skills, MCP, Soul,
+  mounts, environment variables, coding workflow and prompt modules still
+  toggle from the Extensions manager; gating is wired into upstream's new
+  code paths (prompt assembly, tool definitions, dispatch, settings UI).
+- Fork UI fixes preserved: UIKit document picker (iOS 26 file-import fix),
+  `DeferredPresentation` menu-dismissal fixes, fork branding in About.
+- Build fixes surfaced by the merge: explicit type annotation in
+  `DebugJSONRPC.swift` (type-checker timeout), `toolResult` pattern updated
+  for upstream's 9th associated value, empty `Subagent` pbxproj group removed.
+
+**Verification**: xcodebuild Debug (generic/platform=iOS) BUILD SUCCEEDED;
+extension smoke tests 43/43 (JS) + 14/14 (Lua); About shows 1.14.
 
 ## [1.13.2] - 2026-09-13
 
