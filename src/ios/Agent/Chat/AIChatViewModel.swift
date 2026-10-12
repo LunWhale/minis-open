@@ -7432,7 +7432,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                 // [M3-extensions] tool_result hook: fired once per completed
                 // tool call with a bounded output preview (full text stays on
                 // the ToolSnapshot path).
-                if case let .toolResult(_, name, content, isError, _, _, _, _) = outcome.resultPart {
+                if case let .toolResult(_, name, content, isError, _, _, _, _, _) = outcome.resultPart {
                     ExtensionRegistry.shared.emitLifecycleEvent("tool_result", data: [
                         "sessionId": self.sessionId ?? "",
                         "tool": name,

@@ -2254,7 +2254,11 @@ final class DebugJSONRPC: @unchecked Sendable {
         }
 
         let decided = full &+ single
-        return [
+        // [fork] Explicit annotation: the bare literal made the Swift
+        // type-checker time out on the merged file ("unable to type-check
+        // this expression in reasonable time"). Annotating the dictionary
+        // type keeps the inference trivial.
+        let stats: [String: Any] = [
             "clusterCalls": calls,
             "clusterFull": full,
             "clusterSingle": single,
@@ -2273,6 +2277,7 @@ final class DebugJSONRPC: @unchecked Sendable {
             "hostPageSize": hostPage,
             "appFootprintMB": footprintMB,
         ]
+        return stats
     }
 
     private func handleAppInfo(params: [String: Any] = [:]) -> Any {
