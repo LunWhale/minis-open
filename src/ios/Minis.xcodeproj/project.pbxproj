@@ -1788,7 +1788,6 @@
 				F1A00013 /* Sync */,
 				E5LD00003 /* ToolLoopDetector.swift */,
 				E5TODOG1 /* Todo */,
-				E5SUBAG1 /* Subagent */,
 				E5EXTG01 /* Extension */,
 			);
 			path = Agent;
@@ -1801,13 +1800,6 @@
 				E5TODOM1 /* TodoModels.swift */,
 			);
 			path = Todo;
-			sourceTree = "<group>";
-		};
-		E5SUBAG1 /* Subagent */ = {
-			isa = PBXGroup;
-			children = (
-			);
-			path = Subagent;
 			sourceTree = "<group>";
 		};
 		E5LUAG01 /* Lua */ = {
