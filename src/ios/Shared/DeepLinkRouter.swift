@@ -12,10 +12,10 @@ extension Notification.Name {
 }
 
 /// Parses `minis://` URLs into navigation actions and dispatches them
-/// to the relevant coordinator. Mirrors the Android `DeepLinkHandler`
-/// route table at `src/android/.../deeplink/DeepLinkHandler.kt`.
+/// to the relevant coordinator. Mirrors upstream's `DeepLinkHandler`
+/// route table.
 ///
-/// Supported URLs (all aliases match the Android side):
+/// Supported URLs (all aliases are covered):
 ///   minis://share
 ///   minis://views/alarm
 ///   minis://open_terminal[?init_command=…]

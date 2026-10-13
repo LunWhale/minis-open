@@ -18,7 +18,6 @@ fork feature.
   Shortcuts intents, localization (`AppLocalized`), scheduled jobs
   (`minis-scheduled`), and a new Sub Agents / Helper system.
 - Providers: OAuth, thinking levels, voice, model routing.
-- Android: the full 1.14 feature set (chat, providers, backup, sandbox).
 - iSH: advanced to the upstream 1.14 source merge (68 commits beyond the
   fork's previous pin).
 
@@ -26,7 +25,7 @@ fork feature.
 - `deps/ish` switched back to upstream's pin (`e6521d9c`): upstream has
   absorbed the fork's FCVTN/FCVTXN + `/proc/<pid>/mem` seek work, so the
   fork's own ish branch is no longer needed.
-- `deps/proot` advanced to upstream's pin (`1b444ee1`).
+- Android support was removed entirely — see **iOS-only fork** below.
 - Sub-agents: adopted upstream's Helper system (`subagent_task` +
   `HelperRunner` + `SubAgentStore`, with background runs, steering,
   resume, per-agent definitions). The fork's own `agent_delegate`
@@ -38,6 +37,27 @@ fork feature.
   code paths (prompt assembly, tool definitions, dispatch, settings UI).
 - Fork UI fixes preserved: UIKit document picker (iOS 26 file-import fix),
   `DeferredPresentation` menu-dismissal fixes, fork branding in About.
+
+### iOS-only fork
+
+This fork ships **iOS only**. Everything Android was removed, and future
+upstream merges must be followed by the same cleanup:
+
+- **Removed**: `src/android/` (Kotlin/Compose app + JNI, 1190 files), the
+  `deps/proot` and `deps/talloc` trees, `deps/build_proot.sh`,
+  `deps/build_rclone_android.sh`, `scripts/prepare_android_sandbox.sh`,
+  `scripts/check_android_locale.py`, `scripts/gen_debug_skill_android.sh`,
+  the rclone `gomobile` binding, and `assets/badge-android.svg`.
+- **Kept**: `src/shared/bashism/` — an iOS bundle resource referenced from
+  `Minis.xcodeproj`, not an Android asset.
+- **Docs**: `README`, `README-ZH`, `BUILDING.md`, `THIRD_PARTY_LICENSES.md`,
+  `.gitignore` and the issue template no longer describe an Android build.
+- **Future merges**: `scripts/drop-android.sh` re-applies the policy
+  (`--check` fails if Android came back, `--dry-run` previews). See
+  [BUILDING.md](BUILDING.md#ios-only-fork).
+- Two standalone tests that diffed iOS against Android Kotlin sources
+  (`OpenRouterVoiceCatalogTests`, `TurnLifecycleWireEdgeTests`) now assert the
+  iOS side only.
 - Build fixes surfaced by the merge: explicit type annotation in
   `DebugJSONRPC.swift` (type-checker timeout), `toolResult` pattern updated
   for upstream's 9th associated value, empty `Subagent` pbxproj group removed.
@@ -168,7 +188,7 @@ a lost during the FCVT merge (build fix).
   extension event bus, debug log panel, `minis://extensions/debug` deep
   link, `/extensions` slash command, `examples/lua-demo`.
 - `ebc6b62` fix: widget panel rendering from the chat menu, sub-session
-  run viewing, Android terminal button, reactive theme manager, docs
+  run viewing, terminal button, reactive theme manager, docs
   marked with real API status.
 - `50a4742` fix: wire `registerCommand`/`on`, WebView widget host, theme
   application, terminal button.

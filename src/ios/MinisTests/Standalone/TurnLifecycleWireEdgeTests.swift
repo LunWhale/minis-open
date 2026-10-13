@@ -16,8 +16,8 @@
 //   [4] bc142f750  T-responses-orphan-tool-output        (known gaps, warn only)
 //   [5] 0250ba32b / 04c80e68e  T-responses-echo-persist  (known gap, warn only)
 //   [6] bc142f750  T-responses-tool-id-normalize          (known gap, warn only)
-//   [7] 9b6a9910c  issue #360: iOS and Android send the SAME Claude CLI
-//       mimicry header set (the backend version-gates models on User-Agent).
+//   [7] 9b6a9910c  issue #360: iOS sends the full Claude CLI mimicry header
+//       set (the backend version-gates models on User-Agent).
 //
 // [1]–[3] were real defects when this file was written; they are fixed
 // (T-error-persist-turn2-carrier, T-ios-tooluse-stop-no-entries,
@@ -60,7 +60,6 @@ let sseSrc = src("Agent/Chat/AIChatViewModel+SSEStream.swift")
 let openaiSrc = src("Providers/OpenAI/OpenAIAgentProvider.swift")
 let coordSrc = src("Agent/ISH/ISHExecutionCoordinator.swift")
 let oauthSrc = src("Providers/Anthropic/OAuthHTTPClient.swift")
-let androidMimicrySrc = repoSrc("src/android/app/src/main/java/com/openminis/app/auth/ClaudeCliMimicryHeaders.kt")
 
 // MARK: - [1] Error durability on turn >= 2
 
@@ -266,9 +265,9 @@ let chatUsesRaw = openaiSrc.contains("\"tool_call_id\": Self.capChatId(id),")
 // sanitizeToolCallAdjacency drops the real result and injects "unavailable".
 warn("mixed-form ids pass the history layer but split apart on Chat Completions", chatUsesRaw)
 
-// MARK: - [7] Claude CLI mimicry header parity
+// MARK: - [7] Claude CLI mimicry header set
 
-print("\n▶️  7. Claude CLI mimicry headers identical on iOS and Android (9b6a9910c)")
+print("\n▶️  7. Claude CLI mimicry headers are complete (9b6a9910c)")
 func pairs(_ text: String, pattern: String) -> [String: String] {
     guard let re = try? NSRegularExpression(pattern: pattern) else { return [:] }
     var out: [String: String] = [:]
@@ -279,17 +278,10 @@ func pairs(_ text: String, pattern: String) -> [String: String] {
     return out
 }
 let iosBlock = slice(oauthSrc, from: "enum ClaudeCLIMimicry {", to: "]\n")
-let androidBlock = slice(androidMimicrySrc, from: "val ALL: List<Pair<String, String>> = listOf(", to: ")\n")
 let iosHeaders = pairs(iosBlock, pattern: #""([A-Za-z-]+)":\s*"([^"]*)""#)
-let androidHeaders = pairs(androidBlock, pattern: #""([A-Za-z-]+)"\s+to\s+"([^"]*)""#)
-check("iOS header set parsed (11)", iosHeaders.count == 11)
-check("Android header set parsed (11)", androidHeaders.count == 11)
-check("same header names", Set(iosHeaders.keys) == Set(androidHeaders.keys))
-for k in iosHeaders.keys.sorted() where iosHeaders[k] != androidHeaders[k] {
-    check("\(k): iOS=\(iosHeaders[k] ?? "nil") Android=\(androidHeaders[k] ?? "nil")", false)
-}
-check("User-Agent identical (model floors are version-gated on it)",
-      iosHeaders["User-Agent"] != nil && iosHeaders["User-Agent"] == androidHeaders["User-Agent"])
+check("header set parsed (11)", iosHeaders.count == 11)
+check("User-Agent present (model floors are version-gated on it)",
+      iosHeaders["User-Agent"] != nil)
 
 print("")
 print("⚠️  \(warnings) known gap(s) documented")

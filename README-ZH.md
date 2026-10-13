@@ -1,7 +1,7 @@
 # minis-open
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Platforms](https://img.shields.io/badge/Platforms-iOS%20%7C%20Android-lightgrey.svg)](#从源码构建)
+[![Platforms](https://img.shields.io/badge/Platforms-iOS-lightgrey.svg)](#从源码构建)
 
 [English](README.md) | **中文**
 
@@ -42,7 +42,7 @@
 
 ## 从源码构建
 
-沙箱（iOS 用 iSH、Android 用 PRoot）、FFmpeg、LAME 和 Alpine rootfs 都从
+沙箱（iSH）、FFmpeg、LAME、rclone 和 Alpine rootfs 都从
 源码构建，不提交任何二进制。
 
 **首次构建完整指南见 [BUILDING.md](BUILDING.md)。**
@@ -56,11 +56,8 @@ cd minis-open
 # iOS — 注意顺序：FFmpeg 链接 LAME
 ./deps/build_lame.sh && ./deps/build_ffmpeg.sh
 ./deps/build_ish.sh && ./deps/prepare_alpine_rootfs.sh
+./deps/build_rclone_ios.sh
 open src/ios/Minis.xcodeproj
-
-# Android — 需要 NDK r28+
-./deps/build_proot.sh && ./scripts/prepare_android_sandbox.sh
-cd src/android && ./gradlew :app:assembleDebug
 ```
 
 本分支的 iOS 应用及其扩展名为 **Minis Open**。
@@ -71,8 +68,7 @@ cd src/android && ./gradlew :app:assembleDebug
 
 ```
 src/ios/          iOS 应用（Swift / SwiftUI）+ 分享、小组件、文件提供器扩展
-src/android/      Android 应用（Kotlin / Compose）+ JNI 原生代码
-src/shared/       双平台共享资源
+src/shared/       与上游 iOS 构建共用的资源（bashism 规则）
 deps/             原生依赖构建脚本与 vendored 源码
 docs/             架构与接口文档
 examples/         示例 .minisx 扩展包（demo-extension、lua-demo）
@@ -85,15 +81,14 @@ scripts/          rootfs 准备与开发者工具
 
 这里的大部分工作来自上游 OpenMinis 及其依赖的开源项目：
 [iSH](https://github.com/ish-app/ish)（GPLv3，经 ARM64 分支）、
-[PRoot](https://github.com/termux/proot)（GPLv2）、talloc（LGPLv3+）、
 Alpine Linux、FFmpeg（LGPL-2.1+）、LAME（LGPL）、cppjieba（MIT）、
 KaTeX（MIT），以及 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)
-里列出的 Swift/Android 包。
+里列出的 Swift 包。
 
 ---
 
 ## 许可
 
-GPLv3。应用链接了 GPL 组件（iSH、PRoot），因此整体以 GPLv3 发布。
+GPLv3。应用链接了 GPL 组件（iSH），因此整体以 GPLv3 发布。
 全文见 [LICENSE](LICENSE)；打包的第三方许可见
 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)。

@@ -309,49 +309,6 @@ check("the stale 'endpoint does not exist' claim is gone",
 check("read-aloud and Quick Test hand the model to TTS",
       player.contains("resolvedModel: entry.model)") && quick.contains("resolvedModel: entry.model)"))
 
-// ── Part 3: iOS ↔ Android agree ──────────────────────────────────────────────
-
-let droidModality = read("src/android/app/src/main/java/com/openminis/app/data/model/VoiceModality.kt")
-let droidApi = read("src/android/app/src/main/java/com/openminis/app/provider/openrouter/OpenRouterModelsApi.kt")
-let droidVendors = read("src/android/app/src/main/java/com/openminis/app/provider/voice/VoiceProviderVendors.kt")
-let droidTest = read("src/android/app/src/test/java/com/openminis/app/provider/voice/OpenRouterVoiceRoutingTest.kt")
-
-/// Every double-quoted literal between `start` and the next `end`.
-func literals(_ src: String, from start: String, to end: String) -> [String] {
-    guard let a = src.range(of: start),
-          let b = src.range(of: end, range: a.upperBound..<src.endIndex) else { return [] }
-    let chunk = String(src[a.upperBound..<b.lowerBound])
-    let rx = try! NSRegularExpression(pattern: #""([^"]*)""#)
-    return rx.matches(in: chunk, range: NSRange(chunk.startIndex..., in: chunk))
-        .map { String(chunk[Range($0.range(at: 1), in: chunk)!]) }
-}
-
-print("\n▶️  6. the two platforms agree")
-if droidModality.isEmpty || droidTest.isEmpty {
-    check("Android sources readable", false)
-} else {
-    check("role values identical",
-          droidModality.contains(#"const val TTS = "tts""#) && droidModality.contains(#"const val STT = "stt""#)
-            && droidModality.contains(#"const val NONE = "none""#)
-            && types.contains(#"static let tts = "tts""#) && types.contains(#"static let stt = "stt""#)
-            && types.contains(#"static let none = "none""#))
-    check("chat-audio allowlist identical",
-          literals(droidModality, from: "OPENROUTER_CHAT_AUDIO_MODELS = setOf(", to: ")")
-            == literals(types, from: "openRouterChatAudioModels: Set<String> = [", to: "]"))
-    let droidPhrases = literals(droidVendors, from: "AUTH_FAILURE_PHRASES = listOf(", to: ")")
-    let iosPhrases = literals(vendors, from: "authFailurePhrases = [", to: "]")
-    check("auth phrases identical (\(iosPhrases.count))", !iosPhrases.isEmpty && droidPhrases == iosPhrases)
-    check("…and identical to this port", iosPhrases == authFailurePhrases)
-    check("Android fetches the same two filters",
-          droidApi.contains(#""$MODELS_URL?output_modalities=speech""#)
-            && droidApi.contains(#""$MODELS_URL?output_modalities=transcription""#))
-    check("Android cache moved too", droidApi.contains(#"ProviderModelsCache("openrouter-v2")"#))
-    check("speech fixtures identical to the Android test",
-          literals(droidTest, from: "private val speechIds = listOf(", to: ")\n") == speechIds)
-    check("transcription fixtures identical to the Android test",
-          literals(droidTest, from: "private val transcriptionIds = listOf(", to: ")\n") == transcriptionIds)
-}
-
 print("")
 if failures == 0 { print("✅ ALL PASSED") } else { print("❌ \(failures) FAILURE(S)") }
 exit(failures == 0 ? 0 : 1)

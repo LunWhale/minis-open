@@ -6,7 +6,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 IOS_DEST="$SCRIPT_DIR/../src/ios/Resources/models-dev-api.json"
-ANDROID_DEST="$SCRIPT_DIR/../src/android/app/src/main/assets/models-dev-api.json"
 URL="https://models.dev/api.json"
 
 echo "Downloading $URL ..."
@@ -31,10 +30,6 @@ echo "Updated $IOS_DEST"
 # which entry wins the majority vote.
 echo "Verifying stage-2 resolution against the new catalog ..."
 python3 "$SCRIPT_DIR/verify_models_dev_resolution.py"
-
-# Copy to Android assets
-cp "$IOS_DEST" "$ANDROID_DEST"
-echo "Updated $ANDROID_DEST"
 
 # Show size
 SIZE=$(wc -c < "$IOS_DEST" | tr -d ' ')

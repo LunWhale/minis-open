@@ -24,14 +24,12 @@ import os
 import sys
 import unittest
 
-# The package ships inside each app's default mount. The two copies are
-# kept in step, but a platform can be published ahead of the other, so the
-# default is the Android copy; set MINIS_MCP_CLI_DIR to test the iOS one
-# (src/ios/default_mount/usr/local/lib/minis-mcp-cli).
+# The package ships inside the iOS app's default mount
+# (src/ios/default_mount/usr/local/lib/minis-mcp-cli); set
+# MINIS_MCP_CLI_DIR to test another copy.
 _PKG = os.environ.get("MINIS_MCP_CLI_DIR") or os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "..",
-    "src", "android", "app", "src", "main", "assets", "default_mount",
-    "usr", "local", "lib", "minis-mcp-cli")
+    "src", "ios", "default_mount", "usr", "local", "lib", "minis-mcp-cli")
 sys.path.insert(0, os.path.abspath(_PKG))
 
 import httpx  # noqa: E402

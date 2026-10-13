@@ -1,7 +1,7 @@
 # minis-open
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Platforms](https://img.shields.io/badge/Platforms-iOS%20%7C%20Android-lightgrey.svg)](#building-from-source)
+[![Platforms](https://img.shields.io/badge/Platforms-iOS-lightgrey.svg)](#building-from-source)
 
 **English** | [中文](README-ZH.md)
 
@@ -44,13 +44,13 @@ Compared to upstream v1.14, this fork ships:
 | **Built-in plugins** | Todo and sub-agents are default plugins in the Extensions manager. Turn either off and its tools disappear from the agent, its menu entries vanish, and the system prompt stops mentioning it. |
 | **Coding toolchain** | `minis-toolchain` installs bun/node/python/git/ripgrep inside the sandbox on demand, with mirror support for npm/pip/apk. Workspace `AGENTS.md` / `CLAUDE.md` files are injected into the agent context. |
 | **iSH ARM64 kernel work** | The fork contributed FCVTN/FCVTXN ARM64 decoding and `/proc/<pid>/mem` seek support to iSH — both are now upstream (PR #22 and the proc-seek fixes), so `deps/ish` tracks upstream directly. |
-| **Terminal buttons** | A one-tap terminal button in the chat composer on iOS and Android. |
+| **Terminal buttons** | A one-tap terminal button in the chat composer. |
 
 ---
 
 ## Building from source
 
-The sandbox (iSH on iOS, PRoot on Android), FFmpeg, LAME, rclone, and the
+The sandbox (iSH), FFmpeg, LAME, rclone, and the
 Alpine rootfs are all built from source. Nothing binary is committed.
 
 **See [BUILDING.md](BUILDING.md) for the full first-build guide.**
@@ -68,12 +68,6 @@ cd minis-open
 ./deps/build_ish.sh && ./deps/prepare_alpine_rootfs.sh
 ./deps/build_rclone_ios.sh
 open src/ios/Minis.xcodeproj
-
-# Android — needs NDK r28+, Go 1.25+ and gomobile
-./deps/build_proot.sh && ./scripts/prepare_android_sandbox.sh
-./deps/build_rclone_android.sh
-mkdir -p src/android/app/libs && cp deps/build/rclone/rclone.aar src/android/app/libs/
-cd src/android && ./gradlew :app:assembleDebug
 ```
 
 The iOS app and its extensions are named **Minis Open** in this fork.
@@ -84,8 +78,7 @@ The iOS app and its extensions are named **Minis Open** in this fork.
 
 ```
 src/ios/          iOS app (Swift / SwiftUI) + share, widget and file-provider extensions
-src/android/      Android app (Kotlin / Compose) + JNI native code
-src/shared/       Assets shared by both platforms
+src/shared/       Assets shared with upstream's iOS build (bashism rules)
 deps/             Native dependency build scripts and vendored sources
 docs/             Architecture and interface specifications
 examples/         Sample .minisx extension bundles (demo-extension, lua-demo)
@@ -98,15 +91,15 @@ scripts/          Rootfs preparation and developer tooling
 
 The bulk of the work here is upstream OpenMinis plus the open-source projects
 it stands on: [iSH](https://github.com/ish-app/ish) (GPLv3, via an ARM64
-fork), [PRoot](https://github.com/termux/proot) (GPLv2), talloc (LGPLv3+),
+fork),
 Alpine Linux, FFmpeg (LGPL-2.1+), LAME (LGPL), cppjieba (MIT), KaTeX (MIT),
-and the Swift/Android packages listed in
+and the Swift packages listed in
 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 
 ---
 
 ## License
 
-GPLv3. The app links GPL components (iSH, PRoot), so the combined work is
+GPLv3. The app links GPL components (iSH), so the combined work is
 GPLv3. Full text in [LICENSE](LICENSE); bundled third-party licenses in
 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).

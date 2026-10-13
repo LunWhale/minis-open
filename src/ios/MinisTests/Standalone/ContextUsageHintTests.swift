@@ -140,7 +140,6 @@ check("publishContextUsage is called where usage is written", vm.components(sepa
 check("source warning threshold is 0.7 (critical 0.8)", models.contains("static let warningFraction: Double = 0.7") && models.contains("static let criticalFraction: Double = 0.8"))
 check("localization key present", xc.contains("\"Context %@ used · %@\" : {"))
 check("zh-Hans translation present", xc.contains("上下文已用 %1$@ · %2$@"))
-check("no Android file touched by this feature", !FileManager.default.fileExists(atPath: root + "../android/CONTEXT_USAGE_MARKER"))
 
 print(failures == 0 ? "\n✅ All context-usage hint tests passed" : "\n❌ \(failures) failure(s)")
 exit(failures == 0 ? 0 : 1)

@@ -2,7 +2,3 @@
 	path = deps/ish
 	url = https://github.com/OpenMinis/ish-arm64.git
 	branch = master
-[submodule "deps/proot"]
-	path = deps/proot
-	url = https://github.com/OpenMinis/proot.git
-	branch = master

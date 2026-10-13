@@ -113,7 +113,7 @@ enum BuiltinExtension {
         case promptMinisCLIID: return "Minis CLI tools (minis-config, model-use, sessions-cli, browser-use, terminal)."
         case promptEnvSecretsID: return "Environment-variable secrecy rules and settings deep links."
         case promptStyleID: return "Tool-call style and tone guidance."
-        case promptScheduledID: return "Guidance for scheduled/background tasks. That capability is Android-only, so this ships empty — editable if you port it."
+        case promptScheduledID: return "Guidance for scheduled/background tasks. That capability is not implemented on iOS, so this ships empty — editable if you add it."
         case promptExtensionsID: return "Extension tool guidance (extension_<id>_<name>)."
         default: return ""
         }
@@ -292,7 +292,7 @@ enum BuiltinExtension {
         // makeAgentTools() registers eight tools (shell / three file tools /
         // two memory tools / browser_use, plus read_image), there is no
         // schedule handler in NativeOffloads/, and no such settings row.
-        // Scheduling lives in src/android/.../scheduled/ only. So every model
+        // Scheduling is not implemented on iOS at all. So every model
         // turn paid ~30 lines of guidance for tools that cannot be called, and
         // any attempt to follow it was a guaranteed error. Shipped empty;
         // the extension_<id>_<name> guidance in builtin.prompt.extensions is
