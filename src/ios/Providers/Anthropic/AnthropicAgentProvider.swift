@@ -167,6 +167,9 @@ final class AnthropicAgentProvider: AgentProvider {
         let modelRequiresInterleave = model.interleavedReasoningField != nil
         let echoReasoning           = modelMayReason && modelRequiresInterleave
         let injectPlaceholder       = echoReasoning
+        // Retained for the retry re-stamp below: the patcher's reasoning history
+        // is TAKE-ONCE, so a retried request has to be handed the same array.
+        var reasoningHistoryForEcho: [String?] = []
         if echoReasoning,
            !provider.isOfficialAnthropicEndpoint,
            messages.contains(where: { $0.role == .assistant }) {
@@ -196,6 +199,7 @@ final class AnthropicAgentProvider: AgentProvider {
                 }
                 lastRole = msg.role
             }
+            reasoningHistoryForEcho = history
             RequestBodyPatcher.setReasoningHistory(history, injectPlaceholder: injectPlaceholder)
             logger.info("Compat-proxy thinking echo: queued \(history.compactMap { $0 }.count) reasoning block(s) across \(history.count) assistant turn(s), placeholder=\(injectPlaceholder)")
         }
@@ -231,6 +235,38 @@ final class AnthropicAgentProvider: AgentProvider {
         // path stays terminal. Only transient NSURLError codes are retried; auth
         // (401), rate-limit (429), 4xx/5xx and any non-network error fall straight
         // through to mapError() → group fallback, unchanged. [diag-0800 Q2 / -1005]
+        // [T-anthropic-restamp-on-retry] Re-stamp the request-scoped patcher
+        // state before a retried attempt.
+        //
+        // That state is TAKE-ONCE: the URLProtocol consumes it for the attempt it
+        // sees (takeRequestToken / takeThinkingEffort / takeThinkingBudget /
+        // takeThinkingDisabled / takeReasoningHistory, plus the per-token image
+        // payload). Without this, a retry reached the wire as a DIFFERENT request
+        // from the one that failed — no thinking config, no reasoning echo and no
+        // tool-result images. `thinkingDisabled` is the sharpest edge: an adaptive
+        // model whose level is `off` thinks by DEFAULT when the flag is absent,
+        // which can spend the entire maxTokens budget on thinking and return
+        // empty text.
+        //
+        // The first attempt keeps its inline stamps above; this runs only for an
+        // attempt that follows a transient network drop.
+        func stampRequestScopedState() {
+            RequestBodyPatcher.setRequestToken(requestToken)
+            if !pendingToolResultImages.isEmpty {
+                RequestBodyPatcher.setToolResultImages(pendingToolResultImages, requestToken: requestToken)
+            }
+            if let effort = thinkShape["effort"] as? String {
+                RequestBodyPatcher.setThinkingEffort(effort)
+            } else if let budget = thinkShape["budget_tokens"] as? Int {
+                RequestBodyPatcher.setThinkingBudget(budget)
+            } else if thinkShape["disabled"] != nil {
+                RequestBodyPatcher.setThinkingDisabled(modelId: model.id)
+            }
+            if !reasoningHistoryForEcho.isEmpty {
+                RequestBodyPatcher.setReasoningHistory(reasoningHistoryForEcho, injectPlaceholder: injectPlaceholder)
+            }
+        }
+
         let stream: AsyncThrowingStream<MessageStreamResponse, Error>
         var establishAttempt = 0
         while true {
@@ -245,6 +281,9 @@ final class AnthropicAgentProvider: AgentProvider {
                 if Self.isTransientNetworkError(error), establishAttempt < Self.maxStreamConnectRetries {
                     try Task.checkCancellation()
                     establishAttempt += 1
+                    // The failed attempt already consumed the request-scoped
+                    // patcher state; re-stamp it for the one that follows.
+                    stampRequestScopedState()
                     // 1s, 2s backoff (attempt 1 → 1s, attempt 2 → 2s).
                     let backoffNs = UInt64(establishAttempt) * 1_000_000_000
                     logger.warning("streamMessage transient network error (\((error as NSError).code)) — retry \(establishAttempt)/\(Self.maxStreamConnectRetries) after \(establishAttempt)s")

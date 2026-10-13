@@ -28,6 +28,19 @@ import JavaScriptCore
 /// ```
 final class ExtensionJSRuntime {
     private let context: JSContext
+    /// Weak-context + lock box, handed to every JS bridge block.
+    ///
+    /// The bridge blocks are installed as globals on the JS context, so a block
+    /// that captures the context strongly creates
+    /// `context → global object → block → context`: a cycle that keeps one
+    /// JSContext plus its whole JS heap alive after the runtime is dropped —
+    /// one leak per reload/uninstall. The box holds the context weakly.
+    ///
+    /// It also carries the lock that serialises every JS touch: JavaScriptCore
+    /// accepts any thread but not two at once, and these bridges settle their
+    /// promises from a detached Task while another tool call may be evaluating
+    /// JS on a different executor.
+    private let jsBox: JSContextBox
     private let extensionID: String
     private let bridge: Bridge
 
@@ -54,7 +67,9 @@ final class ExtensionJSRuntime {
     init(extensionID: String, bridge: Bridge) {
         self.extensionID = extensionID
         self.bridge = bridge
-        self.context = JSContext()!
+        let ctx = JSContext()!
+        self.context = ctx
+        self.jsBox = JSContextBox(ctx)
         installMinisAPI()
     }
 
@@ -62,13 +77,16 @@ final class ExtensionJSRuntime {
 
     /// Evaluate a JS file from the extension bundle.
     func evaluateScript(_ js: String, fileName: String) throws {
-        let result = context.evaluateScript(js, withSourceURL: URL(fileURLWithPath: fileName))
-        if context.exception != nil {
-            let msg = context.exception.toString() ?? "unknown JS error"
+        // Serialised against every other JS touch (see `jsBox`).
+        let error: String? = jsBox.withJS { context -> String? in
+            _ = context.evaluateScript(js, withSourceURL: URL(fileURLWithPath: fileName))
+            guard let exception = context.exception else { return nil }
             context.exception = nil
-            throw ExtensionError.runtime("\(fileName): \(msg)")
+            return exception.toString() ?? "unknown JS error"
+        } ?? nil
+        if let error {
+            throw ExtensionError.runtime("\(fileName): \(error)")
         }
-        _ = result
     }
 
     // MARK: - Tool registry
@@ -99,14 +117,37 @@ final class ExtensionJSRuntime {
         let handler: JSValue  // JS function
     }
 
+    /// Outcome of the (synchronous, locked) JS call that starts a handler.
+    enum HandlerStart {
+        case invoked(JSValue)
+        case threw(String)
+        /// The runtime was torn down before the call could start.
+        case runtimeGone
+    }
+
+    /// Call one JS handler under the JS lock. Kept separate from awaiting its
+    /// result: the lock must never be held across an `await` (the native bridge
+    /// that settles the promise needs the same lock).
+    private func startHandler(_ call: (JSContext) -> HandlerStart) -> HandlerStart {
+        jsBox.withJS(call) ?? .runtimeGone
+    }
+
     /// Execute a registered slash command. Returns output string.
     /// Handlers may return a plain value or a Promise (awaited).
     func callCommand(_ command: RegisteredCommand, args: [String]) async -> (String, Bool) {
-        let jsArgs = JSValue(object: args, in: context)!
-        guard let result = command.handler.call(withArguments: [jsArgs]) else {
-            return (Self.thrownException(context), true)
+        let start = startHandler { context in
+            guard let jsArgs = JSValue(object: args, in: context) else { return .threw("Error: cannot bridge arguments") }
+            guard let called = command.handler.call(withArguments: [jsArgs]) else {
+                return .threw(Self.thrownException(context))
+            }
+            return .invoked(called)
         }
-        let outcome = await resolveJSResult(result)
+        let outcome: (String, Bool)
+        switch start {
+        case .threw(let message): outcome = (message, true)
+        case .runtimeGone: outcome = ("Error: extension runtime is gone", true)
+        case .invoked(let result): outcome = await resolveJSResult(result)
+        }
         ExtensionLogStore.shared.log(
             "command \(command.name) \(outcome.1 ? "failed" : "ok")",
             level: outcome.1 ? .warn : .info,
@@ -119,11 +160,23 @@ final class ExtensionJSRuntime {
     /// Handlers run synchronously on the JS thread; results are logged.
     func emitEvent(_ event: String, data: [String: Any]) {
         guard let handlers = eventHandlers[event], !handlers.isEmpty else { return }
-        let jsData = JSValue(object: data, in: context)!
-        for handler in handlers {
-            guard let result = handler.call(withArguments: [jsData]) else { continue }
-            if result.isString, let str = result.toString(), !str.isEmpty {
-                AppLogger(category: "ExtHook[\(event)]").info("\(str)")
+        // One locked section for the whole fan-out: the handlers share this
+        // context and must not interleave with another thread's JS.
+        jsBox.withJS { context in
+            guard let jsData = JSValue(object: data, in: context) else { return }
+            for handler in handlers {
+                // A hook that throws leaves `context.exception` set; if it is
+                // not cleared here the NEXT tool/command result would be
+                // reported as that stale error (see resolveJSResult).
+                context.exception = nil
+                guard let result = handler.call(withArguments: [jsData]) else {
+                    Self.logThrownException(context, what: "hook \(event)")
+                    context.exception = nil
+                    continue
+                }
+                if result.isString, let str = result.toString(), !str.isEmpty {
+                    AppLogger(category: "ExtHook[\(event)]").info("\(str)")
+                }
             }
         }
     }
@@ -132,11 +185,19 @@ final class ExtensionJSRuntime {
     /// Execute a registered tool. `args` is bridged to JS, result string
     /// returned (or an error string). Handlers may return a Promise (awaited).
     func callTool(_ tool: RegisteredTool, args: [String: Any]) async -> (String, Bool) {
-        let jsArgs = JSValue(object: args, in: context)!
-        guard let result = tool.execute.call(withArguments: [jsArgs]) else {
-            return (Self.thrownException(context), true)
+        let start = startHandler { context in
+            guard let jsArgs = JSValue(object: args, in: context) else { return .threw("Error: cannot bridge arguments") }
+            guard let called = tool.execute.call(withArguments: [jsArgs]) else {
+                return .threw(Self.thrownException(context))
+            }
+            return .invoked(called)
         }
-        let outcome = await resolveJSResult(result)
+        let outcome: (String, Bool)
+        switch start {
+        case .threw(let message): outcome = (message, true)
+        case .runtimeGone: outcome = ("Error: extension runtime is gone", true)
+        case .invoked(let result): outcome = await resolveJSResult(result)
+        }
         ExtensionLogStore.shared.log(
             "tool \(tool.name) \(outcome.1 ? "failed" : "ok")",
             level: outcome.1 ? .warn : .info,
@@ -211,11 +272,23 @@ final class ExtensionJSRuntime {
             if let sessionId, !sessionId.isEmpty { payload["sessionId"] = sessionId }
             if let bodyString { payload["body"] = bodyString }
 
-            guard let arg = JSValue(object: payload, in: context),
-                  let raw = interceptor.handler.call(withArguments: [arg]) else { continue }
+            // The handler call and the payload it mutates in place are one JS
+            // unit: take the lock for both (the await that may follow must NOT
+            // hold it).
+            enum Step { case invoked(JSValue, JSValue); case none }
+            let step: Step = jsBox.withJS { context in
+                guard let arg = JSValue(object: payload, in: context),
+                      let raw = interceptor.handler.call(withArguments: [arg]) else { return .none }
+                return .invoked(raw, arg)
+            } ?? .none
+            guard case let .invoked(raw, arg) = step else { continue }
 
+            // `isPromise` and both merge passes read JS values, so they run
+            // under the same lock (the await in between must not hold it).
             var patch: JSValue?
-            if isPromise(raw) {
+            var isPromiseResult = false
+            jsBox.withJS { _ in isPromiseResult = isPromise(raw) }
+            if isPromiseResult {
                 patch = await awaitPromiseValue(raw, timeout: 60)
             } else {
                 patch = raw
@@ -224,8 +297,10 @@ final class ExtensionJSRuntime {
             // an explicit return value takes precedence. The payload object
             // always carries the original url/method/body, so merging it after
             // the patch would clobber the patch's rewrites.
-            Self.merge(into: &urlString, method: &method, headers: &headers, body: &bodyString, bodyTouched: &bodyTouched, from: arg)
-            Self.merge(into: &urlString, method: &method, headers: &headers, body: &bodyString, bodyTouched: &bodyTouched, from: patch)
+            jsBox.withJS { _ in
+                Self.merge(into: &urlString, method: &method, headers: &headers, body: &bodyString, bodyTouched: &bodyTouched, from: arg)
+                Self.merge(into: &urlString, method: &method, headers: &headers, body: &bodyString, bodyTouched: &bodyTouched, from: patch)
+            }
         }
 
         var out = request
@@ -233,7 +308,11 @@ final class ExtensionJSRuntime {
         out.httpMethod = method
         out.allHTTPHeaderFields = headers
         if bodyTouched {
-            out.httpBody = bodyString?.data(using: .utf8)
+            // `Data(_: utf8)` never fails (invalid sequences become U+FFFD),
+            // which matters: `httpBody == nil` on the returned request has to
+            // mean exactly one thing — an interceptor cleared the body — so
+            // callers can distinguish a clear from a failed encode.
+            out.httpBody = bodyString.map { Data($0.utf8) }
         }
         return out
     }
@@ -291,23 +370,36 @@ final class ExtensionJSRuntime {
     /// Await a handler result: plain values convert directly, Promises are
     /// awaited via `then` (with timeout). Returns (output, isError).
     func resolveJSResult(_ value: JSValue, timeout: TimeInterval = 900) async -> (String, Bool) {
-        if let exception = context.exception {
-            context.exception = nil
-            return ("Error: \(exception.toString() ?? "unknown JS error")", true)
+        // `context.exception` is read and the promise handlers stringify JS
+        // values, so both go through the JS lock.
+        var staleException: String?
+        var promise: JSValue?
+        var plain: String?
+        jsBox.withJS { context in
+            if let exception = context.exception {
+                context.exception = nil
+                staleException = exception.toString() ?? "unknown JS error"
+                return
+            }
+            guard isPromise(value) else {
+                plain = (value.isUndefined || value.isNull) ? "" : Self.stringify(value)
+                return
+            }
+            promise = value
         }
-        guard isPromise(value) else {
-            if value.isUndefined || value.isNull { return ("", false) }
-            return (Self.stringify(value), false)
-        }
+        if let staleException { return ("Error: \(staleException)", true) }
+        if let plain { return (plain, false) }
+        guard let promiseValue = promise else { return ("Error: extension runtime is gone", true) }
         return await withCheckedContinuation { (cont: CheckedContinuation<(String, Bool), Never>) in
             let waiter = PromiseBox(cont)
+            let box = jsBox
             let onFulfilled: @convention(block) (JSValue) -> Void = { v in
-                waiter.resume((Self.stringify(v), false))
+                waiter.resume((box.withJS { _ in Self.stringify(v) } ?? "", false))
             }
             let onRejected: @convention(block) (JSValue) -> Void = { e in
-                waiter.resume((Self.stringify(e), true))
+                waiter.resume((box.withJS { _ in Self.stringify(e) } ?? "unknown error", true))
             }
-            _ = value.invokeMethod("then", withArguments: [onFulfilled, onRejected])
+            box.withJS { _ in _ = promiseValue.invokeMethod("then", withArguments: [onFulfilled, onRejected]) }
             DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout) {
                 waiter.resume(("Error: async handler timed out after \(Int(timeout))s", true))
             }
@@ -320,9 +412,10 @@ final class ExtensionJSRuntime {
     func awaitPromiseValue(_ promise: JSValue, timeout: TimeInterval) async -> JSValue? {
         await withCheckedContinuation { (cont: CheckedContinuation<JSValue?, Never>) in
             let waiter = ValueBox(cont)
+            let box = jsBox
             let onFulfilled: @convention(block) (JSValue) -> Void = { v in waiter.resume(v) }
             let onRejected: @convention(block) (JSValue) -> Void = { _ in waiter.resume(nil) }
-            _ = promise.invokeMethod("then", withArguments: [onFulfilled, onRejected])
+            box.withJS { _ in _ = promise.invokeMethod("then", withArguments: [onFulfilled, onRejected]) }
             DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout) {
                 waiter.resume(nil)
             }
@@ -341,6 +434,14 @@ final class ExtensionJSRuntime {
             return "Error: \(exception.toString() ?? "unknown JS error")"
         }
         return "Error: handler execution failed"
+    }
+
+    /// Log a handler that threw. The caller clears `context.exception` — left
+    /// set, it would be picked up by the next tool/command as if THAT one had
+    /// failed (see `resolveJSResult`).
+    private static func logThrownException(_ context: JSContext, what: String) {
+        guard let exception = context.exception else { return }
+        AppLogger(category: "ExtensionJSRuntime").warning("\(what) threw: \(exception.toString() ?? "unknown JS error")")
     }
 
     /// Convert a JS value to a display string: strings verbatim, objects and
@@ -490,104 +591,106 @@ final class ExtensionJSRuntime {
         }
     }
 
-    private func makeShellBridge() -> @convention(block) (JSValue, JSValue) -> JSValue {
+    private func makeShellBridge() -> @convention(block) (JSValue, JSValue) -> JSValue? {
         let bridge = self.bridge
-        let context = self.context
+        let box = self.jsBox
         return { cmdVal, optsVal in
             let cmd = cmdVal.toString() ?? ""
-            let timeout = optsVal.objectForKeyedSubscript("timeout").toInt32() > 0
-                ? Int(optsVal.objectForKeyedSubscript("timeout").toInt32()) : 900
-            let promise = JSValue(newPromiseIn: context) { resolve, reject in
-                Task {
-                    let (out, isErr) = await bridge.shell(cmd, ["timeout": timeout])
-                    if isErr {
-                        reject?.call(withArguments: [out])
-                    } else {
-                        resolve?.call(withArguments: [out])
+            let timeoutRaw = optsVal.objectForKeyedSubscript("timeout")?.toInt32() ?? 0
+            let timeout = timeoutRaw > 0 ? Int(timeoutRaw) : 900
+            return box.withJS { context in
+                JSValue(newPromiseIn: context) { resolve, reject in
+                    Task {
+                        let (out, isErr) = await bridge.shell(cmd, ["timeout": timeout])
+                        box.settle(resolve, reject, out, isError: isErr)
                     }
                 }
-            }
-            return promise ?? JSValue(undefinedIn: context)
+            } ?? nil
         }
     }
 
-    private func makeFileReadBridge() -> @convention(block) (JSValue) -> JSValue {
+    private func makeFileReadBridge() -> @convention(block) (JSValue) -> JSValue? {
         let bridge = self.bridge
-        let context = self.context
+        let box = self.jsBox
         return { pathVal in
             let path = pathVal.toString() ?? ""
-            let promise = JSValue(newPromiseIn: context) { resolve, reject in
-                Task {
-                    let (out, isErr) = await bridge.fileRead(path)
-                    if isErr { reject?.call(withArguments: [out]) } else { resolve?.call(withArguments: [out]) }
+            return box.withJS { context in
+                JSValue(newPromiseIn: context) { resolve, reject in
+                    Task {
+                        let (out, isErr) = await bridge.fileRead(path)
+                        box.settle(resolve, reject, out, isError: isErr)
+                    }
                 }
-            }
-            return promise ?? JSValue(undefinedIn: context)
+            } ?? nil
         }
     }
 
-    private func makeFileWriteBridge() -> @convention(block) (JSValue, JSValue) -> JSValue {
+    private func makeFileWriteBridge() -> @convention(block) (JSValue, JSValue) -> JSValue? {
         let bridge = self.bridge
-        let context = self.context
+        let box = self.jsBox
         return { pathVal, contentVal in
             let path = pathVal.toString() ?? ""
             let content = contentVal.toString() ?? ""
-            let promise = JSValue(newPromiseIn: context) { resolve, reject in
-                Task {
-                    let (out, isErr) = await bridge.fileWrite(path, content, false)
-                    if isErr { reject?.call(withArguments: [out]) } else { resolve?.call(withArguments: [out]) }
+            return box.withJS { context in
+                JSValue(newPromiseIn: context) { resolve, reject in
+                    Task {
+                        let (out, isErr) = await bridge.fileWrite(path, content, false)
+                        box.settle(resolve, reject, out, isError: isErr)
+                    }
                 }
-            }
-            return promise ?? JSValue(undefinedIn: context)
+            } ?? nil
         }
     }
 
-    private func makeFileListBridge() -> @convention(block) (JSValue) -> JSValue {
+    private func makeFileListBridge() -> @convention(block) (JSValue) -> JSValue? {
         let bridge = self.bridge
-        let context = self.context
+        let box = self.jsBox
         return { pathVal in
             let path = pathVal.toString() ?? ""
-            let promise = JSValue(newPromiseIn: context) { resolve, reject in
-                Task {
-                    let (out, isErr) = await bridge.fileList(path)
-                    if isErr { reject?.call(withArguments: [out]) } else { resolve?.call(withArguments: [out]) }
+            return box.withJS { context in
+                JSValue(newPromiseIn: context) { resolve, reject in
+                    Task {
+                        let (out, isErr) = await bridge.fileList(path)
+                        box.settle(resolve, reject, out, isError: isErr)
+                    }
                 }
-            }
-            return promise ?? JSValue(undefinedIn: context)
+            } ?? nil
         }
     }
 
-    private func makeFileDeleteBridge() -> @convention(block) (JSValue) -> JSValue {
+    private func makeFileDeleteBridge() -> @convention(block) (JSValue) -> JSValue? {
         let bridge = self.bridge
-        let context = self.context
+        let box = self.jsBox
         return { pathVal in
             let path = pathVal.toString() ?? ""
-            let promise = JSValue(newPromiseIn: context) { resolve, reject in
-                Task {
-                    let (out, isErr) = await bridge.fileDelete(path)
-                    if isErr { reject?.call(withArguments: [out]) } else { resolve?.call(withArguments: [out]) }
+            return box.withJS { context in
+                JSValue(newPromiseIn: context) { resolve, reject in
+                    Task {
+                        let (out, isErr) = await bridge.fileDelete(path)
+                        box.settle(resolve, reject, out, isError: isErr)
+                    }
                 }
-            }
-            return promise ?? JSValue(undefinedIn: context)
+            } ?? nil
         }
     }
 
-    private func makeOffloadBridge() -> @convention(block) (JSValue, JSValue) -> JSValue {
+    private func makeOffloadBridge() -> @convention(block) (JSValue, JSValue) -> JSValue? {
         // Reserved surface: routes to the shell bridge (apple-* CLIs run in
         // the sandbox like any other command). Returns a promise.
         let bridge = self.bridge
-        let context = self.context
+        let box = self.jsBox
         return { nameVal, argsVal in
             let name = nameVal.toString() ?? ""
             let args = argsVal.toString() ?? ""
             let cmd = "\(name) \(args)".trimmingCharacters(in: .whitespaces)
-            let promise = JSValue(newPromiseIn: context) { resolve, reject in
-                Task {
-                    let (out, isErr) = await bridge.shell(cmd, [:])
-                    if isErr { reject?.call(withArguments: [out]) } else { resolve?.call(withArguments: [out]) }
+            return box.withJS { context in
+                JSValue(newPromiseIn: context) { resolve, reject in
+                    Task {
+                        let (out, isErr) = await bridge.shell(cmd, [:])
+                        box.settle(resolve, reject, out, isError: isErr)
+                    }
                 }
-            }
-            return promise ?? JSValue(undefinedIn: context)
+            } ?? nil
         }
     }
 
@@ -600,45 +703,57 @@ final class ExtensionJSRuntime {
         }
     }
 
-    private func makeSettingsGetBridge() -> @convention(block) (JSValue) -> JSValue {
+    private func makeSettingsGetBridge() -> @convention(block) (JSValue) -> JSValue? {
         let bridge = self.bridge
         let extID = self.extensionID
+        let box = self.jsBox
         return { keyVal in
             let key = keyVal.toString() ?? ""
             let value = bridge.settingsGet(extID, key)
-            if let value {
-                return JSValue(object: value, in: self.context) ?? JSValue(undefinedIn: self.context)
-            }
-            return JSValue(undefinedIn: self.context)
+            return box.withJS { context in
+                value.flatMap { JSValue(object: $0, in: context) } ?? JSValue(undefinedIn: context)
+            } ?? nil
         }
     }
 
+    /// `minis.api.settings.set(key, value)`.
+    ///
+    /// A missing value (undefined/null) is a NO-OP, deliberately: `toObject()`
+    /// returns nil for both, and a nil `Any` reaching `UserDefaults.set` is a
+    /// boxed `Optional<Any>.none`, which Foundation rejects with an
+    /// NSInvalidArgumentException — an uncaught ObjC exception inside JS
+    /// evaluation, i.e. an app crash triggered by an extension writing
+    /// `minis.api.settings.set("key")` or by passing an undefined variable.
     private func makeSettingsSetBridge() -> @convention(block) (JSValue, JSValue) -> Void {
         let bridge = self.bridge
         let extID = self.extensionID
         return { keyVal, valueVal in
             let key = keyVal.toString() ?? ""
-            let value = valueVal.toObject()
-            bridge.settingsSet(extID, key, value as Any)
+            guard !key.isEmpty, let value = valueVal.toObject() else { return }
+            bridge.settingsSet(extID, key, value)
         }
     }
 
-    private func makeSettingsAllBridge() -> @convention(block) () -> JSValue {
+    private func makeSettingsAllBridge() -> @convention(block) () -> JSValue? {
         let bridge = self.bridge
         let extID = self.extensionID
+        let box = self.jsBox
         return {
             let all = bridge.settingsAll(extID)
-            return JSValue(object: all, in: self.context) ?? JSValue(undefinedIn: self.context)
+            return box.withJS { context in JSValue(object: all, in: context) } ?? nil
         }
     }
 
-    private func makeStoreGetBridge() -> @convention(block) (JSValue) -> JSValue {
+    private func makeStoreGetBridge() -> @convention(block) (JSValue) -> JSValue? {
         let extID = self.extensionID
+        let box = self.jsBox
         return { keyVal in
             let key = keyVal.toString() ?? ""
             let fullKey = "ext.kv.\(extID).\(key)"
             let value = UserDefaults.standard.string(forKey: fullKey)
-            return JSValue(object: value as Any, in: self.context)!
+            return box.withJS { context in
+                JSValue(object: value as Any, in: context)
+            } ?? nil
         }
     }
 
@@ -655,83 +770,87 @@ final class ExtensionJSRuntime {
         }
     }
 
-    private func makeHTTPBridge() -> @convention(block) (JSValue, JSValue) -> JSValue {
-        let context = self.context
+    private func makeHTTPBridge() -> @convention(block) (JSValue, JSValue) -> JSValue? {
+        let box = self.jsBox
         let bridge = self.bridge
         return { urlVal, optsVal in
             let urlStr = urlVal.toString() ?? ""
             // Network permission gate (declared in manifest).
             guard bridge.hasPermission("network") else {
-                let promise = JSValue(newPromiseIn: context) { _, reject in
-                    reject?.call(withArguments: ["Error: extension needs 'network' permission (declare it in manifest.json)"])
-                }
-                return promise ?? JSValue(undefinedIn: context)
+                return box.withJS { context in
+                    JSValue(newPromiseIn: context) { _, reject in
+                        reject?.call(withArguments: ["Error: extension needs 'network' permission (declare it in manifest.json)"])
+                    }
+                } ?? nil
             }
             let method = (optsVal.objectForKeyedSubscript("method").toString() ?? "GET").uppercased()
             let body = optsVal.objectForKeyedSubscript("body").toString()
             let headersVal = optsVal.objectForKeyedSubscript("headers")
             let headers = (headersVal?.toObject() as? [String: Any]) ?? [:]
-            let promise = JSValue(newPromiseIn: context) { resolve, reject in
-                guard let url = URL(string: urlStr) else {
-                    reject?.call(withArguments: ["Error: invalid URL"])
-                    return
-                }
-                var request = URLRequest(url: url)
-                request.httpMethod = method
-                for (key, value) in headers {
-                    if let s = value as? String {
-                        request.setValue(s, forHTTPHeaderField: key)
-                    } else if let n = value as? NSNumber {
-                        request.setValue(n.stringValue, forHTTPHeaderField: key)
+            return box.withJS { context in
+                JSValue(newPromiseIn: context) { resolve, reject in
+                    guard let url = URL(string: urlStr) else {
+                        reject?.call(withArguments: ["Error: invalid URL"])
+                        return
                     }
-                }
-                if let body, !body.isEmpty {
-                    request.httpBody = body.data(using: .utf8)
-                }
-                Task {
-                    do {
-                        let (data, response) = try await URLSession.shared.data(for: request)
-                        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-                        let text = String(data: data, encoding: .utf8) ?? ""
-                        var responseHeaders: [String: String] = [:]
-                        if let http = response as? HTTPURLResponse {
-                            for (key, value) in http.allHeaderFields {
-                                responseHeaders["\(key)"] = "\(value)"
-                            }
+                    var request = URLRequest(url: url)
+                    request.httpMethod = method
+                    for (key, value) in headers {
+                        if let s = value as? String {
+                            request.setValue(s, forHTTPHeaderField: key)
+                        } else if let n = value as? NSNumber {
+                            request.setValue(n.stringValue, forHTTPHeaderField: key)
                         }
-                        let result: [String: Any] = ["status": status, "headers": responseHeaders, "body": text]
-                        resolve?.call(withArguments: [JSValue(object: result, in: context)!])
-                    } catch {
-                        reject?.call(withArguments: [error.localizedDescription])
+                    }
+                    if let body, !body.isEmpty {
+                        request.httpBody = body.data(using: .utf8)
+                    }
+                    Task {
+                        do {
+                            let (data, response) = try await URLSession.shared.data(for: request)
+                            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                            let text = String(data: data, encoding: .utf8) ?? ""
+                            var responseHeaders: [String: String] = [:]
+                            if let http = response as? HTTPURLResponse {
+                                for (key, value) in http.allHeaderFields {
+                                    responseHeaders["\(key)"] = "\(value)"
+                                }
+                            }
+                            let result: [String: Any] = ["status": status, "headers": responseHeaders, "body": text]
+                            box.settle(resolve, reject, result, isError: false)
+                        } catch {
+                            box.settle(resolve, reject, error.localizedDescription, isError: true)
+                        }
                     }
                 }
-            }
-            return promise ?? JSValue(undefinedIn: context)
+            } ?? nil
         }
     }
 
-    private func makePermissionBridge() -> @convention(block) (JSValue) -> JSValue {
+    private func makePermissionBridge() -> @convention(block) (JSValue) -> JSValue? {
         let bridge = self.bridge
-        let context = self.context
+        let box = self.jsBox
         return { kindVal in
             let kind = kindVal.toString() ?? ""
-            let promise = JSValue(newPromiseIn: context) { resolve, _ in
-                Task {
-                    let granted = await bridge.requestPermission(kind)
-                    resolve?.call(withArguments: [granted])
+            return box.withJS { context in
+                JSValue(newPromiseIn: context) { resolve, _ in
+                    Task {
+                        let granted = await bridge.requestPermission(kind)
+                        box.settle(resolve, nil, granted, isError: false)
+                    }
                 }
-            }
-            return promise ?? JSValue(undefinedIn: context)
+            } ?? nil
         }
     }
 
-    private func makeEventBridge() -> @convention(block) (JSValue, JSValue) -> JSValue {
+    private func makeEventBridge() -> @convention(block) (JSValue, JSValue) -> JSValue? {
         let bridge = self.bridge
+        let box = self.jsBox
         return { nameVal, dataVal in
             let name = nameVal.toString() ?? ""
             let data = dataVal.toObject() as? [String: Any] ?? [:]
             bridge.emitEvent(name, data)
-            return JSValue(undefinedIn: self.context)
+            return box.withJS { context in JSValue(undefinedIn: context) } ?? nil
         }
     }
 
@@ -739,10 +858,9 @@ final class ExtensionJSRuntime {
 
     /// `minis.api.request.intercept(fn)` or
     /// `minis.api.request.intercept({name, handler})` → registration id.
-    private func makeInterceptBridge() -> @convention(block) (JSValue) -> JSValue {
-        let context = self.context
+    private func makeInterceptBridge() -> @convention(block) (JSValue) -> JSValue? {
+        let box = self.jsBox
         return { [weak self] defVal in
-            guard let self else { return JSValue(undefinedIn: context) }
             var name = ""
             var handler: JSValue?
             if defVal.isObject {
@@ -754,13 +872,13 @@ final class ExtensionJSRuntime {
                     handler = defVal
                 }
             }
-            guard let handler, !handler.isUndefined else {
-                return JSValue(undefinedIn: context)
+            guard let handler, !handler.isUndefined, let self else {
+                return box.withJS { context in JSValue(undefinedIn: context) } ?? nil
             }
             let id = "ri-" + String(UUID().uuidString.prefix(8))
             self.requestInterceptors.append(RequestInterceptor(id: id, name: name, handler: handler))
             ExtensionRegistry.shared.refreshInterceptorFlag()
-            return JSValue(object: id, in: context) ?? JSValue(undefinedIn: context)
+            return box.withJS { context in JSValue(object: id, in: context) } ?? nil
         }
     }
 
@@ -777,6 +895,63 @@ final class ExtensionJSRuntime {
         return { [weak self] in
             self?.requestInterceptors.removeAll()
             ExtensionRegistry.shared.refreshInterceptorFlag()
+        }
+    }
+}
+
+// MARK: - JS context box (weak reference + access lock)
+
+/// Holds a `JSContext` weakly, plus the lock that serialises every access to it.
+///
+/// Two things are being solved here, both caused by the way the runtime hands
+/// native blocks to JavaScriptCore:
+///
+/// 1. **Retain cycle.** The blocks are installed as globals on the context, so
+///    a block that captures the context strongly gives
+///    `context → global object → block → context`. The runtime (and therefore
+///    the context) is dropped on every reload/uninstall/toggle, so without the
+///    weak reference each of those leaks one JSContext and its entire JS heap.
+///
+/// 2. **Concurrency.** JavaScriptCore accepts any thread but not two at once.
+///    The runtime's own entry points run on whatever executor called them
+///    (the agent loop can dispatch several extension tools in parallel), and
+///    the native side of a bridge settles its promise from a detached Task —
+///    so two threads can otherwise reach the same context concurrently.
+///
+/// The lock is held only across synchronous JS work and never across an
+/// `await`: the awaited work (a shell command, a permission dialog) suspends
+/// without holding it, and settles the promise through `settle`.
+final class JSContextBox {
+    private weak var context: JSContext?
+    private let lock = NSRecursiveLock()
+
+    init(_ context: JSContext) { self.context = context }
+
+    /// Run `body` with the context, serialised against every other JS touch.
+    /// Returns nil once the runtime has been torn down.
+    @discardableResult
+    func withJS<T>(_ body: (JSContext) -> T) -> T? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let context else { return nil }
+        return body(context)
+    }
+
+    /// `withJS` for closures that already return an `Optional`, flattened so
+    /// callers do not have to write `?? nil`.
+    func withJSValue(_ body: (JSContext) -> JSValue?) -> JSValue? {
+        withJS(body) ?? nil
+    }
+
+    /// Settle a JS promise from whatever executor the native work finished on,
+    /// under the same lock as every other JS touch.
+    func settle(_ resolve: JSValue?, _ reject: JSValue?, _ value: Any, isError: Bool) {
+        withJS { _ in
+            if isError {
+                reject?.call(withArguments: [value])
+            } else {
+                resolve?.call(withArguments: [value])
+            }
         }
     }
 }

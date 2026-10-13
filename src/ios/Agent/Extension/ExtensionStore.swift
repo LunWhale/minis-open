@@ -109,14 +109,14 @@ actor ExtensionStore {
         for record in list() where BuiltinExtension.isBuiltin(record.id) {
             UserDefaults.standard.set(record.enabled,
                                       forKey: ExtensionRegistry.builtinSwitchKey(record.id))
-            // Descriptions are only written at registration, so a reworded
-            // summary would otherwise stay stale on every existing install
-            // forever. Built-in descriptions are not user-editable, so
-            // refreshing them on launch is safe (single quotes doubled for SQL).
-            let summary = BuiltinExtension.summary(id: record.id)
-            if record.description != summary {
-                exec("UPDATE extensions SET description = '\(summary.replacingOccurrences(of: "'", with: "''"))' WHERE id = '\(record.id)'")
-            }
+            // No description refresh here: the `extensions` table has no
+            // `description` column. `list()` re-derives a built-in's
+            // description from BuiltinExtension.summary(id:) on every read, so
+            // a reworded summary is live immediately and there is nothing to
+            // write back. (This used to run `UPDATE extensions SET
+            // description = …`, which could never fire — the compared value is
+            // that same derived summary — and would have failed on the missing
+            // column if it ever had.)
         }
 
         let live = BuiltinExtension.all.map { "'\($0)'" }.joined(separator: ",")
@@ -230,7 +230,10 @@ actor ExtensionStore {
         // Remove bundle dir.
         try? FileManager.default.removeItem(at: extensionsDir.appendingPathComponent(id, isDirectory: true))
         // Drop persisted first-use permission grants so a reinstall re-asks.
-        PermissionGate.reset(extensionID: id)
+        // The sibling ids are passed so an id that is a dot-prefix of another
+        // (`com.foo` vs `com.foo.bar`) cannot clear a live extension's grants.
+        let siblingIDs = (try? list().map(\.id)) ?? []
+        PermissionGate.reset(extensionID: id, otherExtensionIDs: siblingIDs)
     }
 
     /// Path of a bundled asset within an extension.

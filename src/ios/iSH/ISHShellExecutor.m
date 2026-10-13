@@ -37,6 +37,32 @@ static const NSTimeInterval ISHShellExecutorSweepInterval = 60.0;
 /// "stranded" — it only sees an entry that has been there a long time.
 static const NSTimeInterval ISHShellExecutorStaleContextAge = 7200.0; // 2h
 
+/// Abandon a command whose guest task exists but was never started.
+///
+/// Every failure between `become_new_init_child()` and `task_start()` used to
+/// `return` with the task still linked into the pid table and its dup'd guest
+/// fds still open. `construct_task` had already claimed a pid slot, and nothing
+/// ever released it: the pid table is a fixed 32768 slots handed out by linear
+/// scan, so repeated failures permanently consume slots, and the `struct task`
+/// (plus the mm and file table hanging off it) leaks with each one. The dup'd
+/// write ends also keep the output pipes open, which is what strands a reader.
+///
+/// `task_destroy` under `pids_lock` is the same recovery `kernel/fork.c` uses
+/// when it abandons a task it created. The task has never been started here, so
+/// no exit path will try to finalise it as well.
+static void ISHAbandonUnstartedTask(struct task *task,
+                                    int stdinRealFd,
+                                    int stdoutRealFd,
+                                    int stderrRealFd) {
+    if (stdinRealFd >= 0) close(stdinRealFd);
+    if (stdoutRealFd >= 0) close(stdoutRealFd);
+    if (stderrRealFd >= 0) close(stderrRealFd);
+    if (task == NULL) return;
+    lock(&pids_lock);
+    task_destroy(task);
+    unlock(&pids_lock);
+}
+
 #pragma mark - Result Implementation
 
 @interface ISHShellExecutionResult ()
@@ -377,6 +403,9 @@ static int32_t _sweptContexts = 0;
     }
 
     struct task *task = current;
+    // Fds this attempt owns, so an abort below can hand them back. The guest
+    // task itself is reclaimed by ISHAbandonUnstartedTask.
+    int stdinRealFd = -1, stdoutRealFd = -1, stderrRealFd = -1;
 
     // Stamp the new task group with the caller-provided fs_context so the
     // fakefs path-translate hook can route this task's file operations
@@ -393,6 +422,7 @@ static int32_t _sweptContexts = 0;
             NSLog(@"ISHShellExecutor[stdin]: pipe() failed: %s", strerror(errno));
             current = saved_current;
             [ctx cleanup];
+            ISHAbandonUnstartedTask(task, -1, -1, -1);
             return ISHShellExecutorErrorProcessCreationFailed;
         }
         NSLog(@"ISHShellExecutor[stdin]: pipe created (read=%d, write=%d), stdinData=%lu bytes",
@@ -408,9 +438,11 @@ static int32_t _sweptContexts = 0;
             if (stdinData) { close(stdinPipe[0]); close(stdinPipe[1]); }
             current = saved_current;
             [ctx cleanup];
+            ISHAbandonUnstartedTask(task, -1, -1, -1);
             return ISHShellExecutorErrorProcessCreationFailed;
         }
         stdin_fd->real_fd = real_fd;
+        stdinRealFd = real_fd;
         NSLog(@"ISHShellExecutor[stdin]: fd0 real_fd=%d (source=%s)", stdin_fd->real_fd, stdinData ? "pipe" : "/dev/null");
         task->files->files[0] = stdin_fd;
     }
@@ -427,9 +459,11 @@ static int32_t _sweptContexts = 0;
             NSLog(@"ISHShellExecutor[stdout]: dup() failed: %s", strerror(errno));
             current = saved_current;
             [ctx cleanup];
+            ISHAbandonUnstartedTask(task, stdinRealFd, -1, -1);
             return ISHShellExecutorErrorProcessCreationFailed;
         }
         stdout_fd->real_fd = real_fd;
+        stdoutRealFd = real_fd;
         task->files->files[1] = stdout_fd;
     }
 
@@ -441,9 +475,11 @@ static int32_t _sweptContexts = 0;
             NSLog(@"ISHShellExecutor[stderr]: dup() failed: %s", strerror(errno));
             current = saved_current;
             [ctx cleanup];
+            ISHAbandonUnstartedTask(task, stdinRealFd, stdoutRealFd, -1);
             return ISHShellExecutorErrorProcessCreationFailed;
         }
         stderr_fd->real_fd = real_fd;
+        stderrRealFd = real_fd;
         task->files->files[2] = stderr_fd;
     }
 
@@ -488,7 +524,16 @@ static int32_t _sweptContexts = 0;
         for (NSString *arg in arguments) {
             const char *str = arg.UTF8String;
             len = strlen(str) + 1;
-            if (pos + len >= sizeof(argv_buf) - 1) break;
+            if (pos + len >= sizeof(argv_buf) - 1) {
+                // Fail rather than `break`: silently dropping the remaining
+                // arguments would run a DIFFERENT command than the caller
+                // asked for, which is worse than refusing.
+                current = saved_current;
+                [ctx cleanup];
+                NSLog(@"ISHShellExecutor: argv too long (node argv)");
+                ISHAbandonUnstartedTask(task, stdinRealFd, stdoutRealFd, stderrRealFd);
+                return ISHShellExecutorErrorExecFailed;
+            }
             memcpy(argv_buf + pos, str, len);
             pos += len;
             exec_argc++;
@@ -505,6 +550,7 @@ static int32_t _sweptContexts = 0;
                 current = saved_current;
                 [ctx cleanup];
                 NSLog(@"ISHShellExecutor: argv too long");
+                ISHAbandonUnstartedTask(task, stdinRealFd, stdoutRealFd, stderrRealFd);
                 return ISHShellExecutorErrorExecFailed;
             }
             memcpy(argv_buf + pos, str, len);
@@ -593,6 +639,7 @@ static int32_t _sweptContexts = 0;
         current = saved_current;
         [ctx cleanup];
         NSLog(@"ISHShellExecutor: do_execve failed: %d", err);
+        ISHAbandonUnstartedTask(task, stdinRealFd, stdoutRealFd, stderrRealFd);
         return ISHShellExecutorErrorExecFailed;
     }
 
@@ -622,7 +669,19 @@ static int32_t _sweptContexts = 0;
             while (remaining > 0) {
                 ssize_t written = write(writeFd, bytes, remaining);
                 if (written <= 0) {
-                    NSLog(@"ISHShellExecutor[stdin]: write returned %zd (errno=%d) for pid=%d, stopping", written, errno, guestPid);
+                    // EPIPE = the guest closed its read end before we finished
+                    // writing. That is the normal outcome for a command that
+                    // exits without draining stdin (and for the timeout path,
+                    // which kills the process group), so it is reported as an
+                    // early exit rather than an error. SIGPIPE is ignored
+                    // process-wide — see AppDelegate — so this branch is
+                    // reached instead of the process being terminated.
+                    if (written < 0 && errno == EPIPE) {
+                        NSLog(@"ISHShellExecutor[stdin]: guest closed stdin after %zu/%lu bytes for pid=%d",
+                              totalWritten, (unsigned long)dataToWrite.length, guestPid);
+                    } else {
+                        NSLog(@"ISHShellExecutor[stdin]: write returned %zd (errno=%d) for pid=%d, stopping", written, errno, guestPid);
+                    }
                     break;
                 }
                 bytes += written;
@@ -772,7 +831,13 @@ static BOOL ISHTaskIsDescendantOf(struct task *t, pid_t_ rootPid) {
         if (parent == NULL) return NO;
         pid_t_ parentPid = parent->pid;
         if (parentPid == 0 || parentPid >= MAX_PID) return NO;
-        if (pid_get_task((dword_t)parentPid) != parent) return NO;
+        // `pid_get_task_zombie`, not `pid_get_task`: the intent above is the raw
+        // pid-table slot (NULL once `task_destroy` cleared it, a different
+        // pointer if the slot was recycled). `pid_get_task` additionally filters
+        // out ZOMBIES, so a zombie ancestor — slot and struct both still valid —
+        // would end the walk one generation early and leave its live
+        // descendants unkilled by the ancestry arm.
+        if (pid_get_task_zombie((dword_t)parentPid) != parent) return NO;
         t = parent;
         hops++;
     }
@@ -804,7 +869,12 @@ static BOOL ISHTaskIsDescendantOf(struct task *t, pid_t_ rootPid) {
     struct task *rootTask = pid_get_task((dword_t)pid);
     pid_t_ pgid = 0;
     if (rootTask) {
-        pgid = rootTask->group->pgid;
+        // Guard the group pointer for the same window the sweep below guards
+        // `t->group`: a task reachable from the pid table can have a NULL group
+        // while `task_destroy` is zeroing it.
+        if (rootTask->group != NULL) {
+            pgid = rootTask->group->pgid;
+        }
         for (int i = 2; i < MAX_PID; i++) {
             struct task *t = pid_get_task(i);
             if (!t) continue;

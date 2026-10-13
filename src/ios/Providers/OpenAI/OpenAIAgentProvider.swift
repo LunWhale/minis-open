@@ -526,6 +526,14 @@ final class OpenAIAgentProvider: AgentProvider {
                         let preview = diagFirstLines.joined(separator: " | ")
                         logger.warning("[OpenAIStream] empty stream diagnostic — totalLines=\(diagLineCount) dataLines=\(diagDataLineCount) firstLines=\(preview)")
                     }
+                    // Flush the think parser's tail before closing the stream.
+                    // It is otherwise flushed only on [DONE] or a non-empty
+                    // finish_reason, so a provider that just closes the SSE stream
+                    // — the very case the empty-stream diagnostic above exists for —
+                    // dropped whatever the parser still held: leading whitespace, a
+                    // partial "<thin", or up to 8 buffered thinking characters.
+                    // `finishTurn()` is idempotent.
+                    emitParsed(thinkParser.finishTurn())
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: self.provider.mapError(error))

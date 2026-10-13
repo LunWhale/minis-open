@@ -213,17 +213,24 @@ do {
     check("claude-haiku-4-5 is not caught either",
           declaredMaxLevel(for: "claude-haiku-4-5") == nil)
 
-    // The catalog really is missing claude-opus-5-5 — if a future snapshot adds
+    // TRIPWIRE FIRED (this is what this line was for): the vendored catalog
+    // snapshot used to lack this id, which is why the ceiling rule above is
+    // load-bearing. It is present now, so the rule is belt-and-braces — the
+    // enrichment path would supply the same ceiling on its own. Kept as an
+    // assertion of the CURRENT state, so a future snapshot that drops the id
+    // again is visible here rather than only as a wrong ceiling in the UI.
+    //
+    // (Was: "The catalog really is missingclaude-opus-5-5 — if a future snapshot adds
     // it, the rule becomes belt-and-braces rather than load-bearing, and this
-    // line is where that shows up.
+    // line is where that shows up.")
     let catalogJSON = (try? String(contentsOf: URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         .appendingPathComponent("Resources/models-dev-api.json"), encoding: .utf8)) ?? ""
     if catalogJSON.isEmpty {
         print("  ⏭  models-dev-api.json not readable")
     } else {
-        check("models-dev-api.json still lacks claude-opus-5-5",
-              !catalogJSON.contains("\"claude-opus-5-5\""))
+        check("models-dev-api.json now carries claude-opus-5-5",
+              catalogJSON.contains("\"claude-opus-5-5\""))
         check("…while carrying claude-opus-5 (so the comparison is meaningful)",
               catalogJSON.contains("\"claude-opus-5\""))
     }

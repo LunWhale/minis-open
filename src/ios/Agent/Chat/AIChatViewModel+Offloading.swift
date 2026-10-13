@@ -667,7 +667,7 @@ extension AIChatViewModel {
             var linuxPath = ""
 
             switch part {
-            case .toolResult(let id, let name, let content, let isError, let imgData, let imgMime, _, _, _):
+            case .toolResult(let id, let name, let content, let isError, let imgData, let imgMime, let pageURL, _, let isReadback):
                 // Offload text content
                 if content.count > 500 {
                     linuxPath = offloadContextContent(content, toolId: id, toolName: name)
@@ -680,7 +680,17 @@ extension AIChatViewModel {
 
                 let stub = "\(Self.offloadedStubPrefix) Content (~\(candidate.tokens) tokens, \(candidate.bytes) bytes) saved to: \(linuxPath)\nUse file_read tool to retrieve if needed."
                 agentHistory[candidate.msgIdx].parts[candidate.partIdx] = .toolResult(
-                    id: id, name: name, content: stub, isError: isError
+                    id: id, name: name, content: stub, isError: isError,
+                    pageURL: pageURL,
+                    // [T-offload-readback-loop] Carry the tag across the
+                    // rebuild, like every other rebuild site does. The scanner
+                    // already excludes read-backs from the candidate list, so
+                    // this is belt-and-braces — but a rebuild that drops the
+                    // tag is exactly how a reminder laundered one before, and
+                    // the invariant is free to keep. `imageLinuxPath` is nil
+                    // because the image bytes (if any) just moved to the
+                    // offload path named in the stub.
+                    imageLinuxPath: nil, isOffloadReadback: isReadback
                 )
 
             case .toolUse(let id, let name, let input, _):

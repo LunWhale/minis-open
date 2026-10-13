@@ -26,6 +26,21 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        // [T-ish-stdin-sigpipe] Ignore SIGPIPE process-wide.
+        //
+        // The sandbox feeds a command's stdin from a background queue
+        // (ISHShellExecutor). When the guest closes the read end first — routine
+        // for a command that exits without draining stdin, and guaranteed on the
+        // timeout path, which kills the process group — the write raises SIGPIPE,
+        // whose DEFAULT disposition terminates the whole process. That is an app
+        // crash caused by an ordinary sandbox command.
+        //
+        // Nothing relies on the default: the writer treats a failed write as an
+        // early exit (it checks EPIPE explicitly), and FFmpegOffload saves and
+        // restores its own disposition around its own call, so ignoring the
+        // signal here does not change its behaviour.
+        signal(SIGPIPE, SIG_IGN)
+
         if #available(iOS 17.0, *) {
             CLBackgroundActivitySession().invalidate()
         }

@@ -48,10 +48,17 @@ final class ExtensionSettingsStore {
         defaults.set(value, forKey: "\(domain).\(key)")
     }
 
-    func reset(extensionID: String) {
+    /// Drop every stored value for the extension's DECLARED setting keys.
+    ///
+    /// Removed by exact key rather than by prefix: extension ids may contain
+    /// dots (`com.foo` and `com.foo.bar` are both valid), so a prefix sweep on
+    /// `minis.extsettings.com.foo.` would also wipe the settings of
+    /// `com.foo.bar`. Only declared keys are ever written (both the settings
+    /// UI and `minis.api.settings.set` are gated on the manifest), so this
+    /// covers the whole writable set.
+    func reset(extensionID: String, declaredKeys: [String]) {
         let domain = domain(for: extensionID)
-        let keys = defaults.dictionaryRepresentation().keys.filter { $0.hasPrefix("\(domain).") }
-        for k in keys { defaults.removeObject(forKey: k) }
+        for key in declaredKeys { defaults.removeObject(forKey: "\(domain).\(key)") }
     }
 
     /// Remove a single key override so the declared default takes effect

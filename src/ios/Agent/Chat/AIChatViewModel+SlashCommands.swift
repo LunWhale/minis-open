@@ -183,7 +183,10 @@ extension AIChatViewModel {
             .map { cmd -> SlashCommand in
             if cmd.id == "memory" {
                 let status = memoryEnabled ? "on" : "off"
-                return SlashCommand(id: cmd.id, icon: cmd.icon, title: cmd.title, subtitle: "Writes \(status) — tap to toggle")
+                // "Writes on/off" was the same stale claim the static subtitle
+                // used to make: the toggle drops memory_get/memory_write from
+                // the tool list *and* stops the injection.
+                return SlashCommand(id: cmd.id, icon: cmd.icon, title: cmd.title, subtitle: "Tools + injection \(status) — tap to toggle")
             }
             return cmd
         }
@@ -479,8 +482,28 @@ extension AIChatViewModel {
             if let sid = sessionId {
                 Task { await ChatStore.shared.setMemoryEnabled(sessionId: sid, enabled: memoryEnabled) }
             }
-            let status = memoryEnabled ? "enabled" : "disabled"
-            appendSystemInfo("Memory writes \(status). Reads are unaffected.", icon: "brain.head.profile")
+            // `memoryEnabled == false` removes memory_get AND memory_write from
+            // the tool list and stops the injection, so the old "writes off,
+            // reads unaffected" confirmation described the opposite of what
+            // just happened. Matches the picker's subtitle wording.
+            appendSystemInfo(
+                memoryEnabled ? "Memory tools and injection enabled." : "Memory tools and injection disabled.",
+                icon: "brain.head.profile"
+            )
+        case "thinking":
+            // [T-ios-slash-thinking] `/thinking` typed into the composer must
+            // toggle, exactly like tapping the menu row does. The command is
+            // advertised in `availableSlashCommands`, and the menu's row has
+            // its own tap handler in the view — so the TYPED path matched the
+            // command, consumed the input (executeSlashCommand clears the
+            // composer) and fell through `default: break`: the text vanished
+            // and the mode never changed.
+            let newLevel: ThinkingLevel = currentThinkingLevel.isEnabled ? .off : .medium
+            setThinkingLevel(newLevel)
+            appendSystemInfo(
+                newLevel.isEnabled ? "Thinking on (\(newLevel.displayName))." : "Thinking off.",
+                icon: "lightbulb"
+            )
         case "extensions":
             // Open the Extension Manager (same path as minis://extensions).
             DeepLinkCoordinator.shared.showExtensions = true

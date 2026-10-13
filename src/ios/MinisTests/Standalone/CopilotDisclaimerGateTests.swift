@@ -41,10 +41,24 @@ print("\n[1] Device flow is NOT reachable without consent")
 check("initial phase is .consent", sheet.contains("@State private var phase: Phase = .consent"))
 check("a .consent case exists", sheet.contains("case consent"))
 // `start()` must be called from exactly one place: the consent button.
-let startCalls = sheet.components(separatedBy: "start()").count - 1
-// Occurrences: the `start()` definition, the consent button, and the
-// retry button on the failure screen (which is post-consent by construction).
-check("start() referenced a small, auditable number of times (<= 4)", startCalls <= 4)
+// Count CODE occurrences only: a comment naming `start()` is not a call site,
+// and counting it made this assertion fire on a doc-comment edit rather than on
+// a new way into the device flow (which is what it is for).
+let startCallLines = sheet.split(separator: "\n")
+    .map { $0.trimmingCharacters(in: .whitespaces) }
+    .filter { $0.contains("start()") && !$0.hasPrefix("//") }
+check("start() appears on <= 4 code lines (definition + 3 gated call sites) — got \(startCallLines.count)",
+      startCallLines.count <= 4)
+// …and name the roles, so the count cannot be satisfied by the wrong ones: the
+// definition, the consent button, the post-consent retry button, and the
+// resume path for a user who already accepted.
+check("…one is the definition", sheet.contains("private func start() {"))
+check("…one is the consent button",
+      sheet.contains("Button {\n            start()\n        } label: {")
+      || sheet.contains("Button {\n                start()\n            } label: {"))
+check("…one is the failure-screen retry", sheet.contains("Button(AppLocalized(\"Try Again\")) { start() }"))
+check("…one resumes an already-accepted user",
+      sheet.contains("if CopilotConstants.hasAcceptedSignInConsent, phase == .consent {"))
 check("consent button calls start()",
       sheet.contains("Button {\n            start()\n        } label: {"))
 // The network call itself lives behind start() -> requestDeviceAuthorization.
@@ -60,19 +74,23 @@ print("\n[2] Cancel sends nothing")
 check("cancel finishes without starting", sheet.contains("Button(AppLocalized(\"Cancel\")) { finish(false) }"))
 
 print("\n[3] The notice states each required risk")
+// One needle per required risk. These are the CURRENT wordings of the notice
+// (it was rewritten and routed through AppLocalized; the risk categories are
+// unchanged, and each is still stated as its own line rather than folded into a
+// paragraph).
 let required: [(String, String)] = [
-    ("unofficial / not authorized", "unofficial compatibility experiment"),
-    ("no GitHub affiliation",       "no affiliation with GitHub"),
-    ("interfaces may change/stop",  "may change or stop working at any time"),
-    ("entitlement/account risk",    "entitlement or your GitHub account at risk"),
-    ("not for org/enterprise/prod", "organization, enterprise or production account"),
-    ("user's own decision",         "your decision"),
+    ("unofficial / not authorized", "not officially authorized"),
+    ("no GitHub affiliation",       "not affiliated with, endorsed by, or supported by GitHub"),
+    ("interfaces may change/stop",  "may change or discontinue these interfaces at any time"),
+    ("entitlement/account risk",    "termination of your Copilot entitlement or your GitHub account"),
+    ("not for org/enterprise/prod", "organization, enterprise, or production account is strongly discouraged"),
+    ("user's own decision",         "at your own discretion"),
 ]
 for (name, needle) in required {
     check("states: \(name)", sheet.contains(needle))
 }
 check("explicit consent button wording",
-      sheet.contains("I understand and want to continue"))
+      sheet.contains("I have read and accept these terms"))
 
 print("\n[4] Forbidden claims are absent")
 // Must never claim official status, legality, safety, or a no-ban guarantee.
@@ -95,14 +113,31 @@ check("flag is documented as OFF by default", consts.contains("Defaults to **OFF
 check("no remote config is introduced",
       consts.lowercased().contains("remoteconfig") || consts.contains("firebase"), false)
 
-print("\n[6] One-time first-use reminder, not per-message")
-check("consume-once helper exists", consts.contains("static func consumeFirstUseNotice() -> Bool"))
-check("it persists the shown flag", consts.contains("d.set(true, forKey: firstUseNoticeShownKey)"))
+print("\n[6] Consent is taken once, at sign-in, and remembered")
+// The one-time first-use CHAT banner was retired ([T-copilot-no-chat-warning]):
+// a warning shown on every message is one the reader learns to tap past, so the
+// disclosure now lives entirely in the sign-in consent page. What must still
+// hold is that the acceptance is RECORDED (the notice is shown once, not on
+// every sign-in), that the sheet is what records it, and that nothing has
+// quietly grown a second, per-message gate back.
+check("consent state has an accessor", consts.contains("static var hasAcceptedSignInConsent: Bool"))
+check("it reads the consent key",
+      consts.contains("UserDefaults.standard.bool(forKey: signInConsentAcceptedKey)"))
+check("acceptance is persisted once", consts.contains("static func recordSignInConsent()")
+      && consts.contains("UserDefaults.standard.set(true, forKey: signInConsentAcceptedKey)"))
+check("the sheet records it on the way into the flow",
+      sheet.contains("CopilotConstants.recordSignInConsent()"))
+check("an already-accepted user skips the notice (no re-prompt)",
+      sheet.contains("if CopilotConstants.hasAcceptedSignInConsent, phase == .consent {"))
+// The retired key stays DEFINED (a device that stored it keeps a name whose
+// meaning can be looked up) and must not grow a consumer back.
+check("the retired first-use key is still defined, not deleted",
+      consts.contains("firstUseNoticeShownKey"))
+check("…and has no accessor that would revive the banner",
+      consts.contains("consumeFirstUseNotice"), false)
 let factory = source("Agent/Chat/AIChatViewModel+ProviderFactory.swift")
-check("hooked on the Copilot provider build path",
-      factory.contains("CopilotConstants.consumeFirstUseNotice()"))
-check("delivered through the existing transient banner",
-      factory.contains("pendingCopilotFirstUseNotice"))
+check("no per-message banner is wired into the provider build path",
+      factory.contains("pendingCopilotFirstUseNotice"), false)
 
 print("\n[7] OAuth/protocol untouched by this change")
 // The task forbids altering the auth flow itself; these are the load-bearing

@@ -242,53 +242,50 @@ check("elided tool-result images keep their text and gain the placeholder",
       rb.contains("let newContent = content.isEmpty ? placeholder : \"\\(content)\\n\\(placeholder)\""))
 check("planner walks latest → eldest", rb.contains("for img in images.reversed() {"))
 
-print("\n[7e] the same image in history and this turn")
-// applyRequestImageBudget keys images by `ObjectIdentifier(img.data as AnyObject)`.
-// The same Data VALUE appearing twice (history row + this turn's attachment)
-// is a single identity only if bridging is stable. Probe it here rather than
-// assume: the shipping code relies on the id being recomputable from the
-// same `Data` later in the function.
+print("\n[7e] image identity is POSITIONAL, not pointer-based")
+// The planner and the rewrite have to agree on WHICH images to elide, and they
+// used to agree on `ObjectIdentifier(data as AnyObject).hashValue`. Bridging
+// `Data` to `AnyObject` is neither guaranteed stable across two conversions nor
+// distinct between two distinct `Data` values, so that key failed in BOTH
+// directions — both measured while investigating this bug:
+//   - a fresh id per conversion  → `droppedIds` matched nothing, so the 25 MB
+//     request budget was a silent no-op while the toast still told the user
+//     images had been elided;
+//   - one id shared by 4 images  → the rewrite replaced every image, including
+//     the ones that fit the budget.
+// The probe below stays as documentation of why the scheme is unusable; the
+// shipping code must not depend on it any more, which is what the source checks
+// pin.
 func identity(_ d: Data) -> Int { ObjectIdentifier(d as AnyObject).hashValue }
 let shared = Data(repeating: 0xCD, count: 2 * MB)
 let other = Data(repeating: 0xEF, count: 2 * MB)
 let stable = identity(shared) == identity(shared)
 let distinct = identity(shared) != identity(other)
-if stable && distinct {
-    check("identity is stable across calls and distinct between images", true)
-    // With a stable identity, a shared Data counted at two positions is
-    // dropped as ONE id: the planner charges both positions' bytes, so the
-    // spec's "not double counted" holds only for the drop bookkeeping, not
-    // the byte sum. Pin the shipping arithmetic (port keeps per-position bytes).
+print("  ℹ️  ObjectIdentifier(data as AnyObject): stable=\(stable) distinct=\(distinct)"
+    + " — usable as a key only if BOTH are true")
+// The two concrete derivations that were removed. Matched on the full
+// expression, not a bare `ObjectIdentifier(`, so the explanatory comment above
+// (which names the scheme) cannot make this pass vacuously.
+check("the planner no longer keys on bridged object identity",
+      rb.contains("ObjectIdentifier(img.data as AnyObject)"), false)
+check("the rewrite no longer recomputes a bridged identity",
+      rb.contains("ObjectIdentifier(ref.image.data as AnyObject)"), false)
+check("BudgetImage carries a positional key", rb.contains("let key: Int"))
+check("the planner keys on that position", rb.contains("let id = img.key"))
+check("the plan reports keys, not ids", rb.contains("let droppedKeys: Set<Int>"))
+check("the rewrite looks the same key up", rb.contains("let id = ref.image.key"))
+check("both lookups test against droppedKeys", rb.contains("plan.droppedKeys.contains(id)"))
+// The positional scheme itself, ported: two positions of the same image are
+// separate keys, so the older position is elided and the newer kept.
+do {
     let imgs = [BudgetImage(rawBytes: 2 * MB, linuxPath: "/same", tag: "hist"),
                 BudgetImage(rawBytes: 2 * MB, linuxPath: "/same", tag: "turn")]
     let plan = planRequestBudget(imgs, maxBytes: 3 * MB)
     check("two positions of one image: newest position kept, older elided", plan.droppedIdx == [0])
-} else {
-    // KNOWN GAP: `Data as AnyObject` yields a fresh bridge object per call and
-    // the freed address is reused, so ObjectIdentifier is "stable" only by
-    // accident and NOT distinct between images. Expected behaviour: one image
-    // appearing twice is one identity, and different images never collide.
-    // Surface it without failing the run, and show the consequence with a
-    // verbatim port of the id scheme over the rewrite loop.
-    print("  ⚠️  KNOWN GAP: ObjectIdentifier(data as AnyObject) — stable=\(stable) distinct=\(distinct); "
-        + "the shipping planner keys dropped images by this value (RequestBudget.swift). "
-        + "Expected: stable per Data instance and distinct per image.")
-    let datas = (0..<4).map { Data(repeating: UInt8($0 + 1), count: 3 * MB + 512 * 1024) }   // 4.67 MB b64 each
-    let ids = datas.map { identity($0) }
-    print("  ⚠️  KNOWN GAP: distinct ids among 4 distinct 3.5 MB images: \(Set(ids).count) (expected 4)")
-    // Shipping scheme: plan by identity, then rewrite by recomputed identity.
-    var droppedIds = Set<Int>()
-    var kept = 0
-    for d in datas.reversed() {
-        let id = identity(d)
-        let eff = min(estimatedBase64Length(d.count), kPerImageMaxBytes)
-        if kept + eff <= 12 * MB { kept += eff } else { droppedIds.insert(id) }
-    }
-    let rewritten = datas.map { droppedIds.contains(identity($0)) }
-    let replacedCount = rewritten.filter { $0 }.count
-    print("  ⚠️  KNOWN GAP: budget 12 MB over 4 × 4.67 MB → planner intends to elide 2; "
-        + "identity-keyed rewrite replaces \(replacedCount) of 4 (expected 2, the two oldest). "
-        + "Not asserted: on-device bridging may allocate differently; verify with a real >25 MB history.")
+    // And the key space is dense/unique: N images give N distinct keys, so a
+    // plan built from them can always be matched back one-to-one.
+    let many = (0..<5).map { BudgetImage(rawBytes: 1 * MB, linuxPath: "/p\($0)", tag: "i\($0)") }
+    checkEq("keys are per-position and unique", Set(many.indices).count, many.count)
 }
 
 print("\n\(failures == 0 ? "✅ ALL PASSED" : "❌ \(failures) FAILURE(S)")")

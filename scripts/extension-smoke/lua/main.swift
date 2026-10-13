@@ -8,9 +8,12 @@ final class Log: @unchecked Sendable {
     private let lock = NSLock()
     private(set) var shellCalls: [(cmd: String, opts: [String: Any])] = []
     private(set) var settings: [String: Any] = ["greetingPrefix": "Hi"]
+    private(set) var lines: [String] = []
     func record(_ cmd: String, _ opts: [String: Any]) { lock.lock(); shellCalls.append((cmd, opts)); lock.unlock() }
     func set(_ key: String, _ value: Any) { lock.lock(); settings[key] = value; lock.unlock() }
     func get(_ key: String) -> Any? { lock.lock(); defer { lock.unlock() }; return settings[key] }
+    func note(_ line: String) { lock.lock(); lines.append(line); lock.unlock() }
+    func reset() { lock.lock(); lines.removeAll(); lock.unlock() }
 }
 
 let bridge = ExtensionJSRuntime.Bridge(
@@ -117,6 +120,38 @@ do {
         check("tool args table", out == "name=Bob", "got: \(out)")
     }
 } catch { check("tool eval", false, "\(error)") }
+
+print("")
+print("=== 6. minis.on hook registration (positional AND table form) ===")
+do {
+    try rt.evaluate("""
+    minis.on("agent_start", function(event) minis.log("pos:" .. tostring(event.sessionId)) end)
+    minis.on{ event = "agent_end", handler = function(event) minis.log("tbl:" .. tostring(event.sessionId)) end }
+    minis.on("tool_call", function(event) minis.log("pos2:" .. tostring(event.tool)) end, "extra-arg")
+    """, chunkName: "hooks.lua")
+    // The documented call is positional; reading arg 1 as a table field filed
+    // every handler under the EMPTY event name, so no hook ever fired.
+    check("positional minis.on registers agent_start",
+          (rt.eventHandlers["agent_start"]?.count ?? 0) == 1,
+          "keys=\(rt.eventHandlers.keys.sorted())")
+    check("table-form minis.on registers agent_end",
+          (rt.eventHandlers["agent_end"]?.count ?? 0) == 1,
+          "keys=\(rt.eventHandlers.keys.sorted())")
+    check("no handler is filed under the empty event name",
+          rt.eventHandlers[""] == nil, "keys=\(rt.eventHandlers.keys.sorted())")
+    check("trailing arguments do not lose the handler",
+          (rt.eventHandlers["tool_call"]?.count ?? 0) == 1,
+          "keys=\(rt.eventHandlers.keys.sorted())")
+    LogSink.shared.reset()
+    rt.emitEvent("agent_start", data: ["sessionId": "s1"])
+    rt.emitEvent("tool_call", data: ["tool": "shell_execute"])
+    let lines = LogSink.shared.lines.joined(separator: "|")
+    check("positional hook actually fires", lines.contains("pos:s1"), "logs=\(lines)")
+    check("hook with trailing arg fires", lines.contains("pos2:shell_execute"), "logs=\(lines)")
+    rt.emitEvent("agent_end", data: ["sessionId": "s2"])
+    check("table-form hook fires", LogSink.shared.lines.joined().contains("tbl:s2"),
+          "logs=\(LogSink.shared.lines.joined(separator: "|"))")
+} catch { check("hook eval", false, "\(error)") }
 
 print("")
 print("PASS \(pass) / FAIL \(fail)")

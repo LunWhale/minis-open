@@ -634,7 +634,12 @@ private func startInnerUploadTask(
             provider: "anthropic",
             model: extensionInterceptModelHint(from: body)
         )
-        let finalBody = intercepted.httpBody ?? body
+        // `httpBody == nil` here means an interceptor CLEARED the body on
+        // purpose (`body: null`); falling back to the original would silently
+        // ignore that. `prepared` carried `body`, so a body an interceptor did
+        // not touch survives the interception copy and never reaches this
+        // fallback.
+        let finalBody = intercepted.httpBody ?? Data()
         var finalRequest = intercepted
         finalRequest.httpBody = nil
         stateLock.lock()
@@ -1680,6 +1685,14 @@ private final class EagerStreamingURLProtocol: URLProtocol, URLSessionDataDelega
         let mutable = (request as NSURLRequest).mutableCopy() as! NSMutableURLRequest
         URLProtocol.setProperty(true, forKey: "EagerHandled", in: mutable)
         RequestBodyPatcher.materializeBodyStream(mutable)
+        // [T-anthropic-toolimages-cross-request] Claim this request's token
+        // BEFORE patchToolResultsWithImages, exactly as OAuthURLProtocol does.
+        // Tool-result images are stored per request token, and without the
+        // stamp `takeToolResultImages` sees no token and returns empty — so on
+        // the api-key path (EagerStreamingHTTPClient) images attached to a tool
+        // result went out as plain text. Leaving the token pending also let a
+        // LATER request claim it.
+        RequestBodyPatcher.stampRequestToken(onto: mutable)
         RequestBodyPatcher.normalizeKeyOrder(in: mutable)
         RequestBodyPatcher.injectToolsCacheControl(into: mutable)
         RequestBodyPatcher.injectEagerInputStreaming(into: mutable)
@@ -1883,6 +1896,10 @@ private final class DualAuthURLProtocol: URLProtocol, URLSessionDataDelegate {
 
         // Apply same patching as EagerStreamingURLProtocol
         RequestBodyPatcher.materializeBodyStream(mutable)
+        // [T-anthropic-toolimages-cross-request] Same missing stamp as
+        // EagerStreamingURLProtocol above — the manual-token path
+        // (DualAuthHTTPClient) dropped tool-result images for the same reason.
+        RequestBodyPatcher.stampRequestToken(onto: mutable)
         RequestBodyPatcher.normalizeKeyOrder(in: mutable)
         RequestBodyPatcher.injectToolsCacheControl(into: mutable)
         RequestBodyPatcher.injectEagerInputStreaming(into: mutable)

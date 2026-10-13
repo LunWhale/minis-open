@@ -259,6 +259,37 @@ check("hook fired and wrote store", storeValue("lastTool") == "shell_execute",
 eval(rt, "minis.store.set('greetingSeen', String(minis.api.settings.get('greeting')));", "settings.js")
 check("settings.get bridge", storeValue("greetingSeen") == "hi", "got=\(storeValue("greetingSeen") ?? "nil")")
 
+// A missing value must be a no-op, not a crash. `toObject()` returns nil for
+// both `undefined` and `null`, and a nil `Any` reaches `UserDefaults.set` as a
+// boxed Optional.none, which Foundation rejects with an NSInvalidArgumentException
+// (an uncaught ObjC exception inside JS evaluation = app crash).
+SettingsBox.shared.set("mustStay", "untouched")
+eval(rt, "minis.api.settings.set('greeting'); minis.api.settings.set('greeting', undefined);", "settings-undef.js")
+check("settings.set(undefined) is a no-op, not a crash",
+      SettingsBox.shared.get("greeting") as? String == "hi",
+      "got=\(String(describing: SettingsBox.shared.get("greeting")))")
+eval(rt, "minis.api.settings.set('greeting', 'changed');", "settings-ok.js")
+check("settings.set still writes a real value",
+      SettingsBox.shared.get("greeting") as? String == "changed",
+      "got=\(String(describing: SettingsBox.shared.get("greeting")))")
+
+// ---- 8. the runtime releases its JSContext ----
+//
+// The bridge blocks are installed as globals on the context, so a block that
+// captures the context strongly is `context → global → block → context`, and
+// the context (plus its whole JS heap) outlives the runtime. Every reload,
+// toggle and uninstall drops a runtime, so this is a per-action leak.
+do {
+    weak var weakRuntime: ExtensionJSRuntime?
+    do {
+        let temp = ExtensionJSRuntime(extensionID: "smoke-leak", bridge: makeBridge())
+        eval(temp, "minis.on('agent_start', function () { return 'x'; });", "leak.js")
+        weakRuntime = temp
+    }
+    check("released runtime deallocates (no context↔block retain cycle)", weakRuntime == nil,
+          "runtime still alive after its last reference went away")
+}
+
 // ============================ Part B ============================
 // Example plugins, loaded with the real runtime + real repo files.
 

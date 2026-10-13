@@ -53,7 +53,7 @@ struct ExtensionSettingsView: View {
     }
 
     private func reset() {
-        ExtensionSettingsStore.shared.reset(extensionID: extensionID)
+        ExtensionSettingsStore.shared.reset(extensionID: extensionID, declaredKeys: settings.map(\.key))
         load()
     }
 

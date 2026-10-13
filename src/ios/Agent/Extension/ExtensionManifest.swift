@@ -108,7 +108,13 @@ struct ExtensionManifest: Codable, Equatable, Sendable {
         }
         // id must be a safe identifier (used as a directory name + tool prefix).
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: ".-_"))
-        guard manifest.id.unicodeScalars.allSatisfy({ allowed.contains($0) }) else {
+        guard manifest.id.unicodeScalars.allSatisfy({ allowed.contains($0) }),
+              !manifest.id.hasPrefix("."),
+              manifest.id.unicodeScalars.contains(where: { CharacterSet.alphanumerics.contains($0) }) else {
+            // The `.` -only ids (".", "..", "…") pass the character test but
+            // are directory names, not extension ids: `extensions/..` is the
+            // app's data directory, so installing one would unpack the bundle
+            // over the store itself.
             throw ExtensionError.invalidManifest("id contains invalid characters")
         }
         return manifest

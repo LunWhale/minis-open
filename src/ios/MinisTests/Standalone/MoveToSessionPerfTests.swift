@@ -194,8 +194,21 @@ let view  = source("Views/Chat/AIChatView.swift")
 if store.isEmpty || view.isEmpty { print("  ⏭  sources not readable") } else {
     check("listSessions takes an optional limit defaulting to nil",
           store.contains("func listSessions(limit: Int? = nil) -> [ChatSession] {"))
+    // [T-ios-listsessions-perf] The single `sessionListCacheDirty` flag was
+    // split in two: `sessionListNeedsFullRebuild` covers row-SET/ordering
+    // changes, while `dirtySessionIds` covers row-CONTENT changes that the
+    // incremental patch splices into the cached array. The gate is still
+    // "unlimited shape only" — a bounded caller must never be served the
+    // unbounded cache — and the write is still gated the same way.
     check("the cache READ is gated on the unlimited shape",
-          store.contains("if limit == nil, !sessionListCacheDirty, let cached = sessionListCache {"))
+          store.contains("if limit == nil, !sessionListNeedsFullRebuild, let cached = sessionListCache {"))
+    check("…a clean cache is returned verbatim",
+          store.contains("if dirtySessionIds.isEmpty { return cached }"))
+    check("…a dirty one goes through the incremental patch",
+          store.contains("if let patched = patchedSessionList(cached, dirtyIds: dirtySessionIds) {"))
+    check("a full rebuild clears the incremental state",
+          store.contains("sessionListNeedsFullRebuild = false")
+          && store.contains("dirtySessionIds.removeAll()"))
     check("the cache WRITE is too", store.contains("if limit == nil {\n            sessionListCache = sessions"))
     check("the limit is clamped", store.contains("LIMIT \\(max(1, $0))"))
     check("the updated_at index exists",

@@ -65,7 +65,18 @@ enum ExtensionInstaller {
             // Skip the manifest itself and dotfiles.
             if rel == "manifest.json" || rel.hasPrefix(".") || rel.isEmpty { continue }
 
-            let dest = bundleRoot.appendingPathComponent(rel)
+            // Defence in depth behind `readZipEntries`, which already drops
+            // traversal names: the manifest prefix above is attacker-controlled
+            // too, so re-check the post-strip name and confirm containment.
+            guard SkillStore.isSafeArchiveEntryName(rel) else { continue }
+            let dest = bundleRoot.appendingPathComponent(rel).standardizedFileURL
+            guard dest.path == bundleRoot.standardizedFileURL.path
+                    || dest.path.hasPrefix(bundleRoot.standardizedFileURL.path + "/") else {
+                AppLogger(category: "ExtensionInstaller").warning(
+                    "refusing to unpack \(manifest.id): entry '\(entry.name)' escapes the bundle"
+                )
+                continue
+            }
             try fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
             try entry.data.write(to: dest)
         }

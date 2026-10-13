@@ -18,13 +18,26 @@ extension AIChatViewModel {
         let data: Data
         let linuxPath: String?
         let mimeType: String
+        /// Stable identity for this image WITHIN one request: its position in
+        /// the ref list `applyRequestImageBudget` builds.
+        ///
+        /// [T-image-budget-identity] This used to be derived as
+        /// `ObjectIdentifier(data as AnyObject).hashValue`, which cannot serve
+        /// as a key: bridging `Data` to `AnyObject` is not guaranteed to be
+        /// stable across two conversions, nor distinct between two distinct
+        /// `Data` values. Both failure modes were measured here — one run gave a
+        /// fresh id per conversion, so `droppedIds` matched NOTHING and the
+        /// 25 MB budget silently became a no-op (while the toast still claimed
+        /// images had been elided), another gave one shared id for four distinct
+        /// images, so the rewrite replaced images that fit the budget. A position
+        /// is stable by construction and needs no bridging at all.
+        let key: Int
     }
 
-    /// Result of [planRequestBudget]. `droppedIds` are pointer-identity
-    /// hashes of `Data` instances; providers can re-derive the same id
-    /// from any `Data` they hold a strong reference to.
+    /// Result of [planRequestBudget]. `droppedKeys` are `BudgetImage.key` values
+    /// — positions in the request's image list, not object identities.
     private struct RequestBudgetPlan {
-        let droppedIds: Set<Int>
+        let droppedKeys: Set<Int>
         let droppedPaths: [Int: String?]
         /// [T-image-budget-base64] Both are BASE64 byte counts (wire size),
         /// matching the unit the budget is expressed in. Log/diagnostic only.
@@ -40,7 +53,7 @@ extension AIChatViewModel {
         maxBytes: Int = kRequestImageMaxBytes
     ) -> RequestBudgetPlan {
         guard !images.isEmpty else {
-            return RequestBudgetPlan(droppedIds: [], droppedPaths: [:], keptBytes: 0, elidedBytes: 0, droppedCount: 0, totalCount: 0)
+            return RequestBudgetPlan(droppedKeys: [], droppedPaths: [:], keptBytes: 0, elidedBytes: 0, droppedCount: 0, totalCount: 0)
         }
         var dropped = Set<Int>()
         var droppedPaths: [Int: String?] = [:]
@@ -48,7 +61,7 @@ extension AIChatViewModel {
         var elided = 0
         // Walk latest → eldest so most-recent images win the budget.
         for img in images.reversed() {
-            let id = ObjectIdentifier(img.data as AnyObject).hashValue
+            let id = img.key
             // [T-image-budget-base64] Measure what this image costs ON THE
             // WIRE: images are base64 inlined into the request body, so the
             // budget has to count encoded bytes or it under-counts every image
@@ -67,7 +80,7 @@ extension AIChatViewModel {
                 elided += effective
             }
         }
-        return RequestBudgetPlan(droppedIds: dropped, droppedPaths: droppedPaths, keptBytes: kept, elidedBytes: elided, droppedCount: dropped.count, totalCount: images.count)
+        return RequestBudgetPlan(droppedKeys: dropped, droppedPaths: droppedPaths, keptBytes: kept, elidedBytes: elided, droppedCount: dropped.count, totalCount: images.count)
     }
 
     /// Construct the text placeholder a provider emits in place of an
@@ -130,14 +143,26 @@ extension AIChatViewModel {
         // can reverse-walk and protect the most recent images.
         struct Ref { let msgIdx: Int; let partIdx: Int; let image: BudgetImage }
         var refs: [Ref] = []
+        // Each collected image gets its position as its key — the plan and the
+        // rewrite below must agree on identity, and position is the only thing
+        // they can both recompute reliably (see BudgetImage.key).
+        var nextKey = 0
+        func collect(msgIdx: Int, partIdx: Int, data: Data, mimeType: String?, linuxPath: String?) {
+            refs.append(Ref(
+                msgIdx: msgIdx,
+                partIdx: partIdx,
+                image: BudgetImage(data: data, linuxPath: linuxPath, mimeType: mimeType ?? "image/jpeg", key: nextKey)
+            ))
+            nextKey += 1
+        }
         for (mi, msg) in messages.enumerated() {
             for (pi, part) in msg.parts.enumerated() {
                 switch part {
                 case .imageData(let data, let mimeType, let lp):
-                    refs.append(Ref(msgIdx: mi, partIdx: pi, image: BudgetImage(data: data, linuxPath: lp, mimeType: mimeType)))
+                    collect(msgIdx: mi, partIdx: pi, data: data, mimeType: mimeType, linuxPath: lp)
                 case .toolResult(_, _, _, _, let imgData, let imgMime, _, let lp, _):
                     if let d = imgData {
-                        refs.append(Ref(msgIdx: mi, partIdx: pi, image: BudgetImage(data: d, linuxPath: lp, mimeType: imgMime ?? "image/jpeg")))
+                        collect(msgIdx: mi, partIdx: pi, data: d, mimeType: imgMime, linuxPath: lp)
                     }
                 default: break
                 }
@@ -151,8 +176,8 @@ extension AIChatViewModel {
         var resolved: [Int: String?] = [:]
         let sid = sessionId ?? "unknown"
         for ref in refs {
-            let id = ObjectIdentifier(ref.image.data as AnyObject).hashValue
-            guard plan.droppedIds.contains(id) else { continue }
+            let id = ref.image.key
+            guard plan.droppedKeys.contains(id) else { continue }
             if let existing = ref.image.linuxPath {
                 resolved[id] = existing
             } else {
@@ -166,8 +191,8 @@ extension AIChatViewModel {
         for (mi, group) in grouped {
             var newParts = mutated[mi].parts
             for ref in group {
-                let id = ObjectIdentifier(ref.image.data as AnyObject).hashValue
-                guard plan.droppedIds.contains(id) else { continue }
+                let id = ref.image.key
+                guard plan.droppedKeys.contains(id) else { continue }
                 let path: String? = resolved[id] ?? nil
                 let placeholder = Self.elidedImagePlaceholder(linuxPath: path)
                 let original = newParts[ref.partIdx]

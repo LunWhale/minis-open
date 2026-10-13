@@ -1788,15 +1788,22 @@ final class OpenAIProvider: LLMProvider {
 
         // Try b64_json first; if the provider rejects it, retry without response_format
         var triedWithoutFormat = userSetResponseFormat
+        // The retry below must start from the request AS BUILT, not from the
+        // previous round's intercepted copy: interceptors are not required to
+        // be idempotent, so a URL rewrite (a proxy prefix, say) would be applied
+        // a second time on the retry, while the body is re-serialized from
+        // `body` on every round anyway.
+        let baseRequest = request
         while true {
             if !triedWithoutFormat {
                 body["response_format"] = "b64_json"
             }
-            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            var attempt = baseRequest
+            attempt.httpBody = try JSONSerialization.data(withJSONObject: body)
 
             // Extension request interception (see streamRaw).
-            request = await ExtensionRegistry.shared.applyProviderRequestInterceptors(
-                to: request, provider: "openai", model: model.id
+            let request = await ExtensionRegistry.shared.applyProviderRequestInterceptors(
+                to: attempt, provider: "openai", model: model.id
             )
 
             #if DEBUG

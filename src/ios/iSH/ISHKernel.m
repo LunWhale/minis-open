@@ -1493,8 +1493,15 @@ static void handle_process_exit(struct task *task, int code) {
         return;
     }
 
-    // Append to buffer
-    [_commandOutputBuffer appendString:output];
+    // Append to buffer. `output` is nil whenever a tty write carried bytes that
+    // are not valid UTF-8 on their own — a multi-byte character split across
+    // two writes is enough — and `appendString:nil` raises
+    // NSInvalidArgumentException, i.e. a crash caused by ordinary terminal
+    // output. The raw bytes still reach the terminal through `outputCallback`
+    // below, so nothing is lost by skipping them here.
+    if (output.length > 0) {
+        [_commandOutputBuffer appendString:output];
+    }
 
     // Check if we've received a shell prompt (indicating command completion)
     // Common prompt patterns: "$ ", "# ", "root@minis:", etc.

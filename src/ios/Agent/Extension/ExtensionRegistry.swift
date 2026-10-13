@@ -438,14 +438,16 @@ final class ExtensionRegistry {
         let prefix = "extension_"
         guard apiName.hasPrefix(prefix) else { return ("Error: not an extension tool", true) }
         let tail = String(apiName.dropFirst(prefix.count))
-        // Longest matching extension id prefix wins.
+        // Longest matching extension id prefix wins — an id may itself contain
+        // an underscore (`com_example_myext`), and two ids can share a prefix
+        // (`a` and `a_b`), so the FIRST dictionary hit is not necessarily the
+        // right one: collect every candidate and keep the longest.
         var matched: (String, String)?
         for extID in toolIndex.keys where tail.hasPrefix(extID + "_") {
             let toolName = String(tail.dropFirst(extID.count + 1))
-            if toolIndex[extID]?[toolName] != nil {
-                matched = (extID, toolName)
-                break
-            }
+            guard toolIndex[extID]?[toolName] != nil else { continue }
+            if let current = matched, current.0.count >= extID.count { continue }
+            matched = (extID, toolName)
         }
         guard let (extID, toolName) = matched else {
             return ("Error: extension tool '\(apiName)' not found", true)
@@ -793,22 +795,47 @@ final class ExtensionRegistry {
 /// attached to AIChatView), awaits the Allow/Deny continuation, and caches
 /// per-extension grants for the session. Times out after 30s (deny).
 enum PermissionGate {
+    /// Grants/denials are read and written from several executors at once:
+    /// permission checks arrive from JS (`minis.http.fetch`, file reads from
+    /// parallel extension tool calls) and from Lua, while the dialog
+    /// continuation resumes on the main actor. Unsynced Swift dictionaries are
+    /// copy-on-write, so overlapping inserts are a real race (lost grants at
+    /// best, dictionary corruption at worst) — hence the lock, which is also
+    /// what makes the `contains` → `insert` sequences below atomic.
+    private static let cacheLock = NSLock()
     private static var grantedCache: [String: Set<String>] = [:]  // extID → kinds
     private static var deniedCache: [String: Set<String>] = [:]   // session-only denials
     private static let logger = AppLogger(category: "ExtensionPermission")
     private static let persistPrefix = "ext.perm."
+
+    private static func cachedDecision(_ extensionID: String, _ kind: String) -> Bool? {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        if grantedCache[extensionID, default: []].contains(kind) { return true }
+        if deniedCache[extensionID, default: []].contains(kind) { return false }
+        return nil
+    }
+
+    private static func remember(_ extensionID: String, _ kind: String, granted: Bool) {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        if granted {
+            grantedCache[extensionID, default: []].insert(kind)
+        } else {
+            deniedCache[extensionID, default: []].insert(kind)
+        }
+    }
 
     private static func persistKey(_ extensionID: String, _ kind: String) -> String {
         "\(persistPrefix)\(extensionID).\(kind)"
     }
 
     static func request(_ kind: String, extensionID: String) async -> Bool {
-        if grantedCache[extensionID, default: []].contains(kind) { return true }
-        if deniedCache[extensionID, default: []].contains(kind) { return false }
+        if let decision = cachedDecision(extensionID, kind) { return decision }
         // Grants persist across launches so users aren't re-prompted after
         // every app restart.
         if UserDefaults.standard.bool(forKey: persistKey(extensionID, kind)) {
-            grantedCache[extensionID, default: []].insert(kind)
+            remember(extensionID, kind, granted: true)
             return true
         }
 
@@ -836,21 +863,32 @@ enum PermissionGate {
 
         logger.info("\(extensionID) \(kind) -> \(allowed ? "granted" : "denied")")
         if allowed {
-            grantedCache[extensionID, default: []].insert(kind)
             UserDefaults.standard.set(true, forKey: persistKey(extensionID, kind))
-        } else {
-            deniedCache[extensionID, default: []].insert(kind)
         }
+        remember(extensionID, kind, granted: allowed)
         return allowed
     }
 
     /// Drop persisted grants for an extension (called on uninstall).
-    static func reset(extensionID: String) {
+    ///
+    /// Keys are removed exactly, not by prefix: extension ids may contain dots
+    /// (`com.foo` and `com.foo.bar` are both valid), so a prefix match on
+    /// `ext.perm.com.foo.` would also wipe the grants of every extension whose
+    /// id merely starts with `com.foo.`.
+    static func reset(extensionID: String, otherExtensionIDs: [String] = []) {
+        cacheLock.lock()
         grantedCache[extensionID] = nil
         deniedCache[extensionID] = nil
+        cacheLock.unlock()
         let defaults = UserDefaults.standard
         let prefix = "\(persistPrefix)\(extensionID)."
+        // A key belongs to a sibling id when it matches that sibling's own
+        // prefix — in which case it is not ours to delete.
+        let siblingPrefixes = otherExtensionIDs
+            .filter { $0 != extensionID }
+            .map { "\(persistPrefix)\($0)." }
         for key in defaults.dictionaryRepresentation().keys where key.hasPrefix(prefix) {
+            if siblingPrefixes.contains(where: { key.hasPrefix($0) }) { continue }
             defaults.removeObject(forKey: key)
         }
     }

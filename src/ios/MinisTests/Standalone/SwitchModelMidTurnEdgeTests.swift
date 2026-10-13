@@ -180,8 +180,17 @@ check("no fallback setBinding ignores pendingModelSwitch (unguarded: \(unguarded
 
 print("\n▶️  C. source: fallback prompt rebuild keys skills/MCP like setup does (helper → parent session)")
 if let apply = body(of: "func applyFallbackSwitch()", in: vm).map(code) {
-    check("setup keys skills on helperConfig?.parentSessionId ?? sessionId",
-          vm.contains("if let sid = helperConfig?.parentSessionId ?? sessionId,\n           let skillFragment = SkillStore.shared.skillPromptFragment(for: sid)"))
+    // The exact two-line snippet this used to pin stopped existing when the
+    // skills/MCP injection gained its feature-plugin gates (three extra
+    // conditions now sit between the id binding and the fragment). Assert the
+    // INVARIANT instead of the literal: the skills injection binds `sid` from
+    // the parent session and reads the fragment with it.
+    func keysSkillsOnParent(_ src: String) -> Bool {
+        guard let frag = src.range(of: "let skillFragment = SkillStore.shared.skillPromptFragment(for: sid)") else { return false }
+        let start = src.index(frag.lowerBound, offsetBy: -400, limitedBy: src.startIndex) ?? src.startIndex
+        return src[start..<frag.lowerBound].contains("helperConfig?.parentSessionId ?? sessionId")
+    }
+    check("setup keys skills on helperConfig?.parentSessionId ?? sessionId", keysSkillsOnParent(vm))
     check("applyFallbackSwitch uses the same key for skills/MCP",
           apply.contains("helperConfig?.parentSessionId ?? sessionId"))
 } else { check("applyFallbackSwitch found", false) }

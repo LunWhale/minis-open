@@ -366,7 +366,14 @@ final class ExtensionLuaRuntime {
         lua_pushcclosure(L, registerCommand, 1)
         lua_setfield(L, -2, "register_command")
 
-        // minis.on = function(event, handler)
+        // minis.on(event, handler) — POSITIONAL, as documented — and the table
+        // form minis.on{event=…, handler=…}.
+        //
+        // Reading arg 1 as a table field unconditionally (the previous shape)
+        // made the documented positional call register its handler under the
+        // EMPTY event name: indexing a Lua string with `.event` yields nil, so
+        // `event` came out "", the handler was filed under "" and no hook ever
+        // fired — silently, with no error to explain why.
         let on: @convention(c) (OpaquePointer?) -> Int32 = { L in
             guard let L else { return 0 }
             let upval = LUA_REGISTRYINDEX - 1
@@ -375,10 +382,25 @@ final class ExtensionLuaRuntime {
                 return 0
             }
             let state = runtime.L
-            lua_getfield(state, 1, "event")
-            let event = lua_tostring(state, -1).map { String(cString: $0) } ?? ""
-            lua_pop(state, 1)
-            if lua_type(state, 2) == LUA_TFUNCTION {
+            var event = ""
+            var handlerIndex: Int32 = 2
+            if lua_type(state, 1) == LUA_TTABLE {
+                lua_getfield(state, 1, "event")
+                event = lua_tostring(state, -1).map { String(cString: $0) } ?? ""
+                lua_pop(state, 1)
+                // Either on{event=…, handler=fn} or on{event=…}, fn.
+                if lua_type(state, 2) != LUA_TFUNCTION {
+                    lua_getfield(state, 1, "handler")
+                    handlerIndex = lua_gettop(state)
+                }
+            } else {
+                event = lua_tostring(state, 1).map { String(cString: $0) } ?? ""
+            }
+            if !event.isEmpty, lua_type(state, handlerIndex) == LUA_TFUNCTION {
+                // luaL_ref pops the TOP of the stack, and the handler is not
+                // necessarily there (table form leaves it below, and a caller
+                // may pass extra arguments) — so copy it up first.
+                lua_pushvalue(state, handlerIndex)
                 let ref = luaL_ref(state, LUA_REGISTRYINDEX)
                 runtime.eventHandlers[event, default: []].append(ref)
             }

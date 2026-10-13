@@ -66,18 +66,38 @@ class RootfsManager {
     /// distinguishes the cases so the next occurrence is diagnosable rather
     /// than another forensic reconstruction.
     private func archTagDiagnostic() -> String {
-        let fm = FileManager.default
-        if !fm.fileExists(atPath: dataPath.path) { return "data-dir-missing" }
-        if !fm.fileExists(atPath: archTagPath.path) { return "arch-file-missing" }
-        do {
-            let raw = try String(contentsOf: archTagPath, encoding: .utf8)
-            let tag = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            if tag.isEmpty { return "arch-file-empty" }
-            return tag == currentArch ? "ok(\(tag))" : "arch-mismatch(found=\(tag) want=\(currentArch))"
-        } catch {
-            // Exists but unreadable — permissions, or a partially written file.
-            return "arch-file-unreadable(\(error.localizedDescription))"
+        if !FileManager.default.fileExists(atPath: dataPath.path) { return "data-dir-missing" }
+        switch archTagState() {
+        case .ok: return "ok(\(currentArch))"
+        case .mismatch(let found): return "arch-mismatch(found=\(found) want=\(currentArch))"
+        case .missing: return "arch-file-missing"
+        case .empty: return "arch-file-empty"
+        case .unreadable: return "arch-file-unreadable"
         }
+    }
+
+    /// The state of the `.arch` tag, as the discriminator for the ONE decision
+    /// that is destructive: whether an existing rootfs may be thrown away.
+    ///
+    /// A tag that is merely MISSING, EMPTY or UNREADABLE is not evidence of an
+    /// architecture mismatch — a partially written file, a lost file or a
+    /// permissions problem all look like that — and treating them as one threw
+    /// away the user's whole guest filesystem (`/var/minis` data, installed
+    /// packages) on a device where the rootfs had been booting fine.
+    private enum ArchTagState {
+        case ok
+        case mismatch(String)
+        case missing
+        case empty
+        case unreadable
+    }
+
+    private func archTagState() -> ArchTagState {
+        guard FileManager.default.fileExists(atPath: archTagPath.path) else { return .missing }
+        guard let raw = try? String(contentsOf: archTagPath, encoding: .utf8) else { return .unreadable }
+        let tag = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if tag.isEmpty { return .empty }
+        return tag == currentArch ? .ok : .mismatch(tag)
     }
 
     /// Get the existing rootfs directory out of the way so a fresh copy can be
@@ -124,8 +144,11 @@ class RootfsManager {
         // Same parent directory: rename(2) cannot cross filesystems, and a
         // Documents -> tmp move would risk EXDEV on some configurations.
         let parent = rootfsPath.deletingLastPathComponent()
-        let stamp = Int(Date().timeIntervalSince1970)
-        let aside = parent.appendingPathComponent(".alpine-rootfs-broken-\(stamp)")
+        // Unique, not second-resolution: the reclaim loop below is expected to
+        // leave the moved-aside tree in place (its delete usually fails for the
+        // same reason the original did), so two discards inside one second would
+        // collide with the stranded tree and fail the install.
+        let aside = parent.appendingPathComponent(".alpine-rootfs-broken-\(UUID().uuidString)")
         do {
             try fm.moveItem(at: rootfsPath, to: aside)
             logger.warning("[Rootfs] moved undeletable rootfs aside to \(aside.lastPathComponent); install will continue")
@@ -168,8 +191,33 @@ class RootfsManager {
 
     func installIfNeeded() throws {
         if FileManager.default.fileExists(atPath: rootfsPath.path) && !isInstalled {
-            logger.warning("[Rootfs] arch tag missing or mismatched — will delete and reinstall \(currentArch). archTag=\(archTagDiagnostic()) path=\(rootfsPath.path)")
-            try discardOldRootfs()
+            switch archTagState() {
+            case .mismatch(let found):
+                // A real, readable tag naming a DIFFERENT architecture: the
+                // tree cannot boot, so reinstalling is the only way forward.
+                logger.warning("[Rootfs] arch mismatch (found=\(found) want=\(currentArch)) — will delete and reinstall")
+                try discardOldRootfs()
+            case .missing, .empty, .unreadable:
+                // Not evidence of a mismatch. The tree is left in place and the
+                // tag is rewritten: destroying a working rootfs (and with it
+                // the user's guest files, installed packages and /var/minis
+                // data) to fix a one-line marker file is not a trade this
+                // should make. If the tree really is the wrong architecture,
+                // the boot fails loudly and the UI reinstall path still
+                // replaces it.
+                logger.warning("[Rootfs] arch tag \(archTagDiagnostic()) — repairing in place instead of reinstalling \(rootfsPath.path)")
+                try? currentArch.write(to: archTagPath, atomically: true, encoding: .utf8)
+                if !isInstalled {
+                    // The repair did not stick (unwritable container). Fall back
+                    // to the old behaviour rather than unzipping a fresh rootfs
+                    // over an untagged tree, which would leave a mixed-version
+                    // install that is harder to diagnose than a clean one.
+                    logger.warning("[Rootfs] tag repair did not stick — discarding the untagged rootfs")
+                    try discardOldRootfs()
+                }
+            case .ok:
+                break
+            }
         }
 
         guard !isInstalled else {

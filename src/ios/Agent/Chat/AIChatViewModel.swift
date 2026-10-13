@@ -3447,14 +3447,22 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
         // Clean orphaned tool_results that reference tool_uses no longer in history.
         // This fixes API 400: "unexpected tool_use_id found in tool_result blocks"
         // which occurs after partial cancellation or interrupted streaming.
+        //
+        // Compared on `pairingKey`, not the raw id: the Responses API stores ids
+        // as "<call_id>|<fc_id>" and every other pairing site normalises with
+        // `pairingKey` for exactly this reason — a raw comparison both misses a
+        // real orphan and, worse, DELETES a correctly paired tool_result whose
+        // sibling carries the other id form (cross-provider fallback, a model
+        // switch, or a rehydrated session). Deleting it loses that tool's output
+        // for the model, and the now-stranded tool_use can trip a 400.
         var allRetryToolUseIds = Set<String>()
         for msg in agentHistory { for part in msg.parts {
-            if case .toolUse(let id, _, _, _) = part { allRetryToolUseIds.insert(id) }
+            if case .toolUse(let id, _, _, _) = part { allRetryToolUseIds.insert(Self.pairingKey(id)) }
         }}
         for i in (0..<agentHistory.count).reversed() {
             guard agentHistory[i].role == .user else { continue }
             let cleaned = agentHistory[i].parts.filter { part in
-                if case .toolResult(let id, _, _, _, _, _, _, _, _) = part { return allRetryToolUseIds.contains(id) }
+                if case .toolResult(let id, _, _, _, _, _, _, _, _) = part { return allRetryToolUseIds.contains(Self.pairingKey(id)) }
                 return true
             }
             if cleaned.isEmpty { agentHistory.remove(at: i) }

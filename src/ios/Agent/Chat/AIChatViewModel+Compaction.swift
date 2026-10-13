@@ -1742,8 +1742,15 @@ extension AIChatViewModel {
                 try? await Task.sleep(nanoseconds: 5 * 1_000_000_000)
                 if Task.isCancelled { return }
                 if let breach = await progress.breach() {
-                    await MainActor.run { consumeTask.cancel() }
+                    // Record the breach BEFORE cancelling the consumer. Its
+                    // `catch` reads `breachReason()` to tell a watchdog timeout
+                    // apart from a user stop, so cancelling first opened a
+                    // window where the consumer saw a bare CancellationError and
+                    // the caller reported "Compaction cancelled." — i.e. a real
+                    // 120s/900s timeout shown as the user's own cancel, with the
+                    // session left uncompacted.
                     await progress.recordBreach(breach)
+                    await MainActor.run { consumeTask.cancel() }
                     return
                 }
             }

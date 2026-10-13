@@ -2439,6 +2439,30 @@ extension SkillStore {
         let data: Data
     }
 
+    /// True when a zip entry name is safe to treat as a path RELATIVE to the
+    /// directory the archive is unpacked into.
+    ///
+    /// Every caller of `readZipEntries` writes entries with
+    /// `appendingPathComponent(entry.name)`, so a crafted entry named
+    /// `../../Library/Preferences/com.openminis.app.plist` ("zip slip") writes
+    /// outside the destination — for an installed `.minisx`, anywhere in the
+    /// app container. Nothing validates CEN names inside a zip, so the check
+    /// has to happen here, at the single choke point every unpacker shares.
+    ///
+    /// Rejected: absolute names, any `..` path component, and NUL. Backslashes
+    /// count as separators for this check because some archivers emit them and
+    /// `appendingPathComponent` would otherwise hide a traversal inside one
+    /// filename component.
+    nonisolated static func isSafeArchiveEntryName(_ name: String) -> Bool {
+        guard !name.isEmpty, !name.hasPrefix("/"), !name.contains("\0") else { return false }
+        // A Windows drive-absolute name (C:\…) is absolute on that platform and
+        // meaningless here — reject it rather than create a file called "C:".
+        if name.count >= 2, name[name.index(name.startIndex, offsetBy: 1)] == ":" { return false }
+        let normalized = name.replacingOccurrences(of: "\\", with: "/")
+        return !normalized.split(separator: "/", omittingEmptySubsequences: true)
+            .contains { $0 == ".." }
+    }
+
     nonisolated static func readZipEntries(data: Data) throws -> [ZipEntry] {
         guard data.count >= 22 else { throw SkillError.invalidArchive }
 
@@ -2475,6 +2499,12 @@ extension SkillStore {
             let name = String(data: nameData, encoding: .utf8) ?? ""
 
             pos += 46 + nameLen + extraLen + commentLen
+
+            // Path-traversal guard (zip slip) — see isSafeArchiveEntryName.
+            // Dropped silently: a legitimate archive never contains such a
+            // name, and the alternative (throwing) would let one hostile
+            // entry block a whole skill/extension import.
+            guard Self.isSafeArchiveEntryName(name) else { continue }
 
             let isDir = name.hasSuffix("/")
 
