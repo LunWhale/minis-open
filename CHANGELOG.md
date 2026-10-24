@@ -6,6 +6,41 @@ then merged with upstream v1.14 (`b4c0661`).
 
 ## [1.14] - 2026-09-13
 
+### Fix: "Kernel boot failed: -22"
+
+A rootfs whose fakefs database (`meta.db`) was missing or unreadable could
+never boot again, and the UI offered no way out — it showed a full-screen
+`Kernel boot failed: -22` and nothing else.
+
+`-22` is `EINVAL`, and the only place in the iSH boot path that returns it is
+`fake_db_init` (`deps/ish/fs/fake-db.c`) when
+`sqlite3_open_v2(meta.db, ..., SQLITE_OPEN_READWRITE, NULL)` fails; every other
+boot failure reports `-5`/`-2`/`-13`. The tree became unrecoverable because
+`RootfsManager.isInstalled` answered from `data/` plus the `.arch` tag alone,
+and `installIfNeeded()` *repairs* a missing tag in place — so a tree with no
+`meta.db` looked installed for ever and the install never ran again. Nothing on
+the C side can recreate the database (`fakefs_migrate` only applies schema
+migrations; `fakefs_rebuild` copies out of the existing `paths`/`stats`
+tables), so reinstalling from the bundled zip is the only fix.
+
+- `isInstalled` now also requires a usable `meta.db` (present, non-empty,
+  writable). A read-only file has its permissions repaired first — reinstalling
+  destroys the user's guest files, so it stays the last resort.
+- A tree that is present but not bootable is **replaced**, not unzipped over:
+  a fresh `meta.db` describes only the pristine paths, which would leave the
+  user's later files on disk but invisible to the guest.
+- The boot-failure overlay is no longer a dead end: it names the cause instead
+  of printing an errno, and offers **Reinstall Rootfs** and **Try Again**.
+- `fake_db_init` logs the database path, the sqlite reason and the host errno,
+  and no longer leaves a closed handle behind for `fake_db_deinit` to re-close.
+
+`MinisTests/Standalone/RootfsMetaDBBootabilityTests.swift` pins the whole chain:
+that `-22` identifies one call site, that `sqlite3_open_v2` reproduces it on a
+missing file, the five installed-check cases, and an end-to-end recovery of a
+broken tree from the bundled zip.
+
+Build 4.
+
 ### Merge upstream v1.14
 
 Fork version bumped to 1.14 to track the upstream base (shown in About).

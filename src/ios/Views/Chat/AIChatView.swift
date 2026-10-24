@@ -2648,7 +2648,7 @@ struct AIChatView: View {
             ZStack {
                 ChatColors.background
                     .ignoresSafeArea()
-                VStack(spacing: 12) {
+                VStack(spacing: 16) {
                     Image(systemName: "exclamationmark.circle.fill")
                         .font(.title2)
                         .foregroundStyle(.red)
@@ -2657,6 +2657,33 @@ struct AIChatView: View {
                         .foregroundStyle(.red)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 40)
+                    // [T-rootfs-metadb-bootability] This overlay used to be a
+                    // dead end: it printed a raw errno and offered no way out,
+                    // so a rootfs whose meta.db had gone missing left the app
+                    // permanently unusable. Nothing on the iSH side can
+                    // recreate that database, so reinstalling from the bundled
+                    // zip is the only recovery — keep it one tap away.
+                    VStack(spacing: 10) {
+                        Button {
+                            vm.reinstallRootfsAndRetry()
+                        } label: {
+                            Text("Reinstall Rootfs")
+                                .font(.subheadline.weight(.medium))
+                                .frame(maxWidth: 240)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(ChatColors.accent)
+
+                        Button {
+                            vm.retryKernelBoot()
+                        } label: {
+                            Text("Try Again")
+                                .font(.footnote)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(ChatColors.secondaryText)
+                    }
+                    .padding(.top, 4)
                 }
             }
             .transition(.opacity)

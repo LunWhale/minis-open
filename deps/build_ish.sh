@@ -107,6 +107,45 @@ check_prerequisites() {
 }
 
 # ============================================================================
+# Apply Fork Patches
+# ============================================================================
+# `deps/ish` is a submodule of upstream's ish-arm64 repo, so changes this fork
+# needs cannot live in the parent repository's history — and pushing to upstream
+# is not an option. They are kept as .patch files here and replayed on every
+# build instead. Each patch is skipped when it is already applied, so a dirty
+# submodule from a previous run is not an error.
+apply_fork_patches() {
+    local patch_dir="$SCRIPT_DIR/patches"
+    [ -d "$patch_dir" ] || return 0
+
+    log_info "Applying fork patches to $ISH_DIR..."
+    cd "$ISH_DIR"
+
+    local applied=0 skipped=0
+    for patch in "$patch_dir"/*.patch; do
+        [ -e "$patch" ] || continue
+        local name
+        name="$(basename "$patch")"
+        if git apply --check "$patch" 2>/dev/null; then
+            git apply "$patch"
+            log_success "  applied $name"
+            applied=$((applied + 1))
+        elif git apply --check --reverse "$patch" 2>/dev/null; then
+            log_info "  already applied: $name"
+            skipped=$((skipped + 1))
+        else
+            # Neither applies nor reverses: the submodule moved under us and the
+            # patch needs rebasing. Fail loudly rather than build a tree that
+            # silently lacks a fix the app depends on.
+            log_error "  $name does not apply and is not already applied — rebase it against the current deps/ish pin"
+        fi
+    done
+
+    cd "$SCRIPT_DIR"
+    log_info "Patches: $applied applied, $skipped already present"
+}
+
+# ============================================================================
 # Initialize Submodules
 # ============================================================================
 init_submodules() {
@@ -438,6 +477,7 @@ main() {
 
     check_prerequisites
     init_submodules
+    apply_fork_patches
     setup_cross_compile
     build_ish
     copy_outputs

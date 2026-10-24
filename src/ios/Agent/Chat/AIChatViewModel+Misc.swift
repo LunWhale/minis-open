@@ -28,7 +28,12 @@ extension AIChatViewModel {
                     let kernelElapsed = (CFAbsoluteTimeGetCurrent() - kernelStart) * 1000
                     logger.info("[KernelBoot] kernel boot call: \(String(format: "%.1f", kernelElapsed))ms")
                     if err < 0 {
-                        kernelStatus = .failed("Kernel boot failed: \(err)")
+                        // [T-rootfs-metadb-bootability] Log the failing tree
+                        // state next to the errno: "-22" on its own says nothing,
+                        // and the log is the only place the distinction between
+                        // a missing meta.db and an unreadable one survives.
+                        logger.error("[KernelBoot] boot failed: \(err) rootfs=\(RootfsManager.shared.integrityDiagnostic())")
+                        kernelStatus = .failed(Self.describeBootError(err))
                         return
                     }
                     // Wire fakefs change events into the iCloud Sync v2
@@ -49,14 +54,74 @@ extension AIChatViewModel {
                 let totalElapsed = (CFAbsoluteTimeGetCurrent() - bootStart) * 1000
                 logger.info("[KernelBoot] TOTAL: \(String(format: "%.1f", totalElapsed))ms")
             } catch {
-                kernelStatus = .failed(error.localizedDescription)
                 logger.error("[KernelBoot] error: \(error.localizedDescription)")
+                kernelStatus = .failed(error.localizedDescription)
             }
         }
     }
 
-    // MARK: - Prompt Queue
+    /// Turn an iSH boot errno into something the user can act on.
+    ///
+    /// [T-rootfs-metadb-bootability] The overlay used to print the raw number
+    /// ("Kernel boot failed: -22"). That is `_EINVAL` from `fake_db_init`
+    /// failing to open `meta.db` — `fake_db_init` is the only place in the boot
+    /// path that returns it — and nothing about the message said what was
+    /// wrong or that a rootfs reinstall is the fix.
+    private static func describeBootError(_ err: Int32) -> String {
+        switch err {
+        case -22: // EINVAL: fake_db_init could not open meta.db
+            return "Kernel boot failed (-22): the sandbox filesystem database is missing or unreadable.\nReinstalling the rootfs usually fixes this."
+        case -5: // EIO: fake_db_init failed after opening the database
+            return "Kernel boot failed (-5): the sandbox filesystem database is damaged.\nReinstalling the rootfs usually fixes this."
+        case -2: // ENOENT
+            return "Kernel boot failed (-2): the rootfs is incomplete.\nReinstalling the rootfs usually fixes this."
+        case -13: // EACCES
+            return "Kernel boot failed (-13): the rootfs cannot be read.\nReinstalling the rootfs usually fixes this."
+        case -28: // ENOSPC
+            return "Kernel boot failed (-28): the device is out of free space.\nFree some space, then reinstall the rootfs."
+        default:
+            return "Kernel boot failed: \(err)"
+        }
+    }
 
+    /// Replace the rootfs with a pristine copy from the bundle, then boot again.
+    ///
+    /// Safe to call from the boot-failure overlay: `ISHKernel` only sets
+    /// `isBooted` after the whole boot succeeds, and a failed boot leaves no
+    /// mount registered and no PID 1 behind (`mount_root` tears its own mount
+    /// down; `become_first_process` never ran), so there is no in-process state
+    /// to undo.
+    func reinstallRootfsAndRetry() {
+        guard kernelStatus != .booting else { return }
+        let why = RootfsManager.shared.integrityDiagnostic()
+        kernelStatus = .booting
+        Task {
+            logger.warning("[KernelBoot] reinstalling rootfs on user request (was: \(why))")
+            do {
+                try RootfsManager.shared.reset(keepUserData: false)
+            } catch {
+                logger.error("[KernelBoot] rootfs reinstall failed: \(error.localizedDescription)")
+                kernelStatus = .failed("Could not reinstall the rootfs: \(error.localizedDescription)")
+                return
+            }
+            kernelStatus = .notBooted
+            ensureKernelBooted()
+        }
+    }
+
+    /// Boot again without touching the rootfs.
+    ///
+    /// Reaches the cases a reinstall cannot help: a transient failure (disk
+    /// pressure that has since cleared, a boot interrupted by the app going to
+    /// the background). Cheap, because `installIfNeeded` short-circuits once the
+    /// tree is installed.
+    func retryKernelBoot() {
+        guard kernelStatus != .booting, !ISHKernel.shared.isBooted else { return }
+        kernelStatus = .notBooted
+        ensureKernelBooted()
+    }
+
+    // MARK: - Prompt Queue
     /// Queue the current input text as a prompt to be injected into the running agent loop.
     /// The message immediately appears in the chat with a dashed border (isQueued=true).
     /// - Parameter silent: [T-p0-programmatic-prompt] skip the tap haptic; set

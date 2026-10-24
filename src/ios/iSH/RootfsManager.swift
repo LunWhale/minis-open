@@ -48,11 +48,79 @@ class RootfsManager {
         return rootfsPath.appendingPathComponent(".arch")
     }
 
+    /// The fakefs database. iSH cannot boot without it: `fake_db_init` opens it
+    /// with `sqlite3_open_v2(..., SQLITE_OPEN_READWRITE, NULL)` and reports any
+    /// failure as `_EINVAL`, which is what reaches the UI as
+    /// "Kernel boot failed: -22".
+    var metaDBPath: URL {
+        return rootfsPath.appendingPathComponent("meta.db")
+    }
+
+    /// Whether the fakefs database is present and usable.
+    ///
+    /// [T-rootfs-metadb-bootability] `isInstalled` used to answer from `data/`
+    /// plus the `.arch` tag alone, and `installIfNeeded()` *repairs* a missing
+    /// tag in place. A tree whose `meta.db` had gone missing therefore looked
+    /// installed for ever: the install never ran again, and every single boot
+    /// died inside `fake_db_init` with `-22`. Nothing on the C side can
+    /// recreate the database — `fakefs_migrate` only applies schema migrations
+    /// and `fakefs_rebuild` copies out of the existing `paths`/`stats` tables —
+    /// so reinstalling from the bundled zip is the only recovery, and that
+    /// decision has to be made here.
+    ///
+    /// This is deliberately a bootability check, not a checksum: a rootfs the
+    /// user has customised must keep booting, and sqlite itself validates the
+    /// file far better than anything written here could.
+    private var hasUsableMetaDB: Bool {
+        let path = metaDBPath.path
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: path) else {
+            return false
+        }
+        // A zero-byte file holds no schema. sqlite would report SQLITE_NOTADB on
+        // the first pragma, failing the mount with _EIO rather than _EINVAL.
+        let size = (attrs[.size] as? NSNumber)?.intValue ?? 0
+        guard size > 0 else { return false }
+
+        // Writable is required too: `fake_db_init` switches to journal_mode=wal
+        // and every chmod/chown/mknod writes a row. A read-only file (a restored
+        // backup, or a tree copied in from Files) fails the open exactly like a
+        // missing one. Try to fix the permissions first — reinstalling destroys
+        // the user's guest files, so it is the last resort, not the first.
+        if !FileManager.default.isWritableFile(atPath: path) {
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o644], ofItemAtPath: path)
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o755], ofItemAtPath: rootfsPath.path)
+            guard FileManager.default.isWritableFile(atPath: path) else {
+                logger.warning("[Rootfs] meta.db is present but not writable — boot would fail with -22")
+                return false
+            }
+            logger.info("[Rootfs] repaired permissions on meta.db")
+        }
+        return true
+    }
+
     var isInstalled: Bool {
         guard FileManager.default.fileExists(atPath: dataPath.path) else { return false }
         // Check architecture matches
         guard let tag = try? String(contentsOf: archTagPath, encoding: .utf8) else { return false }
-        return tag.trimmingCharacters(in: .whitespacesAndNewlines) == currentArch
+        guard tag.trimmingCharacters(in: .whitespacesAndNewlines) == currentArch else { return false }
+        // [T-rootfs-metadb-bootability] A tagged tree without a usable fakefs
+        // database cannot boot, so it must not count as installed.
+        return hasUsableMetaDB
+    }
+
+    /// Why the tree on disk cannot boot, as a short loggable string.
+    ///
+    /// [T-rootfs-metadb-bootability] The boot failure surfaces to the user as
+    /// `-22`, which names neither the file nor the reason. This is what the log
+    /// and the recovery path report instead.
+    func integrityDiagnostic() -> String {
+        if !FileManager.default.fileExists(atPath: rootfsPath.path) { return "rootfs-dir-missing" }
+        if !FileManager.default.fileExists(atPath: dataPath.path) { return "data-dir-missing" }
+        if !FileManager.default.fileExists(atPath: metaDBPath.path) { return "meta-db-missing" }
+        if !hasUsableMetaDB { return "meta-db-unusable" }
+        return archTagDiagnostic()
     }
 
     /// Why `isInstalled` came back false, as a short loggable string.
@@ -67,6 +135,7 @@ class RootfsManager {
     /// than another forensic reconstruction.
     private func archTagDiagnostic() -> String {
         if !FileManager.default.fileExists(atPath: dataPath.path) { return "data-dir-missing" }
+        if !hasUsableMetaDB { return "meta-db-unusable" }
         switch archTagState() {
         case .ok: return "ok(\(currentArch))"
         case .mismatch(let found): return "arch-mismatch(found=\(found) want=\(currentArch))"
@@ -208,16 +277,28 @@ class RootfsManager {
                 logger.warning("[Rootfs] arch tag \(archTagDiagnostic()) — repairing in place instead of reinstalling \(rootfsPath.path)")
                 try? currentArch.write(to: archTagPath, atomically: true, encoding: .utf8)
                 if !isInstalled {
-                    // The repair did not stick (unwritable container). Fall back
-                    // to the old behaviour rather than unzipping a fresh rootfs
-                    // over an untagged tree, which would leave a mixed-version
-                    // install that is harder to diagnose than a clean one.
-                    logger.warning("[Rootfs] tag repair did not stick — discarding the untagged rootfs")
+                    // Either the repair did not stick (unwritable container), or
+                    // the tree cannot boot for a reason the tag cannot fix (no
+                    // usable meta.db). Fall back to the old behaviour rather than
+                    // unzipping a fresh rootfs over it, which would leave a
+                    // mixed-version install that is harder to diagnose than a
+                    // clean one.
+                    logger.warning("[Rootfs] tree still not bootable after tag repair (\(integrityDiagnostic())) — discarding it")
                     try discardOldRootfs()
                 }
             case .ok:
                 break
             }
+        }
+
+        // [T-rootfs-metadb-bootability] A tree that is present but not bootable
+        // must be replaced, not unzipped over. A fresh meta.db from the bundle
+        // describes only the pristine paths, so files the user created after the
+        // original install would survive on disk but be invisible to the guest —
+        // a silent half-repair that is worse than a clean install.
+        if FileManager.default.fileExists(atPath: rootfsPath.path) && !isInstalled {
+            logger.warning("[Rootfs] rootfs present but not bootable (\(integrityDiagnostic())) — reinstalling from the bundle")
+            try discardOldRootfs()
         }
 
         guard !isInstalled else {

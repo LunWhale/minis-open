@@ -1,0 +1,34 @@
+--- a/fs/fake-db.c
++++ b/fs/fake-db.c
+@@ -1,3 +1,4 @@
++#include <errno.h>
+ #include <string.h>
+ #include <sys/stat.h>
+ #include <unistd.h>
+@@ -286,8 +287,25 @@
+ int fake_db_init(struct fakefs_db *fs, const char *db_path, int root_fd) {
+     int err = sqlite3_open_v2(db_path, &fs->db, SQLITE_OPEN_READWRITE, NULL);
+     if (err != SQLITE_OK) {
+-        printk("error opening database: %s\n", sqlite3_errmsg(fs->db));
++        // [T-rootfs-metadb-bootability] This is the ONLY _EINVAL ("-22") in the
++        // boot path, and the app surfaces it verbatim as
++        // "Kernel boot failed: -22" — a message that names neither the file nor
++        // the reason. Name both here so the next occurrence is diagnosable from
++        // the log alone.
++        //
++        // A missing/unwritable meta.db is not recoverable from inside the guest:
++        // fakefs_migrate() only applies schema migrations and fakefs_rebuild()
++        // copies out of the existing paths/stats tables, so neither can create a
++        // database from nothing. The Swift side (RootfsManager.isInstalled) checks
++        // for exactly this and reinstalls the rootfs from the bundled zip.
++        printk("fakefs db init: cannot open %s: sqlite %d (%s), host errno %d "
++               "— the rootfs tree has no usable fakefs database, so it cannot "
++               "boot; reinstall the rootfs\n",
++               db_path, err, sqlite3_errmsg(fs->db), errno);
+         sqlite3_close(fs->db);
++        // Leave no dangling pointer behind: fake_db_deinit() must not close a
++        // handle that has already been closed here.
++        fs->db = NULL;
+         return _EINVAL;
+     }
+     sqlite3_busy_timeout(fs->db, 5000);
