@@ -330,6 +330,69 @@ if sqlite3_open_v2(restoredDB, &probeDB, SQLITE_OPEN_READWRITE, nil) == SQLITE_O
 if probeDB != nil { sqlite3_close(probeDB) }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// MARK: - 7. The automatic repair keeps what the user did not agree to lose
+// ─────────────────────────────────────────────────────────────────────────────
+
+print("\n▶️  7. repair preserves user data")
+
+check("the repair stashes the guest home before discarding the tree",
+      rootfsSwift.contains("func stashUserHome() -> URL?")
+        && rootfsSwift.contains("stashedHome = stashUserHome()"))
+check("…and puts it back after the fresh install",
+      rootfsSwift.contains("func restoreStashedUserHome(_ stash: URL?)")
+        && rootfsSwift.contains("restoreStashedUserHome(stashedHome)"))
+check("the stash is not abandoned when the unzip throws",
+      rootfsSwift.contains("defer { if !homeRestored { restoreStashedUserHome(stashedHome) } }"))
+check("an unwritable database does NOT trigger the destructive path",
+      rootfsSwift.contains("case .missing, .empty:")
+        && rootfsSwift.contains("case .unwritable:"))
+
+// /var/minis must survive because its subdirectories are symlinks into the
+// persistent store, which lives outside the rootfs.
+let offloading = src("Agent/Chat/AIChatViewModel+Offloading.swift")
+check("/var/minis is bind-mounted, so a rootfs reinstall cannot take it",
+      offloading.contains("let hostPath = dataPath.appendingPathComponent(String(linuxDir.dropFirst()))"))
+let miscPaths = src("Agent/Chat/AIChatViewModel+Misc.swift")
+check("its persistent store is under Library, not Documents/alpine-rootfs",
+      miscPaths.contains("MinisChat/minis"))
+let rootfsSwiftForPaths = rootfsSwift
+check("the rootfs itself lives under Documents",
+      rootfsSwiftForPaths.contains("documents.appendingPathComponent(\"alpine-rootfs\")"))
+
+// Behaviour: mirror stashUserHome + restoreStashedUserHome and prove the files
+// survive a discard-and-reinstall cycle.
+let homeTree = tmp.appendingPathComponent("home-cycle")
+let homeRoot = homeTree.appendingPathComponent("data/root")
+let homeStash = tmp.appendingPathComponent("home-stash/root")
+try? FileManager.default.createDirectory(at: homeRoot.appendingPathComponent("project/src"),
+                                        withIntermediateDirectories: true)
+try? "notes".write(to: homeRoot.appendingPathComponent("NOTES.md"), atomically: true, encoding: .utf8)
+try? "x".write(to: homeRoot.appendingPathComponent("project/src/main.c"), atomically: true, encoding: .utf8)
+try? FileManager.default.createDirectory(at: homeStash.deletingLastPathComponent(),
+                                        withIntermediateDirectories: true)
+// 1. stash (a move, as the real code does)
+try? FileManager.default.moveItem(at: homeRoot, to: homeStash)
+check("stash moves /root out of the doomed tree",
+      !FileManager.default.fileExists(atPath: homeRoot.path)
+        && FileManager.default.fileExists(atPath: homeStash.appendingPathComponent("NOTES.md").path))
+// 2. discard the tree
+let discarded = try? FileManager.default.removeItem(at: homeTree)
+check("the tree is discarded", discarded != nil)
+// 3. a fresh install creates an empty /root (the bundle ships one)
+try? FileManager.default.createDirectory(at: homeRoot, withIntermediateDirectories: true)
+// 4. restore
+if FileManager.default.fileExists(atPath: homeRoot.path) {
+    try? FileManager.default.removeItem(at: homeRoot)
+}
+try? FileManager.default.moveItem(at: homeStash, to: homeRoot)
+check("E2E: the user's notes survive the repair",
+      (try? String(contentsOf: homeRoot.appendingPathComponent("NOTES.md"), encoding: .utf8)) == "notes")
+check("E2E: nested files survive too",
+      (try? String(contentsOf: homeRoot.appendingPathComponent("project/src/main.c"), encoding: .utf8)) == "x")
+try? FileManager.default.removeItem(at: homeTree)
+try? FileManager.default.removeItem(at: homeStash.deletingLastPathComponent())
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 print("")
 if warnings > 0 { print("⚠️  \(warnings) note(s)") }

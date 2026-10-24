@@ -30,6 +30,12 @@ tables), so reinstalling from the bundled zip is the only fix.
   is intact, and destroying `/var/minis` data to fix a chmod would be a
   disproportionate repair. Missing or empty is what triggers the automatic
   reinstall, because nothing can recreate those.
+- The automatic reinstall now stashes `data/root` (the guest home directory) and
+  restores it after the fresh install. `/var/minis` was already safe — its
+  subdirectories are symlinks into `Library/MinisChat/minis`, outside the
+  rootfs — but everything under `/root`, plus installed packages and `/etc`
+  edits, was collateral damage of a repair the user never asked for. The stash
+  is released by `defer`, so a failed unzip cannot abandon the only copy.
 - A tree that is present but not bootable is **replaced**, not unzipped over:
   a fresh `meta.db` describes only the pristine paths, which would leave the
   user's later files on disk but invisible to the guest.

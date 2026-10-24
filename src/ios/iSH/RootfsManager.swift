@@ -281,6 +281,73 @@ class RootfsManager {
         }
     }
 
+    /// Move `data/root` — the guest's home directory — out of the way, so the
+    /// automatic recovery below does not destroy it.
+    ///
+    /// [T-rootfs-metadb-bootability] `installIfNeeded` discards a rootfs whose
+    /// fakefs database is gone, and a bare `discardOldRootfs()` takes `/root`
+    /// with it. The user did not ask to lose their home directory by opening the
+    /// app; it is collateral damage of a repair they never requested. `/var/minis`
+    /// is safe on its own (its subdirectories are symlinks into the persistent
+    /// store outside the rootfs — see the bind-mount table in
+    /// AIChatViewModel+Offloading), but everything under `/root`, plus installed
+    /// packages and `/etc` edits, is not.
+    ///
+    /// Returns nil when there is nothing worth keeping, so the caller does not
+    /// pay for a copy that would restore an empty directory.
+    private func stashUserHome() -> URL? {
+        let userDataPath = dataPath.appendingPathComponent("root")
+        guard FileManager.default.fileExists(atPath: userDataPath.path) else { return nil }
+
+        let stash = FileManager.default.temporaryDirectory
+            .appendingPathComponent("rootfs-autoheal-\(UUID().uuidString)")
+            .appendingPathComponent("root")
+        do {
+            try FileManager.default.createDirectory(
+                at: stash.deletingLastPathComponent(), withIntermediateDirectories: true)
+            // A move, not a copy: the rootfs is about to be discarded, so there
+            // is no reason to duplicate what may be gigabytes, and on the same
+            // volume rename(2) is free. The tree being repaired is often
+            // undeletable (that is why discardOldRootfs has a move-aside path),
+            // so fall back to copying if the rename fails.
+            try FileManager.default.moveItem(at: userDataPath, to: stash)
+            logger.info("[Rootfs] stashed /root before repair (\(stash.deletingLastPathComponent().lastPathComponent))")
+            return stash
+        } catch {
+            do {
+                try FileManager.default.copyItem(at: userDataPath, to: stash)
+                logger.info("[Rootfs] copied /root before repair (rename failed: \(error.localizedDescription))")
+                return stash
+            } catch {
+                // Leaving /root inside the tree means discardOldRootfs takes it.
+                // Say so loudly rather than pretending the repair was clean.
+                logger.error("[Rootfs] could not preserve /root before repair — it will be lost: \(error.localizedDescription)")
+                return nil
+            }
+        }
+    }
+
+    /// Put a stashed home directory back after a fresh install.
+    private func restoreStashedUserHome(_ stash: URL?) {
+        guard let stash else { return }
+        defer { try? FileManager.default.removeItem(at: stash.deletingLastPathComponent()) }
+
+        let userDataPath = dataPath.appendingPathComponent("root")
+        do {
+            // The bundle ships a `/root`, so the destination usually exists. Its
+            // contents are pristine dotfiles the restore is meant to replace.
+            if FileManager.default.fileExists(atPath: userDataPath.path) {
+                try FileManager.default.removeItem(at: userDataPath)
+            }
+            try FileManager.default.createDirectory(
+                at: userDataPath.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try FileManager.default.moveItem(at: stash, to: userDataPath)
+            logger.info("[Rootfs] restored /root after repair")
+        } catch {
+            logger.error("[Rootfs] repair could not restore /root: \(error.localizedDescription)")
+        }
+    }
+
     func installIfNeeded() throws {
         if FileManager.default.fileExists(atPath: rootfsPath.path) && !isInstalled {
             switch archTagState() {
@@ -319,10 +386,17 @@ class RootfsManager {
         // describes only the pristine paths, so files the user created after the
         // original install would survive on disk but be invisible to the guest —
         // a silent half-repair that is worse than a clean install.
+        //
+        // The automatic paths below destroy the tree, so the guest home directory
+        // is stashed first and put back after the fresh install. Losing /root is
+        // not something the user agreed to by launching the app.
+        var stashedHome: URL?
+
         if FileManager.default.fileExists(atPath: rootfsPath.path) && !isInstalled {
             switch metaDBState() {
             case .missing, .empty:
                 logger.warning("[Rootfs] rootfs present but its database is \(integrityDiagnostic()) — reinstalling from the bundle")
+                stashedHome = stashUserHome()
                 try discardOldRootfs()
             case .unwritable:
                 // The tree itself is intact; only the permissions are wrong.
@@ -356,6 +430,13 @@ class RootfsManager {
 
         logger.info("[Rootfs] installing from \(zipURL.path)")
 
+        // Whatever happens to the unzip below, the stashed home must not be
+        // abandoned in tmp — it may be the only copy of the user's files. The
+        // flag makes the success path explicit rather than relying on the defer
+        // observing a nil'd-out variable.
+        var homeRestored = false
+        defer { if !homeRestored { restoreStashedUserHome(stashedHome) } }
+
         // Create destination directory
         try FileManager.default.createDirectory(
             at: rootfsPath,
@@ -368,6 +449,13 @@ class RootfsManager {
 
         // Write architecture tag so we detect mismatches on future launches
         try currentArch.write(to: archTagPath, atomically: true, encoding: .utf8)
+
+        // Put the guest home directory back before anything reads it. Runs
+        // after the tag so `isInstalled` is true for the restore's precondition,
+        // and before the /var/minis subdir creation below, which only adds
+        // directories the restore does not conflict with.
+        restoreStashedUserHome(stashedHome)
+        homeRestored = true
 
         // Pre-create /var/minis/ shared directory structure
         let minisSubdirs = ["var/minis/attachments", "var/minis/offloads", "var/minis/workspace", "var/minis/skills", "var/minis/shared"]
