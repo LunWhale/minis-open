@@ -26,6 +26,10 @@ tables), so reinstalling from the bundled zip is the only fix.
 - `isInstalled` now also requires a usable `meta.db` (present, non-empty,
   writable). A read-only file has its permissions repaired first — reinstalling
   destroys the user's guest files, so it stays the last resort.
+- A tree whose database is merely *unwritable* is reported, not wiped: the tree
+  is intact, and destroying `/var/minis` data to fix a chmod would be a
+  disproportionate repair. Missing or empty is what triggers the automatic
+  reinstall, because nothing can recreate those.
 - A tree that is present but not bootable is **replaced**, not unzipped over:
   a fresh `meta.db` describes only the pristine paths, which would leave the
   user's later files on disk but invisible to the guest.

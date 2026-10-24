@@ -71,15 +71,30 @@ class RootfsManager {
     /// This is deliberately a bootability check, not a checksum: a rootfs the
     /// user has customised must keep booting, and sqlite itself validates the
     /// file far better than anything written here could.
-    private var hasUsableMetaDB: Bool {
+    /// Why `meta.db` is or is not usable.
+    ///
+    /// The distinction decides whether the user's guest files may be thrown
+    /// away. A MISSING or EMPTY database is unrecoverable — nothing on the C
+    /// side can create one — so a reinstall is the only way forward. An
+    /// UNWRITABLE one is a permissions problem on an otherwise intact tree;
+    /// wiping that would destroy `/var/minis` data and installed packages to
+    /// fix a chmod, so it is reported instead.
+    enum MetaDBState: Equatable {
+        case ok
+        case missing
+        case empty
+        case unwritable
+    }
+
+    func metaDBState() -> MetaDBState {
         let path = metaDBPath.path
         guard let attrs = try? FileManager.default.attributesOfItem(atPath: path) else {
-            return false
+            return .missing
         }
         // A zero-byte file holds no schema. sqlite would report SQLITE_NOTADB on
         // the first pragma, failing the mount with _EIO rather than _EINVAL.
         let size = (attrs[.size] as? NSNumber)?.intValue ?? 0
-        guard size > 0 else { return false }
+        guard size > 0 else { return .empty }
 
         // Writable is required too: `fake_db_init` switches to journal_mode=wal
         // and every chmod/chown/mknod writes a row. A read-only file (a restored
@@ -93,11 +108,15 @@ class RootfsManager {
                 [.posixPermissions: 0o755], ofItemAtPath: rootfsPath.path)
             guard FileManager.default.isWritableFile(atPath: path) else {
                 logger.warning("[Rootfs] meta.db is present but not writable — boot would fail with -22")
-                return false
+                return .unwritable
             }
             logger.info("[Rootfs] repaired permissions on meta.db")
         }
-        return true
+        return .ok
+    }
+
+    private var hasUsableMetaDB: Bool {
+        return metaDBState() == .ok
     }
 
     var isInstalled: Bool {
@@ -118,8 +137,12 @@ class RootfsManager {
     func integrityDiagnostic() -> String {
         if !FileManager.default.fileExists(atPath: rootfsPath.path) { return "rootfs-dir-missing" }
         if !FileManager.default.fileExists(atPath: dataPath.path) { return "data-dir-missing" }
-        if !FileManager.default.fileExists(atPath: metaDBPath.path) { return "meta-db-missing" }
-        if !hasUsableMetaDB { return "meta-db-unusable" }
+        switch metaDBState() {
+        case .missing: return "meta-db-missing"
+        case .empty: return "meta-db-empty"
+        case .unwritable: return "meta-db-unwritable"
+        case .ok: break
+        }
         return archTagDiagnostic()
     }
 
@@ -297,8 +320,25 @@ class RootfsManager {
         // original install would survive on disk but be invisible to the guest —
         // a silent half-repair that is worse than a clean install.
         if FileManager.default.fileExists(atPath: rootfsPath.path) && !isInstalled {
-            logger.warning("[Rootfs] rootfs present but not bootable (\(integrityDiagnostic())) — reinstalling from the bundle")
-            try discardOldRootfs()
+            switch metaDBState() {
+            case .missing, .empty:
+                logger.warning("[Rootfs] rootfs present but its database is \(integrityDiagnostic()) — reinstalling from the bundle")
+                try discardOldRootfs()
+            case .unwritable:
+                // The tree itself is intact; only the permissions are wrong.
+                // Wiping it would destroy the user's guest files to fix a chmod,
+                // so refuse and let the boot-failure screen offer the reinstall
+                // as an explicit choice.
+                throw NSError(domain: "RootfsManager", code: 3, userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "The sandbox database (meta.db) is not writable, so the sandbox cannot start. "
+                        + "Free some space or repair the file permissions, then try again — "
+                        + "or reinstall the rootfs."
+                ])
+            case .ok:
+                // The arch tag was the only problem; the switch above handled it.
+                break
+            }
         }
 
         guard !isInstalled else {

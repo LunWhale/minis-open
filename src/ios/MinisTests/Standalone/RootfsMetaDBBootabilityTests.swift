@@ -138,19 +138,24 @@ check("isInstalled still requires the aarch64 tag", isInstalledBody.contains("==
 check("isInstalled ALSO requires a usable meta.db (the actual fix)",
       isInstalledBody.contains("return hasUsableMetaDB"))
 check("a usable meta.db means present, non-empty and writable",
-      rootfsSwift.contains("guard size > 0 else { return false }")
+      rootfsSwift.contains("guard size > 0 else { return .empty }")
         && rootfsSwift.contains("isWritableFile(atPath: path)"))
 check("permissions are repaired before the tree is condemned",
       rootfsSwift.contains("repaired permissions on meta.db"))
 check("an unbootable-but-present tree is replaced, not unzipped over",
-      rootfsSwift.contains("rootfs present but not bootable")
+      rootfsSwift.contains("rootfs present but its database is")
         && rootfsSwift.contains("try discardOldRootfs()"))
+check("a merely unwritable database is reported, NOT wiped (that would destroy user files)",
+      rootfsSwift.contains("case .unwritable:")
+        && rootfsSwift.contains("is not writable, so the sandbox cannot start")
+        && rootfsSwift.contains("domain: \"RootfsManager\", code: 3"))
 check("the tag-repair path no longer claims a broken tree is fine",
       rootfsSwift.contains("tree still not bootable after tag repair"))
 check("the reason is reported as a string, not a bare errno",
       rootfsSwift.contains("func integrityDiagnostic() -> String")
         && rootfsSwift.contains("\"meta-db-missing\"")
-        && rootfsSwift.contains("\"meta-db-unusable\""))
+        && rootfsSwift.contains("\"meta-db-empty\"")
+        && rootfsSwift.contains("\"meta-db-unwritable\""))
 
 // Exercise the same decision against real trees.
 struct RootfsProbe {
