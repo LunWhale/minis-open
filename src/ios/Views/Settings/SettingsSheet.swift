@@ -46,6 +46,26 @@ struct SettingsSheet: View {
     @State private var navPath = NavigationPath()
     @State private var showFeedbackDialog = false
 
+    // [fork] Mirrors of the built-in feature-plugin switches, read from the same
+    // UserDefaults keys ExtensionStore.setEnabled writes alongside the DB row.
+    // They live here so a row vanishes *the instant* the user flips the switch in
+    // Settings → Extensions: querying ExtensionRegistry.builtinEnabled() directly
+    // would only re-evaluate when this view happened to rebuild for some other
+    // reason, leaving a stale row behind.
+    //
+    // Deliberately NOT gated: Appearance, LLM Providers, Model Groups,
+    // Extensions itself, Storage, Permissions, Logs, About, iCloud Sync. Those
+    // are app settings, not agent capabilities — and keeping Extensions always
+    // reachable means a plugin can never lock its own owner out.
+    @AppStorage(ExtensionRegistry.builtinSwitchKey(BuiltinExtension.skillsID)) private var skillsOn = true
+    @AppStorage(ExtensionRegistry.builtinSwitchKey(BuiltinExtension.soulID)) private var soulOn = true
+    @AppStorage(ExtensionRegistry.builtinSwitchKey(BuiltinExtension.subagentsID)) private var subagentsOn = true
+    @AppStorage(ExtensionRegistry.builtinSwitchKey(BuiltinExtension.memoryID)) private var memoryOn = true
+    @AppStorage(ExtensionRegistry.builtinSwitchKey(BuiltinExtension.mcpID)) private var mcpOn = true
+    @AppStorage(ExtensionRegistry.builtinSwitchKey(BuiltinExtension.envVarsID)) private var envVarsOn = true
+    @AppStorage(ExtensionRegistry.builtinSwitchKey(BuiltinExtension.sharedFoldersID)) private var sharedFoldersOn = true
+    @AppStorage(ExtensionRegistry.builtinSwitchKey(BuiltinExtension.mountsID)) private var mountsOn = true
+
     var body: some View {
         NavigationStack(path: $navPath) {
             List {
@@ -130,6 +150,7 @@ struct SettingsSheet: View {
                                 .background(HelperAccent.color, in: Circle())
                         }
                     }
+                        .shown(subagentsOn)
                     NavigationLink {
                         SkillsManagementView()
                     } label: {
@@ -143,6 +164,7 @@ struct SettingsSheet: View {
                                 .background(.blue, in: Circle())
                         }
                     }
+                        .shown(skillsOn)
                     NavigationLink {
                         SoulSettingsView()
                     } label: {
@@ -156,6 +178,7 @@ struct SettingsSheet: View {
                                 .background(.pink, in: Circle())
                         }
                     }
+                        .shown(soulOn)
                     NavigationLink {
                         MemoryManagementView()
                     } label: {
@@ -169,6 +192,7 @@ struct SettingsSheet: View {
                                 .background(.purple, in: Circle())
                         }
                     }
+                        .shown(memoryOn)
                     NavigationLink {
                         MCPIntegrationsView()
                     } label: {
@@ -182,6 +206,7 @@ struct SettingsSheet: View {
                                 .background(.teal, in: Circle())
                         }
                     }
+                        .shown(mcpOn)
                     NavigationLink {
                         EnvironmentVariablesView()
                     } label: {
@@ -195,6 +220,7 @@ struct SettingsSheet: View {
                                 .background(.green, in: Circle())
                         }
                     }
+                        .shown(envVarsOn)
                 }
 
                 Section("Storage") {
@@ -224,6 +250,7 @@ struct SettingsSheet: View {
                                 .background(.green, in: Circle())
                         }
                     }
+                        .shown(sharedFoldersOn)
                     NavigationLink {
                         MountedFoldersSettingsView()
                     } label: {
@@ -237,6 +264,7 @@ struct SettingsSheet: View {
                                 .background(.orange, in: Circle())
                         }
                     }
+                        .shown(mountsOn)
                     if #available(iOS 17.0, *) {
                         NavigationLink {
                             // v2 is the default sync engine; legacy v1
@@ -635,6 +663,20 @@ struct SettingsSheet: View {
             }
         }
         return id.isEmpty ? UIDevice.current.model : id
+    }
+}
+
+
+/// [fork] Conditionally renders a view, used to make a Settings row appear or
+/// vanish with a built-in feature plugin.
+///
+/// A plain `if` inside the `List` works too, but wrapping the row keeps the
+/// untouched row bodies readable. When hidden this collapses to `EmptyView`,
+/// which `List` renders as no row at all — the entry genuinely disappears
+/// rather than leaving an empty tappable gap.
+extension View {
+    @ViewBuilder func shown(_ visible: Bool) -> some View {
+        if visible { self }
     }
 }
 

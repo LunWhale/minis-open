@@ -2,6 +2,14 @@ import SwiftUI
 import UIKit
 
 struct AboutView: View {
+    /// The upstream OpenMinis release this fork is based on.
+    ///
+    /// Kept in step with `MARKETING_VERSION` when the fork merges a new
+    /// upstream release (see CHANGELOG.md). Shown next to the version because
+    /// the fork deliberately tracks upstream's numbering, so the number alone
+    /// does not say which upstream base the plugin work sits on.
+    static let upstreamBase = "1.15"
+
     private let appVersion: String = {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
@@ -88,6 +96,14 @@ struct AboutView: View {
                     Text("Version \(appVersion)")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
+                    // The fork tracks upstream's release number, so "1.15" on its
+                    // own cannot tell a bug report which codebase it came from —
+                    // or which upstream base the fork's plugin work sits on.
+                    // Name both.
+                    Text("fork of OpenMinis \(Self.upstreamBase)")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .textSelection(.enabled)
                     Text("Built \(buildDate)")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
