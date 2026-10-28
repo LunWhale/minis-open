@@ -263,7 +263,9 @@ check("a reinstall-and-retry entry point exists",
 check("a plain retry exists for transient failures",
       miscSwift.contains("func retryKernelBoot()"))
 
-let chatView = src("Views/Chat/AIChatView.swift")
+// Upstream 1.15 split AIChatView.swift into Views/Chat/AIChatView/**; the
+// kernel boot overlay lives in its Banners part.
+let chatView = src("Views/Chat/AIChatView/AIChatView+Banners.swift")
 check("the failed overlay renders a Reinstall Rootfs button",
       chatView.contains("vm.reinstallRootfsAndRetry()")
         && chatView.contains("Reinstall Rootfs"))

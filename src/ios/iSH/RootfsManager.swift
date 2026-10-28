@@ -284,6 +284,17 @@ class RootfsManager {
     /// Move `data/root` — the guest's home directory — out of the way, so the
     /// automatic recovery below does not destroy it.
     ///
+    /// [T-rootfs-root-not-visible-after-repair] HONEST LIMIT: this preserves the
+    /// BYTES, not the guest's view of them. fakefs resolves every path through
+    /// the `meta.db` `paths` table, and the fresh database that comes out of the
+    /// bundle describes only the pristine tree, so a restored file that has no
+    /// row there is on disk but absent from the guest shell (`fakefs_readdir`
+    /// skips unregistered host entries, `fakefs_open` returns ENOENT). Rebuilding
+    /// the rows would mean re-running fakefsify over the restored subtree, which
+    /// nothing on the C side exposes at runtime. So the stash is a rescue copy,
+    /// not a restore: `/var/minis` (symlinked into Library/MinisChat/minis) is the
+    /// only user data that genuinely survives a repair, and the log says so.
+    ///
     /// [T-rootfs-metadb-bootability] `installIfNeeded` discards a rootfs whose
     /// fakefs database is gone, and a bare `discardOldRootfs()` takes `/root`
     /// with it. The user did not ask to lose their home directory by opening the
@@ -342,7 +353,7 @@ class RootfsManager {
             try FileManager.default.createDirectory(
                 at: userDataPath.deletingLastPathComponent(), withIntermediateDirectories: true)
             try FileManager.default.moveItem(at: stash, to: userDataPath)
-            logger.info("[Rootfs] restored /root after repair")
+            logger.warning("[Rootfs] copied /root back after repair — the files are on disk but the guest shell will not list them (meta.db has no rows for them); /var/minis is the surviving user data")
         } catch {
             logger.error("[Rootfs] repair could not restore /root: \(error.localizedDescription)")
         }
