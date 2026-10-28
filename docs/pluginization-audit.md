@@ -34,37 +34,47 @@ disabled Todo or Memory plugin still advertised `todo_*` / `memory_*` to the
 model. Both are removed from the schema again, and the dispatcher guards in
 `AIChatViewModel+ConcurrentTools.swift` stay as the mid-run half of the pair.
 
-## 2. The 10 prompt modules — **OPEN**
+## 2. The 10 prompt modules — **FIXED**
 
 `promptShellID`, `promptWorkspaceID`, `promptMemoryID`, `promptCodingID`,
 `promptAppleID`, `promptMinisCLIID`, `promptEnvSecretsID`, `promptStyleID`,
-`promptScheduledID`, `promptExtensionsID`.
+`promptScheduledID`, `promptExtensionsID` — the fork's headline feature: the
+system prompt split into switchable pieces so unused guidance costs no tokens.
 
-These are the fork's headline feature: the system prompt split into switchable
-pieces so unused guidance costs no tokens. **After the merge they are dead
-switches.** Evidence:
+After the merge these were dead switches (`grep -c 'builtinSwitchKey' ...+SystemPrompt.swift` → 0). Fixed by gating the sections upstream 1.15 writes
+inline, rather than appending a second copy of the guidance:
+
+- **9 modules** wrap 15 section runs inside `baseSystemPrompt`
+  (`promptShell` 2, `promptWorkspace` 2, `promptMemory` 2, `promptCoding` 2,
+  `promptMinisCLI` 3, `promptApple` 1, `promptEnvSecrets` 1, `promptStyle` 1,
+  `promptScheduled` 1).
+- **`promptExtensions`** is contributed by `promptGuidanceTail`, together with
+  any user-typed per-feature-plugin guidance (`featureExtraGuidance()`, which
+  had also lost its caller in the merge).
+
+`promptModule(_ id:_ inline:)` resolves in priority order: switched off → `""`;
+user override stored → the override replaces the section (so modules stay
+editable); otherwise → the inline upstream text unchanged.
+
+### The property that makes this safe
+
+With every module enabled and no override — the stock state, since a missing
+`UserDefaults` key means *on* — the assembled prompt is **upstream 1.15's prompt
+byte for byte**:
 
 ```
-grep -c 'builtinSwitchKey|isBuiltinEnabled' src/ios/Agent/Chat/AIChatViewModel+SystemPrompt.swift
-→ 0
+ordered string literals in baseSystemPrompt: 174 in both, 27101 chars total
 ```
 
-Upstream 1.15 rewrote the prompt as a single ~235-line concatenation with its own
-inline `toolEnabled(.browser)` / `isAgentVisible` conditionals. Nothing reads the
-10 plugin switches, so toggling "Prompt: Shell" in the Extensions page changes
-nothing.
+`MinisTests/Standalone/PromptModuleGatingTests.swift` enforces it on every run,
+including the full ordered comparison against `git show 1.15:...`. If a future
+re-wrap drops, duplicates or reorders a sentence, the test names the literal.
 
-Why it was not fixed here: re-splitting upstream's rewritten prompt into the ten
-modules is a content decision, not a mechanical edit — the 1.15 text changed
-substantially, so the fork's old module bodies no longer match it. A rushed
-re-wrap risks silently degrading the agent prompt, which is worse than a
-documented gap. It needs a deliberate pass: read the 1.15 prompt, assign each
-paragraph to a module, wrap, then diff the assembled prompt against 1.15's to
-prove nothing was dropped.
-
-Also note the UI consequence: the Extensions page still lists those ten switches
-and lets the user edit their `promptText`. Until this is wired, that UI is
-misleading.
+Known cosmetic gap: the Extensions page still shows the fork's pre-1.15 short
+summary as each module's editable "default". An override replaces the whole
+inline section, so the editor's placeholder text understates what is being
+replaced. Making the editor show the real section would mean exporting the
+prompt text at runtime.
 
 ## 3. Settings rows — no plugin leaves a row behind
 
@@ -108,6 +118,8 @@ Passing: 290 of 317 standalone tests.
 
 Pre-existing (not caused by this merge — they need UIKit, which the macOS
 interpreter does not have): `ComposerPlaceholderWrapTests`, `VoiceToolbarLabelFitTests`.
+
+New in this merge: `PromptModuleGatingTests.swift` (26 checks, passing).
 
 Obsolete after the merge (test a fork implementation upstream superseded):
 `ImageBudgetBase64Tests` — asserts the `BudgetImage.key` identity scheme the fork
