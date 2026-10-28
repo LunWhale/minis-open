@@ -41,7 +41,6 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         // signal here does not change its behaviour.
         signal(SIGPIPE, SIG_IGN)
 
-        if #available(iOS 17.0, *) {
         if #available(iOS 17.0, *), !BackgroundKeepAliveManager.debugAutoRetractDisabled {
             CLBackgroundActivitySession().invalidate()
         }

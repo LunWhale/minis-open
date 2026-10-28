@@ -20,20 +20,6 @@ extension AIChatViewModel {
         let data: Data
         let linuxPath: String?
         let mimeType: String
-        /// Stable identity for this image WITHIN one request: its position in
-        /// the ref list `applyRequestImageBudget` builds.
-        ///
-        /// [T-image-budget-identity] This used to be derived as
-        /// `ObjectIdentifier(data as AnyObject).hashValue`, which cannot serve
-        /// as a key: bridging `Data` to `AnyObject` is not guaranteed to be
-        /// stable across two conversions, nor distinct between two distinct
-        /// `Data` values. Both failure modes were measured here — one run gave a
-        /// fresh id per conversion, so `droppedIds` matched NOTHING and the
-        /// 25 MB budget silently became a no-op (while the toast still claimed
-        /// images had been elided), another gave one shared id for four distinct
-        /// images, so the rewrite replaced images that fit the budget. A position
-        /// is stable by construction and needs no bridging at all.
-        let key: Int
     }
 
     /// Result of [planRequestBudget]. `droppedIds` are POSITIONS in the image
@@ -149,7 +135,7 @@ extension AIChatViewModel {
         maxBytes: Int = kRequestImageMaxBytes
     ) -> RequestBudgetPlan {
         guard !images.isEmpty else {
-            return RequestBudgetPlan(droppedKeys: [], droppedPaths: [:], keptBytes: 0, elidedBytes: 0, droppedCount: 0, totalCount: 0)
+            return RequestBudgetPlan(droppedIds: [], droppedPaths: [:], keptBytes: 0, elidedBytes: 0, droppedCount: 0, totalCount: 0)
         }
         var dropped = Set<Int>()
         var droppedPaths: [Int: String?] = [:]
@@ -178,7 +164,7 @@ extension AIChatViewModel {
                 elided += effective
             }
         }
-        return RequestBudgetPlan(droppedKeys: dropped, droppedPaths: droppedPaths, keptBytes: kept, elidedBytes: elided, droppedCount: dropped.count, totalCount: images.count)
+        return RequestBudgetPlan(droppedIds: dropped, droppedPaths: droppedPaths, keptBytes: kept, elidedBytes: elided, droppedCount: dropped.count, totalCount: images.count)
     }
 
     /// Construct the text placeholder a provider emits in place of an
@@ -278,18 +264,6 @@ extension AIChatViewModel {
         // `position` is the image's index in `refs`, the id the planner uses.
         struct Ref { let position: Int; let msgIdx: Int; let partIdx: Int; let image: BudgetImage }
         var refs: [Ref] = []
-        // Each collected image gets its position as its key — the plan and the
-        // rewrite below must agree on identity, and position is the only thing
-        // they can both recompute reliably (see BudgetImage.key).
-        var nextKey = 0
-        func collect(msgIdx: Int, partIdx: Int, data: Data, mimeType: String?, linuxPath: String?) {
-            refs.append(Ref(
-                msgIdx: msgIdx,
-                partIdx: partIdx,
-                image: BudgetImage(data: data, linuxPath: linuxPath, mimeType: mimeType ?? "image/jpeg", key: nextKey)
-            ))
-            nextKey += 1
-        }
         for (mi, msg) in messages.enumerated() {
             for (pi, part) in msg.parts.enumerated() {
                 switch part {
@@ -445,19 +419,18 @@ extension AIChatViewModel {
     /// FileProvider extension. Keep ONLY user-facing subdirs (shared, skills,
     /// memory) here — anything else leaks into "On My iPhone → Minis".
     nonisolated static var minisAppGroupRoot: URL {
-        // resolvedContainerRoot falls back to a sandbox-local directory when
-        // the App Group entitlement is not honored (re-signed / changed
-        // bundle ID builds), so startup never crashes on a nil container.
-        SharedContainerStore.resolvedContainerRoot
-            .appendingPathComponent("MinisFileProvider", isDirectory: true)
+        FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: SharedContainerStore.appGroupID
+        )!.appendingPathComponent("MinisFileProvider", isDirectory: true)
     }
 
     /// App Group subdirectory for private metadata that must NOT be exposed
     /// to iOS Files (mounted-folders.json, FileProvider extension logs, etc).
     /// Sibling of `minisAppGroupRoot` inside the same App Group container.
     nonisolated static var minisConfigRoot: URL {
-        let url = SharedContainerStore.resolvedContainerRoot
-            .appendingPathComponent("MinisConfig", isDirectory: true)
+        let url = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: SharedContainerStore.appGroupID
+        )!.appendingPathComponent("MinisConfig", isDirectory: true)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }
