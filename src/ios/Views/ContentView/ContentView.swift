@@ -272,8 +272,12 @@ struct ContentView: View {
     @State var sessionRowLookupMemo = SessionRowLookupMemo()
     /// Soul name shown as the sidebar title. Sourced from SOUL.md, falls
     /// back to "Minis". Refreshed whenever SoulStore posts .soulMdChanged.
-    @State var soulName: String = SoulStore.cachedMetadata.name.isEmpty
-        ? "Minis" : SoulStore.cachedMetadata.name
+    ///
+    /// [fork] Read through `SoulStore.activeDisplayName`, not `cachedMetadata`:
+    /// when the Soul feature plugin is switched off the persona is not in
+    /// effect anywhere — not in the prompt — so the sidebar must not keep
+    /// claiming a name only SOUL.md knows about.
+    @State var soulName: String = SoulStore.activeDisplayName
     /// Subtitle state shown under the "Minis" sidebar title. nil hides the
     /// row; otherwise it renders as small capsules per type or a single
     /// status string. Refreshed by a 5s timer.

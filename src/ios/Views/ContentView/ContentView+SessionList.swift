@@ -60,8 +60,12 @@ extension ContentView {
         // across the sidebar's life, so the sink is never torn down mid-transaction
         // and can't drop a .soulMdChanged notification arriving during reconstruction.
         .onReceive(NotificationCenter.default.publisher(for: .soulMdChanged)) { _ in
-            let n = SoulStore.cachedMetadata.name
-            soulName = n.isEmpty ? "Minis" : n
+            soulName = SoulStore.activeDisplayName
+        }
+        // [fork] The plugin flip is a UserDefaults write, not a .soulMdChanged
+        // notification, so the sidebar needs its own edge for it.
+        .onChange(of: ExtensionRegistry.builtinEnabled(BuiltinExtension.soulID)) { _ in
+            soulName = SoulStore.activeDisplayName
         }
     }
 

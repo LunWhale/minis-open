@@ -220,6 +220,23 @@ extension AIChatViewModel {
             tools.removeAll { $0.name == "browser_use" }
         }
 
+        // [fork] Built-in plugin gating. "Not in the list = does not exist": a
+        // disabled plugin must lose its tools from the schema entirely, not just
+        // have its Settings row hidden. Without this the agent keeps seeing (and
+        // calling) tools for a capability the user switched off, and every call
+        // bounces off the dispatcher's own guard — a whole round trip per turn
+        // spent on a tool the prompt should never have advertised.
+        //
+        // The dispatcher guards in AIChatViewModel+ConcurrentTools stay as the
+        // second half of the pair: the switch can flip mid-run, after this
+        // schema was already built.
+        if !ExtensionRegistry.shared.isBuiltinEnabled(BuiltinExtension.todoID) {
+            tools.removeAll { $0.name.hasPrefix("todo_") }
+        }
+        if !ExtensionRegistry.shared.isBuiltinEnabled(BuiltinExtension.memoryID) {
+            tools.removeAll { $0.name == "memory_write" || $0.name == "memory_get" }
+        }
+
         // [T-p1-delegate-task] Depth = 1: a helper never sees this tool.
         // [T-tools-granular-switches] Settings › Tools › Agents removes it
         // globally (agent_status rides with it — pointless without
