@@ -327,6 +327,9 @@ actor VoiceCorrectionEngine {
             excerpts: withText,
             excerptChars: context.recentExcerpts.reduce(0) { $0 + $1.count },
             contextBuildMs: context.mining.buildMs,
+            viewportLines: context.viewportLines,
+            latestReply: context.latestReply,
+            viewport: context.mining.viewport,
             promptVocabTerms: outcome?.diagnostics?.vocabTerms ?? [],
             promptConfusionLines: outcome?.diagnostics?.confusionLines ?? [],
             blockChars: outcome?.diagnostics?.blockChars ?? [:],
@@ -340,8 +343,9 @@ actor VoiceCorrectionEngine {
     async -> (tokens: [String], candidates: [CorrectionCandidate], prompt: String) {
         let tokens = TextSegmenter.shared.segment(transcript)
         let candidates = await retrieveCandidates(for: transcript, locale: locale)
-        let prompt = LLMCorrectionStrategy.buildPrompt(transcript: transcript,
-                                                       candidates: candidates, context: context)
+        let prompt = LLMCorrectionStrategy.buildPrompt(
+            transcript: transcript, candidates: candidates, context: context,
+            profile: CorrectionLanguageProfile.resolve(locale: locale, transcript: transcript))
         return (tokens, candidates, prompt)
     }
 

@@ -55,6 +55,9 @@ protocol SpeechControlling: AnyObject {
     func stopSpeech()
     func nextSpeechSpeed()
     func disableSpeech(resetSpeed: Bool)
+    /// External audio paused (true) or released (false) the cloud TTS player;
+    /// mirror it in the read-aloud UI state.
+    func reflectExternalPause(_ paused: Bool)
 }
 
 /// GLOBAL read-replies (TTS output) state — a single source of truth shared
@@ -107,6 +110,25 @@ final class VoiceOutputState: ObservableObject {
     @Published var speechPaused = false
     @Published var speechSpeed: Float = VoiceOutputPreferences.speedMultiplier
 
+    /// [T-readaloud-volume] Read-aloud volume (0...1), bound to the capsule's
+    /// slider. Persisted, applied to the playing cloud/WAV unit at once; the
+    /// System voice picks it up from the next queued sentence (a queued
+    /// AVSpeechUtterance's volume is fixed). Mirrored to the Enhanced
+    /// Background settings slider, which edits the same stored value.
+    @Published var readAloudVolume: Float = VoiceOutputPreferences.readAloudVolume {
+        didSet {
+            // Assigning inside didSet does not re-enter it, so clamp in place
+            // and carry on with the clamped value.
+            let v = ReadAloudVolume.clamp(readAloudVolume)
+            if v != readAloudVolume { readAloudVolume = v }
+            guard oldValue != v else { return }
+            VoiceOutputPreferences.readAloudVolume = v
+            VoiceOutputPlayer.shared.setVolume(v)
+            let settings = BackgroundKeepAliveManager.shared
+            if settings.speechVolume != v { settings.speechVolume = v }
+        }
+    }
+
     /// The session currently reading aloud — global capsule actions forward here.
     weak var activeController: SpeechControlling?
 
@@ -120,6 +142,15 @@ final class VoiceOutputState: ObservableObject {
         if isReadingAloud != reading { isReadingAloud = reading }
         if speechPaused != paused { speechPaused = paused }
         if speechSpeed != speed { speechSpeed = speed }
+    }
+
+    /// [T-tts-external-pause-stuck] Route an external-audio pause/resume to the
+    /// active reader so the capsule shows "paused" instead of spinning; with no
+    /// session VM, mirror it directly (the capsule then drives the player).
+    func reflectExternalPause(_ paused: Bool) {
+        if let c = activeController { c.reflectExternalPause(paused); return }
+        guard isReadingAloud else { return }
+        syncState(reading: true, paused: paused, speed: speechSpeed)
     }
 
     // MARK: Global capsule actions (forward to the active controller; fall back to

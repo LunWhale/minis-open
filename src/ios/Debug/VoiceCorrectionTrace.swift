@@ -96,6 +96,11 @@ actor VoiceCorrectionTrace {
         let excerptChars: Int
         let contextBuildMs: Int
 
+        // --- [T-voice-viewport-context] what was on screen, and the newest reply
+        let viewportLines: [String]
+        let latestReply: String?
+        let viewport: ViewportContextBuilder.Report?
+
         // --- what actually survived into the prompt
         let promptVocabTerms: [String]
         let promptConfusionLines: [String]
@@ -130,6 +135,9 @@ actor VoiceCorrectionTrace {
                excerpts: [MessageExcerpt],
                excerptChars: Int,
                contextBuildMs: Int,
+               viewportLines: [String] = [],
+               latestReply: String? = nil,
+               viewport: ViewportContextBuilder.Report? = nil,
                promptVocabTerms: [String],
                promptConfusionLines: [String],
                blockChars: [String: Int],
@@ -143,6 +151,7 @@ actor VoiceCorrectionTrace {
             scannedMessageCount: scannedMessageCount, digestTerms: digestTerms,
             digestChars: digestChars, excerpts: excerpts, excerptChars: excerptChars,
             contextBuildMs: contextBuildMs,
+            viewportLines: viewportLines, latestReply: latestReply, viewport: viewport,
             promptVocabTerms: promptVocabTerms, promptConfusionLines: promptConfusionLines,
             blockChars: blockChars, prompt: String(prompt.prefix(Self.maxPromptChars)),
             corrected: nil, changed: nil, appliedPairs: nil,

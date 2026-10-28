@@ -32,7 +32,10 @@
 + (NSDictionary * _Nonnull)loadMessagesWithSessionId:(NSString * _Nonnull)sessionId
                                               offset:(NSInteger)offset
                                                limit:(NSInteger)limit
-                                                full:(BOOL)full;
+                                                full:(BOOL)full
+                                               tools:(BOOL)tools
+                                           startDate:(NSDate * _Nullable)startDate
+                                             endDate:(NSDate * _Nullable)endDate;
 + (NSDictionary * _Nonnull)sendPromptWithSessionId:(NSString * _Nullable)sessionId
                                             prompt:(NSString * _Nonnull)prompt
                                    attachmentPaths:(NSArray<NSString *> * _Nonnull)attachmentPaths
@@ -60,7 +63,8 @@ static NSString *const HELP_TEXT =
      "  messages  Read messages from a specific session (requires --id)\n"
      "  send      Send a prompt (new session or follow-up an existing one)\n"
      "  retry     Re-run from a specific user message\n"
-     "  status    Get current status of a session\n"
+     "  status    Get current status of a session (sub agents: termination_reason,\n"
+     "            last_tool_status, last_tool_result, delivery_state, ...)\n"
      "  open      Navigate the app UI to a session (positional <session_id>)\n"
      "\n"
      "QUERY OPTIONS:\n"
@@ -73,6 +77,11 @@ static NSString *const HELP_TEXT =
      "  --limit <n>           Max results (default: 50, max: 100)\n"
      "  --full                (messages only) Return full message text up to 50000 chars\n"
      "                        per message instead of the 1000-char default.\n"
+     "  --tools               (messages only) Also return each message's tool calls:\n"
+     "                        tool_calls [{tool_use_id, name, input}] with the full\n"
+     "                        input JSON (e.g. the exact shell command), and\n"
+     "                        tool_results [{tool_use_id, success, status, output}].\n"
+     "                        Same per-field cap as text (1000, or 50000 with --full).\n"
      "\n"
      "SEND OPTIONS:\n"
      "  --session <id>           Existing session to continue (omit for new session)\n"
@@ -101,6 +110,7 @@ static NSString *const HELP_TEXT =
      "  minis-sessions-cli list\n"
      "  minis-sessions-cli search --keywords \"API error\"\n"
      "  minis-sessions-cli messages --id <session_id> --full\n"
+     "  minis-sessions-cli messages --id <session_id> --tools --full\n"
      "  minis-sessions-cli send \"分析我的睡眠数据\"\n"
      "  minis-sessions-cli send \"继续\" --session <session_id>\n"
      "  minis-sessions-cli send \"这张图是什么?\" --attach /tmp/photo.png\n"
@@ -366,6 +376,8 @@ static int cmd_messages(int argc, char **argv, int stdout_fd, int stderr_fd,
     int offset = offsetRaw ? [offsetRaw intValue] : 0;
     if (offset < 0) offset = 0;
     BOOL full = noff_has_flag(argc, argv, "--full");
+    // [T-sessions-cli-tool-calls] Opt-in so the default output is unchanged.
+    BOOL tools = noff_has_flag(argc, argv, "--tools");
 
     // [T-sessions-cli-messages-date-filter] (GH#200) HELP_TEXT documents
     // --start/--end as "(messages only)", but this command never parsed them:
@@ -384,6 +396,7 @@ static int cmd_messages(int argc, char **argv, int stdout_fd, int stderr_fd,
                                                                   offset:offset
                                                                    limit:limit
                                                                     full:full
+                                                                   tools:tools
                                                                startDate:startDate
                                                                  endDate:endDate];
 

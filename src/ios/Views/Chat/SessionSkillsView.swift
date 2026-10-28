@@ -93,9 +93,9 @@ struct SessionSkillsView: View {
             List {
                 if store.skills.isEmpty {
                     Section {
-                        Text("No skills installed. Add skills in Settings.")
-                            .foregroundStyle(.secondary)
-                            .font(.subheadline)
+                        SessionOverrideEmptyCard(systemImage: "doc.text",
+                                                 title: AppLocalized("No skills installed"),
+                                                 subtitle: AppLocalized("Import skills from Settings → Skills."))
                     }
                 } else if filteredSkills.isEmpty {
                     Section {
@@ -104,7 +104,7 @@ struct SessionSkillsView: View {
                             .font(.subheadline)
                     }
                 } else {
-                    Section(footer: Text("Toggles override the skill's default for this session only.")) {
+                    Section {
                         ForEach(filteredSkills) { skill in
                             NavigationLink {
                                 SessionSkillDetailView(skill: skill)
@@ -127,7 +127,19 @@ struct SessionSkillsView: View {
                                     .labelsHidden()
                                 }
                             }
+                            // [T-skill-copy-source-url] Same long-press as the
+                            // Settings list; the success haptic is the feedback.
+                            .modifier(SkillSourceURLContextMenu(url: skill.importSource.copyableURL) {})
                         }
+                    } header: {
+                        let scope = filteredSkills
+                        SessionBulkToggleHeader(
+                            availability: SessionBulkToggleRules.availability(scope.map { isEnabled($0) })
+                        ) { applyToAll(scope, enabled: $0) }
+                    } footer: {
+                        SessionOverrideListFooter(
+                            note: Text("Toggles override the skill's default for this session only."),
+                            searchQuery: searchQuery)
                     }
                 }
             }
@@ -137,17 +149,6 @@ struct SessionSkillsView: View {
                         prompt: Text(AppLocalized("Search skills")))
             .onAppear { store.reload() }
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    if !filteredSkills.isEmpty {
-                        let scope = filteredSkills
-                        let allEnabled = scope.allSatisfy { isEnabled($0) }
-                        Button(allEnabled ? "Disable All" : "Enable All") {
-                            let newValue = !allEnabled
-                            applyToAll(scope, enabled: newValue)
-                        }
-                        .font(.subheadline)
-                    }
-                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
                 }

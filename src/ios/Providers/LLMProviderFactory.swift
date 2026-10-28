@@ -12,14 +12,18 @@ enum LLMProviderFactory {
     }
 
     /// Create an LLMProvider for the given entry, looking up its ProviderInstance and credentials.
-    /// - Parameter sessionId: the conversation this provider serves, or nil
-    ///   when the call belongs to none (title generation, quick test, Vision).
-    ///   Only used by the OpenCode channel.
+    /// - Parameter sessionId: the conversation this provider serves. Only used
+    ///   by the OpenCode channel, where a request without one is a hard 400.
+    ///   A call that belongs to no conversation passes
+    ///   `OpenCodeChannel.oneOffSessionId()`.
+    ///
+    ///   [T-opencode-every-entry] Deliberately has no default: a `= nil`
+    ///   default is how side paths ended up sending no id at all.
     ///
     ///   Prefer `makeProvider(for:resolveSessionId:)` for anything attached to a
     ///   live conversation: a fixed value here is captured once, and a draft's
     ///   promotion to a real session would not be picked up.
-    static func makeProvider(for entry: ModelEntry, sessionId: String? = nil) async throws -> any LLMProvider {
+    static func makeProvider(for entry: ModelEntry, sessionId: String?) async throws -> any LLMProvider {
         try await makeProvider(for: entry, resolveSessionId: { sessionId })
     }
 
@@ -210,7 +214,8 @@ enum LLMProviderFactory {
                 oauthTokenProvider: { try await ClaudeOAuthManager.shared.validAccessToken(instanceId: iid) },
                 model: model,
                 basePath: customBase,
-                appendV1Suffix: appendV1
+                appendV1Suffix: appendV1,
+                quotaInstanceId: iid
             )
         }
     }
@@ -275,6 +280,7 @@ enum LLMProviderFactory {
                 model: model
             )
             provider.codexAccountId = CodexOAuthManager.shared.accountId(instanceId: iid)
+            provider.quotaInstanceId = iid
             return provider
         }
     }
@@ -327,6 +333,7 @@ enum LLMProviderFactory {
             provider.appendV1Suffix = appendV1
             provider.forceResponsesAPI = true
             provider.codexAccountId = CodexOAuthManager.shared.accountId(instanceId: iid)
+            provider.quotaInstanceId = iid
             return provider
         }
     }

@@ -34,7 +34,7 @@ static NSString *const HELP_TEXT =
      "\n"
      "USAGE:\n"
      "  minis-scheduled list\n"
-     "  minis-scheduled create --prompt \"...\" [--label L] [--target new|follow-up|rerun|child-of-current]\n"
+     "  minis-scheduled create --prompt \"...\" [--label L] [--target follow-up|new|rerun|child-of-current]\n"
      "                         [--trigger once|loop|cron|on-completion]\n"
      "                         [--after 30m]                          # once, relative\n"
      "                         [--interval 10m] [--count N]           # loop\n"
@@ -43,6 +43,8 @@ static NSString *const HELP_TEXT =
      "                         [--of <jobId>]                         # on-completion\n"
      "                         [--session <id>] [--message <id>] [--model <entry_id>] [--disabled]\n"
      "                         [--thinking off|low|medium|high|xhigh]\n"
+     "                         [--command \"<shell>\" [--command-timeout 2m]]  # prefilled first step\n"
+     "                         [--tool shell_execute --tool-args '{\"command\":\"...\"}']\n"
      "  minis-scheduled delete  --id <jobId|label>\n"
      "  minis-scheduled enable  --id <jobId|label>\n"
      "  minis-scheduled disable --id <jobId|label>\n"
@@ -54,12 +56,26 @@ static NSString *const HELP_TEXT =
      "  cron           fire at --time on --repeat daily (default) | weekdays | custom --days\n"
      "  on-completion  fire when job --of <jobId> finishes; {{result}} in --prompt is replaced by its result\n"
      "\n"
-     "TARGET:\n"
-     "  new              (default) a new top-level chat, visible in the session list\n"
-     "  follow-up        appended as a new turn to --session (default: the chat this command runs in)\n"
+     "TARGET (default: follow-up when run inside a chat, new otherwise):\n"
+     "  follow-up        each fire is a new turn IN THIS CHAT (or in --session <id>); the result\n"
+     "                   comes back to the conversation that created the task\n"
+     "  new              each fire opens a separate new chat \"Scheduled · <label>\"; the result does\n"
+     "                   NOT appear in this conversation — only when the user asks for that\n"
      "  rerun            re-run --session from user message --message\n"
      "  child-of-current a hidden helper session under the current chat; its final answer is\n"
      "                   posted back into the current chat when it finishes\n"
+     "\n"
+     "PREFILLED TOOL CALL (--command, alias --shell):\n"
+     "  The shell command runs as the FIRST step of every fire, before the model is asked anything;\n"
+     "  the model then gets its real output (stdout/stderr/exit code) as a normal tool result and only\n"
+     "  has to act on it — one model request per fire instead of two. Use it when the command is the\n"
+     "  same every time (fetch a page, check a status, run a script). A failing command is still\n"
+     "  handed to the model, which decides whether to retry. Not available with --target rerun.\n"
+     "  --tool/--tool-args is the general form; only shell_execute is supported today.\n"
+     "\n"
+     "OUTPUT: `create` answers with a `delivery` line saying where every fire will land (this chat,\n"
+     "another chat, a new chat, a rerun, a helper). Check it; if it is not what the user asked for,\n"
+     "`delete --id` and create again with the right --target.\n"
      "\n"
      "IMPORTANT: timers live in the app process only. If Minis is killed by the system the timer is\n"
      "gone; a reminder notification registered at creation is the only thing that survives, and it\n"
@@ -67,9 +83,10 @@ static NSString *const HELP_TEXT =
      "Shortcuts automation instead.\n"
      "\n"
      "EXAMPLES:\n"
-     "  minis-scheduled create --prompt \"Check the build status\" --interval 10m --count 6 --label build-watch --target follow-up\n"
+     "  minis-scheduled create --prompt \"Check the build status\" --interval 10m --count 6 --label build-watch\n"
      "  minis-scheduled create --prompt \"Remind me to drink water\" --after 30m\n"
-     "  minis-scheduled create --prompt \"Morning summary of my notes\" --time 09:00 --repeat weekdays\n"
+     "  minis-scheduled create --prompt \"Morning summary of my notes\" --time 09:00 --repeat weekdays --target new\n"
+     "  minis-scheduled create --prompt \"Summarise today's weather in one line\" --time 08:00 --command \"curl -s 'wttr.in/Shanghai?format=3'\"\n"
      "  minis-scheduled list\n"
      "  minis-scheduled delete --id build-watch\n";
 
@@ -102,7 +119,18 @@ static int cmd_create(int argc, char **argv, int stdout_fd, int stderr_fd, BOOL 
     put(args, @"model",    arg(argc, argv, "--model")    ?: arg(argc, argv, "-m"));
     // [T-scheduled-thinking-level] Optional; absent leaves the level alone.
     put(args, @"thinking", arg(argc, argv, "--thinking"));
+    // [T-scheduled-preset-tool] Optional preset first step; validated in Swift.
+    // --command / --tool / --tool-args are the names shared with Android's
+    // ScheduledTaskOffloadHandler; --shell / --shell-timeout stay accepted as
+    // aliases (Android's earlier spelling).
+    put(args, @"command",         arg(argc, argv, "--command") ?: arg(argc, argv, "--shell"));
+    put(args, @"command_timeout", arg(argc, argv, "--command-timeout") ?: arg(argc, argv, "--shell-timeout"));
+    put(args, @"tool",            arg(argc, argv, "--tool"));
+    put(args, @"tool_args",       arg(argc, argv, "--tool-args"));
     args[@"disabled"] = @(noff_has_flag(argc, argv, "--disabled"));
+    // [T-offload-caller-session] The chat that ran this command, read on this
+    // guest thread (its task group's fs_context) — see BrowserUseOffload.m.
+    args[@"caller_fs_context"] = @(noff_current_fs_context());
 
     NSDictionary *data = [ScheduledOffloadBridge createWithArgs:args];
     if ([data[@"ok"] isKindOfClass:[NSNumber class]] && ![data[@"ok"] boolValue]) {

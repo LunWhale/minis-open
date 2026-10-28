@@ -153,12 +153,15 @@ import Foundation
     /// dictionary describing the result; the ObjC caller is responsible
     /// for serializing it to the guest's stdout.
     ///
-    /// Session resolution: reads `ISHExecutionCoordinator.mountedSessionId`
-    /// at the moment the handler fires. Because shell execution is
-    /// serialized by the coordinator actor and the mount-swap happens
-    /// synchronously before the guest command runs, this value is
-    /// guaranteed to be the session that owns the current `/var/minis/`
-    /// bind mount for the lifetime of this CLI invocation.
+    /// Session resolution ([T-browser-pool-caller-session]): `fsContext` is the
+    /// calling guest task's fs_context, read by the ObjC handler on its own
+    /// thread; it maps to the chat that issued the command. This used to read
+    /// `ISHExecutionCoordinator.mountedSessionIdSnapshot` on the assumption
+    /// that shell execution is serialized with one mount at a time. It is not
+    /// any more: shells from different chats run concurrently, and the
+    /// snapshot is just the chat that started a command last. Three chats
+    /// driving xiaohongshu / xiaohongshu / goofish through `minis-browser-use`
+    /// therefore navigated each other's tabs.
     ///
     /// When `withBase64` is false (default), any captured screenshot is
     /// persisted to that session's `/var/minis/browser/` directory and
@@ -178,6 +181,7 @@ import Foundation
     @objc public static func execute(
         withJson json: String,
         withBase64: Bool,
+        fsContext: UInt64,
         completion: @escaping (NSDictionary) -> Void
     ) -> UInt64 {
         let bridgeStart = CFAbsoluteTimeGetCurrent()
@@ -200,18 +204,16 @@ import Foundation
             return 0
         }
 
-        logger.info("[BridgeTiming] enter action=\(input.action.rawValue) tab_id=\(input.tabId.map(String.init) ?? "nil") url=\(input.url?.prefix(80) ?? "nil")")
-
-        // Resolve the owning session via the lock-protected snapshot BEFORE
-        // hopping to MainActor. Awaiting the coordinator actor here used to
-        // deadlock under shell pressure: the guest task thread sits on
-        // `dispatch_semaphore_wait`, and this task's MainActor hop has to
-        // beat every `dispatch_async(main_queue, ^{ ctx.lineCallback(line) })`
-        // coming out of ISHShellExecutor to get picked up. Reading the
-        // nonisolated snapshot synchronously avoids both the coordinator
-        // actor suspension and one MainActor ordering hop.
-        let sid = ISHExecutionCoordinator.mountedSessionIdSnapshot
-                  ?? Self.unmountedSentinel
+        // Resolve the owning session synchronously, BEFORE hopping to
+        // MainActor. Awaiting the coordinator actor here used to deadlock
+        // under shell pressure: the guest task thread sits on
+        // `dispatch_semaphore_wait`, and this task's MainActor hop has to beat
+        // every `dispatch_async(main_queue, ^{ ctx.lineCallback(line) })`
+        // coming out of ISHShellExecutor. The fs_context lookup is a locked
+        // dictionary read, so it keeps that property.
+        let caller = ISHExecutionCoordinator.callerSessionId(fsContext: fsContext)
+        let sid = caller.sid ?? Self.unmountedSentinel
+        logger.info("[BridgeTiming] enter action=\(input.action.rawValue) tab_id=\(input.tabId.map(String.init) ?? "nil") url=\(input.url?.prefix(80) ?? "nil") sid=\(sid.prefix(8)) via=\(caller.source)")
 
         inFlightLock.lock()
         let invocation = nextInvocation

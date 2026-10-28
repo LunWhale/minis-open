@@ -150,7 +150,24 @@ func source(_ rel: String) -> String {
     return ""
 }
 
-let src = source("Views/Chat/SelectableMarkdownView.swift")
+/// The markdown renderer module (Views/Chat/Markdown/, formerly the single file
+/// SelectableMarkdownView.swift), read as one text with its files in path order.
+func markdownModuleSource() -> String {
+    var dir = URL(fileURLWithPath: root)
+    for _ in 0..<7 {
+        let module = dir.appendingPathComponent("src/ios/Views/Chat/Markdown")
+        let files = (FileManager.default.enumerator(at: module, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? [])
+            .filter { $0.pathExtension == "swift" }
+            .sorted { $0.path < $1.path }
+        if !files.isEmpty {
+            return files.compactMap { try? String(contentsOf: $0, encoding: .utf8) }.joined(separator: "\n")
+        }
+        dir = dir.deletingLastPathComponent()
+    }
+    print("  ⚠️  could not locate Views/Chat/Markdown")
+    return ""
+}
+let src = markdownModuleSource()
 if !src.isEmpty {
     check("syncScrollability exists", src.contains("private static func syncScrollability("))
     check("it disables scrolling when neither axis moves",

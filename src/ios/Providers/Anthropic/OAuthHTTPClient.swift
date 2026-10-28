@@ -72,15 +72,16 @@ final class OAuthHTTPClient: HTTPClient {
     private let underlying: URLSessionHTTPClientAdapter
     private let registryId: String
 
-    init(tokenProvider: @escaping @Sendable () async throws -> String) {
+    init(tokenProvider: @escaping @Sendable () async throws -> String, quotaInstanceId: String? = nil) {
         let box = TokenBox()
         box.set(tokenProvider)
+        box.quotaInstanceId = quotaInstanceId
         let rid = UUID().uuidString
         self.registryId = rid
         TokenBoxRegistry.shared.register(id: rid, box: box)
 
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 600  // 10 min — SSE streams can be idle during large tool generation
+        config.timeoutIntervalForRequest = anthropicRequestIdleTimeout
         config.protocolClasses = [OAuthURLProtocol.self]
         config.httpAdditionalHeaders = (config.httpAdditionalHeaders ?? [:]).merging(
             ["X-Minis-OAuth-UUID": rid]) { _, new in new }
@@ -523,6 +524,9 @@ final class LastAPIRequestBody: @unchecked Sendable {
 private final class TokenBox: @unchecked Sendable {
     private let lock = NSLock()
     private var _provider: (@Sendable () async throws -> String)?
+    /// [T-quota-claude-subscription] The provider instance these requests belong
+    /// to, so the URLProtocol can credit a reply's usage headers to it.
+    var quotaInstanceId: String?
 
     func set(_ provider: @escaping @Sendable () async throws -> String) {
         lock.lock()
@@ -656,16 +660,42 @@ private func startInnerUploadTask(
 
 // MARK: - URLProtocol that swaps auth headers
 
+/// Idle timeout for Anthropic API requests: how long the server may send no
+/// bytes before the request fails. Reasoning models behind Anthropic-compatible
+/// endpoints (e.g. Volcengine Ark `ark-code-latest`) can take 120-220 s to
+/// produce their first byte, and long tool-input generation can idle an SSE
+/// stream too.
+let anthropicRequestIdleTimeout: TimeInterval = 600
+
+/// Session for the inner, real network request made by our Anthropic
+/// URLProtocols (OAuth / eager-streaming / dual-auth).
+///
+/// [T-anthropic-inner-session-timeout] The outer HTTPClient sessions set
+/// `timeoutIntervalForRequest = 600`, but that value never reaches the wire:
+/// each URLProtocol re-issues the request on its OWN session, and a
+/// `.default` configuration there means 60 s. SwiftAnthropic never sets
+/// `URLRequest.timeoutInterval`, so the copied request carries the 60 s
+/// default as well. Net effect: any Anthropic-type request that went 60 s
+/// without a byte failed with NSURLErrorTimedOut (-1001), even though the
+/// server later answered 200 (the Ark reasoning-model report). Reproduced
+/// off-device with the same outer-600 / inner-.default pair: failed at 61 s
+/// against a server delaying 75 s; with this configuration it returned 200.
+func makeInnerProtocolSession(delegate: URLSessionDataDelegate) -> URLSession {
+    let config = URLSessionConfiguration.default
+    config.timeoutIntervalForRequest = anthropicRequestIdleTimeout
+    return URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
+}
+
 /// Intercepts outgoing requests that contain `x-api-key`, removes it,
 /// and injects `Authorization: Bearer <token>` + the OAuth beta header.
 /// Streams response data incrementally so both `data(for:)` and
 /// `bytes(for:)` on URLSession work correctly.
 private final class OAuthURLProtocol: URLProtocol, URLSessionDataDelegate {
 
-    private lazy var innerSession: URLSession = {
-        URLSession(configuration: .default, delegate: self, delegateQueue: nil)
-    }()
+    private lazy var innerSession: URLSession = makeInnerProtocolSession(delegate: self)
     private var innerTask: URLSessionDataTask?
+    /// [T-quota-claude-subscription] Instance this request belongs to (from its TokenBox).
+    private var quotaInstanceId: String?
     #if DEBUG
     /// [T-ios-llmcapture-entry-crosstalk] This request instance's capture
     /// entry, so response/usage updates target it and not `_entries.last`.
@@ -707,6 +737,8 @@ private final class OAuthURLProtocol: URLProtocol, URLSessionDataDelegate {
                 userInfo: [NSLocalizedDescriptionKey: "No token provider for this request"]))
             return
         }
+
+        quotaInstanceId = tokenBox.quotaInstanceId
 
         // Remove API key
         mutable.setValue(nil, forHTTPHeaderField: "x-api-key")
@@ -786,24 +818,8 @@ private final class OAuthURLProtocol: URLProtocol, URLSessionDataDelegate {
         AgentRequestTrace.shared.step("urlprotocol.afterMaterialize", detail: "httpBody=\(mutable.httpBody?.count ?? -1) httpBodyStream=\(mutable.httpBodyStream != nil)")
         #endif
 
-        // Normalize key ordering first so all patchers produce deterministic output
-        // (critical for Anthropic prompt cache prefix matching)
-        // [T-anthropic-toolimages-cross-request] Claim this request's token
-        // BEFORE any patcher runs, so patchToolResultsWithImages below can
-        // look up the images that belong to it.
-        RequestBodyPatcher.stampRequestToken(onto: mutable)
-        RequestBodyPatcher.normalizeKeyOrder(in: mutable)
-        // Cache: mark last tool definition for caching (stable prefix)
-        RequestBodyPatcher.injectToolsCacheControl(into: mutable)
-        // Inject eager_input_streaming into tool definitions
-        RequestBodyPatcher.injectEagerInputStreaming(into: mutable)
-        // Rewrite tool results that have associated images
-        RequestBodyPatcher.patchToolResultsWithImages(into: mutable)
-        // Inject 1h TTL into cache_control objects when enhanced caching is enabled
-        RequestBodyPatcher.injectCacheTTL(into: mutable)
-        // Inject thinking config (budget_tokens + beta header) when enabled
-        RequestBodyPatcher.injectThinkingConfig(into: mutable)
-        RequestBodyPatcher.injectThinkingBlocksForCompatProxy(into: mutable)
+        // [T-image-real-seams] Body patches: RequestBodyPatcher.applyOAuthBodyPatches.
+        RequestBodyPatcher.applyOAuthBodyPatches(to: mutable)
         #if DEBUG
         AgentRequestTrace.shared.step("urlprotocol.afterPatchers", detail: "httpBody=\(mutable.httpBody?.count ?? -1)")
         #endif
@@ -834,23 +850,17 @@ private final class OAuthURLProtocol: URLProtocol, URLSessionDataDelegate {
                 return
             case .success(let token):
                 mutable.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-                #if DEBUG
-                logger.info("[URLProtocol] Set Bearer token (prefix: \(token.prefix(16))...)")
-                #else
-                logger.info("[URLProtocol] Set Bearer token")
-                #endif
+                // [T-log-redaction] Length only - never a token prefix.
+                logger.info("[URLProtocol] Set Bearer token (len=\(token.count))")
             }
 
             #if DEBUG
             let headers = mutable.allHTTPHeaderFields ?? [:]
             var headerLines: [String] = ["[URLProtocol] Final Headers:"]
             for key in headers.keys.sorted() {
-                let value = headers[key] ?? ""
-                if key.lowercased() == "authorization" {
-                    headerLines.append("  \(key): Bearer \(value.dropFirst(min(7, value.count)).prefix(16))...")
-                } else {
-                    headerLines.append("  \(key): \(value)")
-                }
+                // [T-log-redaction] Credentials (Authorization, api keys,
+                // cookies) by length only.
+                headerLines.append("  " + LogRedaction.headerLine(key, headers[key] ?? ""))
             }
             logger.debug("\(headerLines.joined(separator: "\n"))")
 
@@ -889,9 +899,10 @@ private final class OAuthURLProtocol: URLProtocol, URLSessionDataDelegate {
                     headers: headers,
                     on: captureToken
                 )
-                let truncated = formatted.prefix(2000)
-                let suffix = formatted.count > 2000 ? "\n  ... (\(formatted.count) chars total)" : ""
-                logger.debug("[URLProtocol] Body (\(capturedBody.count) bytes):\n\(truncated)\(suffix)")
+                // [T-log-redaction] The log gets the size and a short head; the
+                // full (capped) body stays only in the in-memory capture above,
+                // which debug.llmRequests reads.
+                logger.debug("[URLProtocol] Body: \(LogRedaction.bodySummary(capturedBody))")
             }
             #else
             let headers = mutable.allHTTPHeaderFields ?? [:]
@@ -955,6 +966,9 @@ private final class OAuthURLProtocol: URLProtocol, URLSessionDataDelegate {
                 ?? Dictionary(uniqueKeysWithValues: http.allHeaderFields.map { ("\($0.key)", "\($0.value)") })
             LastAPIRequestBody.shared.setHTTPResponse(statusCode: http.statusCode, headers: respHeaders, on: captureToken)
             #endif
+            // [T-quota-claude-subscription] Passive usage: the subscription's
+            // 5h / 7d windows ride on every reply's headers.
+            QuotaObservationSink.recordAnthropicResponse(instanceId: quotaInstanceId, response: http)
         }
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         completionHandler(.allow)
@@ -1169,15 +1183,21 @@ enum RequestBodyPatcher {
         guard !images.isEmpty else { return }
         imageLock.lock()
         _toolResultImagesByToken[requestToken] = images
+        _imageTokenOrder.removeAll { $0 == requestToken }
+        _imageTokenOrder.append(requestToken)
         // Bound the table: a request that is built but never sent (cancelled
         // mid-turn, provider fallback picking another vendor) would otherwise
         // leave its entry behind forever. Entries are tiny, but this is a
         // process-global dictionary on a path that runs every turn.
-        if _toolResultImagesByToken.count > maxPendingImageEntries {
-            let excess = _toolResultImagesByToken.count - maxPendingImageEntries
-            for key in _toolResultImagesByToken.keys.sorted().prefix(excess) {
-                _toolResultImagesByToken.removeValue(forKey: key)
-            }
+        //
+        // [T-anthropic-keyauth-toolimages] Evict the OLDEST entries, by write
+        // order. This used to drop the lexicographically smallest tokens -
+        // random UUIDs, so the entry just written for the request about to go
+        // out was as likely to go as any stale one. While the key-auth chain
+        // never claimed its entries the table sat at the cap, and an OAuth
+        // request could lose its own freshly staged images.
+        while _imageTokenOrder.count > maxPendingImageEntries {
+            _toolResultImagesByToken.removeValue(forKey: _imageTokenOrder.removeFirst())
         }
         imageLock.unlock()
     }
@@ -1218,6 +1238,8 @@ enum RequestBodyPatcher {
     /// Cap on un-consumed image payloads; see `setToolResultImages`.
     private static let maxPendingImageEntries = 16
     private static var _toolResultImagesByToken: [String: [String: (data: Data, mimeType: String)]] = [:]
+    /// Tokens of `_toolResultImagesByToken`, oldest first (eviction order).
+    private static var _imageTokenOrder: [String] = []
 
     /// Atomically take and clear the pending images for ONE request.
     ///
@@ -1228,6 +1250,7 @@ enum RequestBodyPatcher {
         guard let requestToken else { return [:] }
         imageLock.lock()
         defer { imageLock.unlock() }
+        _imageTokenOrder.removeAll { $0 == requestToken }
         return _toolResultImagesByToken.removeValue(forKey: requestToken) ?? [:]
     }
 
@@ -1497,7 +1520,7 @@ enum RequestBodyPatcher {
     /// — Claude 4.6+ rejects temperature entirely, so we drop it.
     static func injectThinkingConfig(into request: NSMutableURLRequest) {
         let budget = takeThinkingBudget()
-        let effort = takeThinkingEffort()
+        var effort = takeThinkingEffort()
         let (disabledRaw, disabledForModel) = takeThinkingDisabled()
         // Nothing to do if the caller didn't set any thinking intent for this request.
         guard budget > 0 || effort != nil || disabledRaw else { return }
@@ -1522,28 +1545,33 @@ enum RequestBodyPatcher {
             logger.info("[Thinking] dropped cross-request disable intent set for \(disabledForModel) — this request is \(modelId)")
         }
 
-        if disabled {
-            // Explicit off. Only 4.6-4.x needs it on the wire (their server
-            // default is thinking-on); legacy models are off by omission, and
-            // enable-intent always wins if both were set.
-            //
-            // [T-ios-claude5-thinking-disabled-400] Claude 5+ is excluded even
-            // though it is "adaptive": it rejects the value with
-            // `"thinking.type.disabled" is not supported for this model` and
-            // defaults to adaptive when the field is absent. This is the OAuth
-            // wire path (fable 5 / Opus 5 login), i.e. exactly where the 400
-            // was reported — it re-derives the decision from the on-wire model
-            // id rather than reusing the resolver's shape, so it needs the same
-            // gate independently.
-            if useAdaptive,
-               AnthropicProvider.modelAcceptsExplicitThinkingDisabled(modelId),
-               budget <= 0, effort == nil {
-                json["thinking"] = ["type": "disabled"]
+        if disabled, budget <= 0, effort == nil {
+            // Explicit off (an enable intent, if both were set, wins and skips this).
+            // [T-claude5-thinking-off] The literal is per model, re-derived from the
+            // on-wire model id rather than the resolver's shape: `disabled` 400s on
+            // Claude 5.5 / Fable, `between_tools` 400s on everything but Sonnet 5.5,
+            // and sending nothing leaves Claude 5 thinking at its default effort.
+            let thinking: [String: Any]
+            switch AnthropicProvider.offThinking(for: modelId) {
+            case .omit:
+                return
+            case .disabled:
+                thinking = ["type": "disabled"]
+            case .betweenTools:
+                thinking = ["type": "between_tools"]
+            case .lowEffort:
+                thinking = [:]
+                effort = "low"
+            }
+            if !thinking.isEmpty {
+                json["thinking"] = thinking
                 if let newBody = try? JSONSerialization.data(withJSONObject: json, options: [.sortedKeys]) {
                     request.httpBody = newBody
                 }
+                return
             }
-            if budget <= 0, effort == nil { return }
+            // .lowEffort: thinking cannot be switched off on this model, so fall
+            // through to the adaptive branch below at the lowest effort.
         }
 
         // Beta headers: each protocol needs its own beta token. Append without
@@ -1658,9 +1686,7 @@ enum RequestBodyPatcher {
 /// `eager_input_streaming` — no auth changes. Used for API key mode.
 private final class EagerStreamingURLProtocol: URLProtocol, URLSessionDataDelegate {
 
-    private lazy var innerSession: URLSession = {
-        URLSession(configuration: .default, delegate: self, delegateQueue: nil)
-    }()
+    private lazy var innerSession: URLSession = makeInnerProtocolSession(delegate: self)
     private var innerTask: URLSessionDataTask?
     /// Stop-guard for the async extension-interception hop (see
     /// `startInnerUploadTask`).
@@ -1700,6 +1726,7 @@ private final class EagerStreamingURLProtocol: URLProtocol, URLSessionDataDelega
         RequestBodyPatcher.injectCacheTTL(into: mutable)
         RequestBodyPatcher.injectThinkingConfig(into: mutable)
         RequestBodyPatcher.injectThinkingBlocksForCompatProxy(into: mutable)
+        RequestBodyPatcher.applyKeyAuthBodyPatches(to: mutable)
 
         // Remove stale Content-Length — URLSession will recalculate from httpBody
         mutable.setValue(nil, forHTTPHeaderField: "Content-Length")
@@ -1811,7 +1838,7 @@ final class EagerStreamingHTTPClient: HTTPClient {
     ///   gate on client UA). The SDK never sets User-Agent itself, so this takes effect.
     init(customUserAgent: String? = nil) {
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 600  // 10 min — SSE streams can be idle during large tool generation
+        config.timeoutIntervalForRequest = anthropicRequestIdleTimeout
         config.protocolClasses = [EagerStreamingURLProtocol.self]
         if let ua = customUserAgent {
             config.httpAdditionalHeaders = (config.httpAdditionalHeaders ?? [:]).merging(
@@ -1838,7 +1865,7 @@ final class DualAuthHTTPClient: HTTPClient {
     /// - Parameter customUserAgent: see `EagerStreamingHTTPClient.init`.
     init(customUserAgent: String? = nil) {
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 600
+        config.timeoutIntervalForRequest = anthropicRequestIdleTimeout
         config.protocolClasses = [DualAuthURLProtocol.self]
         if let ua = customUserAgent {
             config.httpAdditionalHeaders = (config.httpAdditionalHeaders ?? [:]).merging(
@@ -1863,9 +1890,7 @@ final class DualAuthHTTPClient: HTTPClient {
 /// Applies all the same request body patching as EagerStreamingURLProtocol.
 private final class DualAuthURLProtocol: URLProtocol, URLSessionDataDelegate {
 
-    private lazy var innerSession: URLSession = {
-        URLSession(configuration: .default, delegate: self, delegateQueue: nil)
-    }()
+    private lazy var innerSession: URLSession = makeInnerProtocolSession(delegate: self)
     private var innerTask: URLSessionDataTask?
     /// Stop-guard for the async extension-interception hop (see
     /// `startInnerUploadTask`).
@@ -1907,6 +1932,7 @@ private final class DualAuthURLProtocol: URLProtocol, URLSessionDataDelegate {
         RequestBodyPatcher.injectCacheTTL(into: mutable)
         RequestBodyPatcher.injectThinkingConfig(into: mutable)
         RequestBodyPatcher.injectThinkingBlocksForCompatProxy(into: mutable)
+        RequestBodyPatcher.applyKeyAuthBodyPatches(to: mutable)
         mutable.setValue(nil, forHTTPHeaderField: "Content-Length")
 
         #if DEBUG
@@ -1997,3 +2023,51 @@ private final class DualAuthURLProtocol: URLProtocol, URLSessionDataDelegate {
         }
     }
 }
+
+// MARK: - Request body patch chains [T-image-real-seams]
+
+// BEGIN AnthropicBodyPatchChains
+extension RequestBodyPatcher {
+    /// The body patches OAuthURLProtocol applies to every request, in order.
+    /// Callable on its own so the final request body can be produced without
+    /// sending it (`AnthropicAgentProvider.requestBody`).
+    static func applyOAuthBodyPatches(to mutable: NSMutableURLRequest) {
+        // Normalize key ordering first so all patchers produce deterministic output
+        // (critical for Anthropic prompt cache prefix matching)
+        // [T-anthropic-toolimages-cross-request] Claim this request's token
+        // BEFORE any patcher runs, so patchToolResultsWithImages below can
+        // look up the images that belong to it.
+        RequestBodyPatcher.stampRequestToken(onto: mutable)
+        RequestBodyPatcher.normalizeKeyOrder(in: mutable)
+        // Cache: mark last tool definition for caching (stable prefix)
+        RequestBodyPatcher.injectToolsCacheControl(into: mutable)
+        // Inject eager_input_streaming into tool definitions
+        RequestBodyPatcher.injectEagerInputStreaming(into: mutable)
+        // Rewrite tool results that have associated images
+        RequestBodyPatcher.patchToolResultsWithImages(into: mutable)
+        // Inject 1h TTL into cache_control objects when enhanced caching is enabled
+        RequestBodyPatcher.injectCacheTTL(into: mutable)
+        // Inject thinking config (budget_tokens + beta header) when enabled
+        RequestBodyPatcher.injectThinkingConfig(into: mutable)
+        RequestBodyPatcher.injectThinkingBlocksForCompatProxy(into: mutable)
+    }
+
+    /// The body patches EagerStreamingURLProtocol (API key) and
+    /// DualAuthURLProtocol (manual OAuth token on a proxy) apply, in order.
+    ///
+    /// [T-anthropic-keyauth-toolimages] Claims the request token first, like
+    /// the OAuth chain. Without it patchToolResultsWithImages found no images
+    /// for these requests: a screenshot / read_image result reached the model
+    /// as text only, and its staged entry was never taken.
+    static func applyKeyAuthBodyPatches(to mutable: NSMutableURLRequest) {
+        RequestBodyPatcher.stampRequestToken(onto: mutable)
+        RequestBodyPatcher.normalizeKeyOrder(in: mutable)
+        RequestBodyPatcher.injectToolsCacheControl(into: mutable)
+        RequestBodyPatcher.injectEagerInputStreaming(into: mutable)
+        RequestBodyPatcher.patchToolResultsWithImages(into: mutable)
+        RequestBodyPatcher.injectCacheTTL(into: mutable)
+        RequestBodyPatcher.injectThinkingConfig(into: mutable)
+        RequestBodyPatcher.injectThinkingBlocksForCompatProxy(into: mutable)
+    }
+}
+// END AnthropicBodyPatchChains

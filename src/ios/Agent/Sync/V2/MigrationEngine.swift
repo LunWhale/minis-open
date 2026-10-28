@@ -73,6 +73,15 @@ final class MigrationEngine {
     /// [T-icloud-migration-suspended-ui] Set when a phase defers, cleared the
     /// moment one completes. Drives `ProgressSummary.isSuspended`.
     fileprivate static let suspendedKey = "cloudSync.v2.migrationSuspended"
+    /// [T-icloud-migration-keeps-going] When / why the migration last
+    /// suspended. Additive keys: older builds never read them, and a suspension
+    /// they wrote (no time recorded) is resumed at once.
+    fileprivate static let suspendedAtKey = "cloudSync.v2.migrationSuspendedAt"
+    fileprivate static let suspendedReasonKey = "cloudSync.v2.migrationSuspendedReason"
+
+    /// [T-icloud-migration-keeps-going] What the Phase 3 drain is doing right
+    /// now; nil whenever it is not running. In memory only.
+    private(set) var drainActivity: MigrationDrain.Activity?
 
     /// Re-entrancy guard. The migration can be kicked from two places that
     /// may overlap: the launch path (SyncV2Bootstrap.startIfEnabled) and the
@@ -126,6 +135,14 @@ final class MigrationEngine {
         /// screen said so, and the one action that would have resumed it
         /// (relaunching the app) was the one the user had no reason to take.
         let isSuspended: Bool
+        /// [T-icloud-migration-keeps-going] Why it suspended (phase + what was
+        /// left), when it did.
+        var suspendedReason: String? = nil
+        /// The engine is driving the state machine right now.
+        var isDriving: Bool = false
+        /// Live Phase 3 state: pushing, or waiting on throttling / the user's
+        /// pause / the network. nil outside the drain.
+        var activity: MigrationDrain.Activity? = nil
     }
 
     /// Cancel an in-progress migration. Drops the priority=1 backlog from
@@ -259,6 +276,8 @@ final class MigrationEngine {
         UserDefaults.standard.removeObject(forKey: "cloudSync.v2.estimatedExtraSessionFiles")
         UserDefaults.standard.removeObject(forKey: "cloudSync.v2.migrationCanceledRemaining")
         UserDefaults.standard.removeObject(forKey: Self.suspendedKey)
+        UserDefaults.standard.removeObject(forKey: Self.suspendedAtKey)
+        UserDefaults.standard.removeObject(forKey: Self.suspendedReasonKey)
         SyncV2Bootstrap.setMigrationRequested(false)
 
         logger.warning("[SyncMigration] migration progress RESET by user — droppedBacklog=\(clearedBacklog) clearedPushedLedger=\(clearedPushed); server-side data untouched")
@@ -396,7 +415,10 @@ final class MigrationEngine {
             v1Deleted: v1Deleted, v1DeletePending: v1Pending,
             v1ZoneTotalAtStart: v1Total, v1ZoneRemaining: v1Remaining,
             lastError: state?.lastError,
-            isSuspended: UserDefaults.standard.bool(forKey: Self.suspendedKey)
+            isSuspended: UserDefaults.standard.bool(forKey: Self.suspendedKey) && !isRunning,
+            suspendedReason: UserDefaults.standard.string(forKey: Self.suspendedReasonKey),
+            isDriving: isRunning,
+            activity: drainActivity
         )
     }
 
@@ -521,6 +543,13 @@ final class MigrationEngine {
         if state.startedAt == nil { state.startedAt = Date() }
         UserDefaults.standard.set(MigrationStatus.inProgress.rawValue, forKey: statusKey)
         saveState(state)
+        // [T-icloud-migration-keeps-going] Something is driving the migration
+        // again, so it is not suspended - including a suspension an older
+        // build left behind (the reporter's state after upgrading).
+        if UserDefaults.standard.bool(forKey: Self.suspendedKey) {
+            logger.info("[SyncMigration] resuming a suspended migration at phase=\(state.phase.rawValue) (was: \(UserDefaults.standard.string(forKey: Self.suspendedReasonKey) ?? "suspended by an older build"))")
+        }
+        Self.clearSuspended()
         logger.info("[SyncMigration] phase=detect: status=\(state.status.rawValue) startedAt=\(state.startedAt?.description ?? "?") deviceId=\(DeviceIdentity.deviceId.prefix(8))")
 
         // Drive the state machine forward.
@@ -531,7 +560,7 @@ final class MigrationEngine {
                 saveState(state)
                 // A phase completed — the migration is demonstrably moving
                 // again, so drop any stale suspended marker.
-                UserDefaults.standard.set(false, forKey: Self.suspendedKey)
+                Self.clearSuspended()
             } catch let mErr as MigrationError {
                 if case .deferredUntilNextLaunch(let n) = mErr {
                     // Not a failure — phase made progress but didn't
@@ -545,7 +574,9 @@ final class MigrationEngine {
                     // "suspended — reopen the app to continue" instead of
                     // showing an active-looking status over a frozen counter.
                     UserDefaults.standard.set(true, forKey: Self.suspendedKey)
-                    logger.info("[SyncMigration] phase=\(state.phase.rawValue) deferred: \(n) records remain — suspending until next launch")
+                    UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: Self.suspendedAtKey)
+                    UserDefaults.standard.set("phase=\(state.phase.rawValue) remaining=\(n)", forKey: Self.suspendedReasonKey)
+                    logger.info("[SyncMigration] phase=\(state.phase.rawValue) deferred: \(n) records remain — suspended; resumes on the next foreground (after \(Int(MigrationDrain.autoResumeMinInterval))s), on opening the iCloud Sync page, on Continue, or on the next launch")
                     return
                 }
                 state.phaseFailureCount += 1
@@ -581,6 +612,39 @@ final class MigrationEngine {
         UserDefaults.standard.set(MigrationStatus.completed.rawValue, forKey: statusKey)
         let elapsed = Date().timeIntervalSince(state.startedAt ?? Date()) * 1000
         logger.info("[SyncMigration] migration=success totalElapsedMs=\(Int(elapsed)) finishedAt=\(Date().description)")
+    }
+
+    fileprivate static func clearSuspended() {
+        UserDefaults.standard.set(false, forKey: suspendedKey)
+        UserDefaults.standard.removeObject(forKey: suspendedAtKey)
+        UserDefaults.standard.removeObject(forKey: suspendedReasonKey)
+    }
+
+    /// [T-icloud-migration-keeps-going] Pick a suspended migration back up
+    /// without a relaunch.
+    ///
+    /// Called on every foreground and when the iCloud Sync page opens
+    /// (`force: false`), and by its Continue button (`force: true`). An
+    /// automatic resume waits `MigrationDrain.autoResumeMinInterval` after the
+    /// suspension so a still-active cause (a throttled CloudKit query) is not
+    /// re-hit on every app switch; a suspension written by an older build has
+    /// no time and resumes at once. No-op unless the migration was requested,
+    /// is still pending / in progress, is suspended, and nothing is driving it.
+    func resumeIfSuspended(trigger: String, force: Bool = false) async {
+        guard SyncV2Bootstrap.isMigrationRequested, !isRunning else { return }
+        let status = currentStatus()
+        guard status == .inProgress || status == .pending else { return }
+        let suspended = UserDefaults.standard.bool(forKey: Self.suspendedKey)
+        let atRaw = UserDefaults.standard.double(forKey: Self.suspendedAtKey)
+        let at: Date? = atRaw > 0 ? Date(timeIntervalSince1970: atRaw) : nil
+        guard force ? suspended : MigrationDrain.mayAutoResume(suspended: suspended, suspendedAt: at, now: Date()) else {
+            if suspended {
+                logger.info("[SyncMigration] resume (\(trigger)) skipped — suspended \(Int(Date().timeIntervalSince(at ?? Date())))s ago, auto-resume waits \(Int(MigrationDrain.autoResumeMinInterval))s")
+            }
+            return
+        }
+        logger.info("[SyncMigration] resume requested (\(trigger)\(force ? ", manual" : ""))")
+        await runIfNeeded()
     }
 
     /// Reset state — used in dev to re-run migration. Not exposed in UI.
@@ -667,29 +731,66 @@ final class MigrationEngine {
         // Trigger the send (transport-agnostic; broadcasts to whatever
         // is registered — ICloudSharedZoneTransport in this case).
         await SyncCore.shared.sendNow(trigger: .migration)
-        // Wait until dirty drains. We poll in the simplest possible way
-        // (every 2s up to 30 minutes); real production would expose a
-        // semaphore from SyncCore.
-        let deadline = Date().addingTimeInterval(30 * 60)
-        while Date() < deadline {
-            let summary = await SyncCore.shared.dirtySummary()
-            if summary.total == 0 { break }
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-        }
+        // [T-icloud-migration-keeps-going] Wait for the queue to drain, window
+        // after window, for as long as each window makes progress - see
+        // MigrationDrain. It used to give up after ONE 30-minute window and
+        // suspend until the next cold launch however much that window pushed.
+        let outcome = await MigrationDrain.run(drainProbe())
+        drainActivity = nil
         let final = await SyncCore.shared.dirtySummary()
-        logger.info("[SyncMigration] phase=v2InitialPush end: dirtyRemaining=\(final.total) byType=\(final.byType)")
-        if final.total > 0 {
-            // Push didn't drain within the 30-min window. With 200k+
-            // legacy rows + iCloud throttling this is normal — pushes
-            // are still succeeding in the background. Throw a special
-            // sentinel that runIfNeeded recognizes as 'pause migration
-            // until next launch' instead of counting it toward the
-            // failure cap (which would permanently mark the migration
-            // .failed after 5 windows).
-            s.progress["v2InitialPush.dirtyRemaining"] = final.total
-            throw MigrationError.deferredUntilNextLaunch(remaining: final.total)
+        logger.info("[SyncMigration] phase=v2InitialPush end: outcome=\(outcome) dirtyRemaining=\(final.total) byType=\(final.byType)")
+        switch outcome {
+        case .drained(let windows):
+            s.progress["v2InitialPush.windows"] = windows
+        case .stalled(let remaining, let windows):
+            // A whole window of active time with nothing pushed. Still not a
+            // failure (CloudKit throttling with no retry-after, a stalled send
+            // chain): suspend without burning an attempt, as before - but it
+            // now resumes on the next foreground / sheet open / Continue, not
+            // only on a cold launch.
+            s.progress["v2InitialPush.windows"] = windows
+            s.progress["v2InitialPush.dirtyRemaining"] = remaining
+            throw MigrationError.deferredUntilNextLaunch(remaining: remaining)
         }
         s.phase = .v1ZoneDelete
+    }
+
+    /// [T-icloud-migration-keeps-going] The live wiring of `MigrationDrain`.
+    private func drainProbe() -> MigrationDrain.Probe {
+        MigrationDrain.Probe(
+            dirtyTotal: { await SyncCore.shared.dirtySummary().total },
+            pushedCount: { await ChatStore.shared.countPushedRecords() },
+            historicalBacklogPending: {
+                // Phase B (runHistoricalBacklogScan) still has older sessions to
+                // stage: its cursor is > 0 until it has walked all history.
+                UserDefaults.standard.double(forKey: "cloudSync.v2.backlogScanCursorAt") > 0
+                    && !UserDefaults.standard.bool(forKey: "cloudSync.v2.backlogScanCanceled")
+            },
+            externalBlock: {
+                let core = SyncCore.shared
+                if let until = core.pausedUntil { return .userPaused(until: until) }
+                if let gate = core.nextEarliestSendAt, gate > Date() { return .throttled(until: gate) }
+                if !core.isNetworkSatisfied { return .offline }
+                return nil
+            },
+            now: { Date() },
+            sleep: { seconds in try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000)) },
+            isCancelled: { Task.isCancelled },
+            nudgeSend: { await SyncCore.shared.sendNow(trigger: .migration) },
+            onActivity: { [weak self] activity in
+                guard let self, self.drainActivity != activity else { return }
+                self.drainActivity = activity
+                logger.info("[SyncMigration] phase=v2InitialPush drain: \(activity)")
+            },
+            onWindowEnd: { r in
+                let perHour = r.activeSeconds > 0 ? Int(Double(r.pushedDelta) / r.activeSeconds * 3600) : 0
+                if r.progressed {
+                    logger.info("[SyncMigration] phase=v2InitialPush window=\(r.window) end: pushed=\(r.pushedDelta) (~\(perHour)/h over \(Int(r.activeSeconds))s active) dirty \(r.dirtyStart)→\(r.dirtyEnd) — progress, starting window \(r.window + 1)")
+                } else {
+                    logger.warning("[SyncMigration] phase=v2InitialPush window=\(r.window) end: NO progress in \(Int(r.activeSeconds))s active (dirty \(r.dirtyStart)→\(r.dirtyEnd)) — suspending")
+                }
+            }
+        )
     }
 
     private func phaseV1ZoneDelete(_ s: inout MigrationState) async throws {
@@ -829,6 +930,153 @@ final class MigrationEngine {
     }
 }
 
+// BEGIN MigrationDrainLoop
+/// [T-icloud-migration-keeps-going] How Phase 3 (v2InitialPush) waits for the
+/// dirty queue to drain.
+///
+/// It used to wait ONE 30-minute window and then throw
+/// `deferredUntilNextLaunch` whenever anything was left - even when that window
+/// had pushed thousands of records. For a 60k-record history under CloudKit
+/// throttling every window ends that way, so the migration suspended every 30
+/// minutes and only a cold relaunch moved the state machine on (OpenMinis
+/// feedback 2026-09-30: "483 / 59,570, Paused - reopen Minis to continue"). The
+/// pushing itself never stopped - SyncCore chains its own sends - but nothing
+/// advanced the phase once the queue drained, and the UI said "paused" while it
+/// pushed.
+///
+/// The window survives as a STALL detector, not a deadline:
+///   - a window that made progress (records pushed, or the queue shrank) is
+///     followed by the next one, and the send chain is nudged (SyncCore still
+///     honours its throttle gate and the user's pause);
+///   - only a whole window of ACTIVE time without progress suspends (the
+///     original protection: no endless polling, nothing counted as a failure);
+///   - time the process spent suspended (a poll gap far longer than the poll
+///     interval: backgrounded, locked) does not count, and neither does time
+///     spent waiting on a known external block (iCloud rate limit, the user's
+///     pause, no network) - those are waits, not stalls;
+///   - "drained" means the queue is empty AND the historical backlog scan has
+///     staged everything, so a momentarily empty queue between two scan passes
+///     cannot advance the migration to deleting the v1 zone early.
+enum MigrationDrain {
+    /// Active time without progress before the phase suspends.
+    static let windowSeconds: TimeInterval = 30 * 60
+    /// Poll interval while pushing.
+    static let pollSeconds: TimeInterval = 2
+    /// Longest sleep while waiting on an external block.
+    static let maxBlockedPollSeconds: TimeInterval = 60
+    /// A gap between polls longer than this means the process was not running
+    /// (suspended in the background); it is not counted as active time.
+    static let suspensionGapSeconds: TimeInterval = 20
+
+    /// Something outside the migration that is expected to stop progress.
+    enum ExternalBlock: Equatable {
+        case throttled(until: Date)
+        case userPaused(until: Date)
+        case offline
+    }
+
+    /// What the drain is doing right now (for the UI and logs).
+    enum Activity: Equatable {
+        case pushing(window: Int)
+        case blocked(ExternalBlock, window: Int)
+    }
+
+    /// End-of-window record, logged by the caller.
+    struct WindowReport: Equatable {
+        let window: Int
+        let activeSeconds: TimeInterval
+        let pushedDelta: Int
+        let dirtyStart: Int
+        let dirtyEnd: Int
+        let progressed: Bool
+    }
+
+    enum Outcome: Equatable {
+        case drained(windows: Int)
+        /// A whole window of active time passed with no progress.
+        case stalled(remaining: Int, windows: Int)
+    }
+
+    /// Everything the loop reads or does, injected so it can be driven by a
+    /// virtual clock in tests.
+    struct Probe {
+        var dirtyTotal: () async -> Int
+        var pushedCount: () async -> Int
+        var historicalBacklogPending: () -> Bool
+        var externalBlock: () -> ExternalBlock?
+        var now: () -> Date
+        var sleep: (TimeInterval) async -> Void
+        var isCancelled: () -> Bool
+        /// Nudge the send chain at the start of every window after the first.
+        var nudgeSend: () async -> Void
+        var onActivity: (Activity) -> Void
+        var onWindowEnd: (WindowReport) -> Void
+    }
+
+    static func progressed(pushedStart: Int, pushedNow: Int, dirtyStart: Int, dirtyNow: Int) -> Bool {
+        pushedNow > pushedStart || dirtyNow < dirtyStart
+    }
+
+    static func run(_ p: Probe) async -> Outcome {
+        var window = 1
+        var pushedStart = await p.pushedCount()
+        var dirtyStart = await p.dirtyTotal()
+        var active: TimeInterval = 0
+        var lastPoll = p.now()
+        while true {
+            let dirty = await p.dirtyTotal()
+            if dirty == 0 && !p.historicalBacklogPending() { return .drained(windows: window) }
+            if p.isCancelled() { return .stalled(remaining: dirty, windows: window) }
+            let block = p.externalBlock()
+            if let block {
+                p.onActivity(.blocked(block, window: window))
+                var wait = maxBlockedPollSeconds
+                switch block {
+                case .throttled(let until), .userPaused(let until):
+                    wait = min(maxBlockedPollSeconds, max(pollSeconds, until.timeIntervalSince(p.now())))
+                case .offline:
+                    break
+                }
+                await p.sleep(wait)
+                lastPoll = p.now()   // blocked time is a wait, not a stall
+                continue
+            }
+            p.onActivity(.pushing(window: window))
+            await p.sleep(pollSeconds)
+            let now = p.now()
+            let gap = now.timeIntervalSince(lastPoll)
+            lastPoll = now
+            if gap <= suspensionGapSeconds { active += gap }
+            guard active >= windowSeconds else { continue }
+            let pushedNow = await p.pushedCount()
+            let dirtyNow = await p.dirtyTotal()
+            let moved = progressed(pushedStart: pushedStart, pushedNow: pushedNow,
+                                   dirtyStart: dirtyStart, dirtyNow: dirtyNow)
+            p.onWindowEnd(WindowReport(window: window, activeSeconds: active, pushedDelta: pushedNow - pushedStart,
+                                       dirtyStart: dirtyStart, dirtyEnd: dirtyNow, progressed: moved))
+            guard moved else { return .stalled(remaining: dirtyNow, windows: window) }
+            window += 1
+            pushedStart = pushedNow
+            dirtyStart = dirtyNow
+            active = 0
+            await p.nudgeSend()
+        }
+    }
+
+    /// Whether a suspended migration may be resumed automatically now. A
+    /// manual "Continue" ignores this. The minimum interval keeps foreground
+    /// switches from re-running a deferral whose cause (a throttled CloudKit
+    /// query in v1ZoneDelete, OpenMinis#154) is still in force; a suspension
+    /// with no recorded time - written by an older build - resumes at once.
+    static let autoResumeMinInterval: TimeInterval = 5 * 60
+    static func mayAutoResume(suspended: Bool, suspendedAt: Date?, now: Date) -> Bool {
+        guard suspended else { return false }
+        guard let at = suspendedAt else { return true }
+        return now.timeIntervalSince(at) >= autoResumeMinInterval
+    }
+}
+// END MigrationDrainLoop
+
 // MARK: - Errors
 
 enum MigrationError: Error, LocalizedError {
@@ -858,7 +1106,8 @@ enum MigrationError: Error, LocalizedError {
         case .zoneResurrected(let z):
             return "Zone \(z) was deleted but immediately re-created by a running sync engine. Turn off iCloud Sync, then delete it again."
         case .deferredUntilNextLaunch(let n):
-            return "Deferred — \(n) records still in queue, will resume on next launch"
+            // "Deferred" is matched by runIfNeeded's legacy auto-recovery.
+            return "Deferred — \(n) records still in queue, will resume automatically"
         }
     }
 }

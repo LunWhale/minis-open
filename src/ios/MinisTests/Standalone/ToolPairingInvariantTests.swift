@@ -384,8 +384,11 @@ check("Persistence source read", !persistence.isEmpty)
 check("Compaction source read", !compaction.isEmpty)
 check("dropOrphanedToolParts ships as a static pure function",
       persistence.contains("static func dropOrphanedToolParts(_ history: [AgentMessage], logger: AppLogger) -> [AgentMessage]"))
-check("effectiveAgentHistory routes through it",
-      persistence.contains("Self.dropOrphanedToolParts(effectiveAgentHistoryUncounted(), logger: logger)"))
+// [T-bridge-to-reminder] Legacy bridge rows are dropped first; the orphan
+// pass stays the LAST step before the request.
+check("effectiveAgentHistory routes through it (last, after the legacy-bridge drop)",
+      persistence.contains("let sliced = effectiveAgentHistoryUncounted()")
+      && persistence.contains("let result = Self.dropOrphanedToolParts(withoutBridges, logger: logger)"))
 check("in-flight exemption is scoped to the trailing assistant message",
       persistence.contains("if let last = history.last, last.role == .assistant {")
         && persistence.contains("if case .toolUse(let id, _, _, _) = part { orphanedUses.remove(Self.pairingKey(id)) }"))

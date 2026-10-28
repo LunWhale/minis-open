@@ -29,6 +29,25 @@ enum SyncDirtyReason: String {
 /// the `SyncTransport` protocol.
 @MainActor
 final class SyncCore {
+    /// [T-scroll-sync-pause] Longest an inbound batch waits for the chat list
+    /// to stop moving, in total, before applying anyway.
+    static let scrollPauseBudget: TimeInterval = 20
+
+    /// Sleeps in quiet-interval steps while the chat list is being scrolled,
+    /// up to `budget` seconds; returns what is left of the budget.
+    static func waitWhileChatScrolls(budget: TimeInterval) async -> TimeInterval {
+        var left = budget
+        let step = ChatScrollActivity.quietInterval
+        while left > 0, ChatScrollActivity.isMoving {
+            try? await Task.sleep(nanoseconds: UInt64(step * 1_000_000_000))
+            left -= step
+        }
+        if left < budget {
+            logger.info("[SyncCore] inbound apply paused \(String(format: "%.1f", budget - left))s for chat scroll\(left <= 0 ? " — budget spent, applying" : "")")
+        }
+        return left
+    }
+
     static let shared = SyncCore()
     private init() {}
 
@@ -78,6 +97,10 @@ final class SyncCore {
     /// .cellular adds a 0.5× multiplier on top of the foreground throttle.
     enum NetworkClass { case wifi, cellular, other }
     private(set) var networkClass: NetworkClass = .wifi
+    /// [T-icloud-migration-keeps-going] Whether the current network path can
+    /// reach anything. The migration drain treats "offline" as a wait, not a
+    /// stall. True until the monitor reports otherwise.
+    private(set) var isNetworkSatisfied: Bool = true
     private var pathMonitor: NWPathMonitor?
 
     /// Effective chained-send delay seconds for the current context.
@@ -262,8 +285,13 @@ final class SyncCore {
             // Treat anything that isn't explicitly cellular as wifi-class
             // so the throttle multiplier is sane on those platforms.
             let cls: NetworkClass = path.usesInterfaceType(.cellular) ? .cellular : .wifi
+            let satisfied = path.status == .satisfied
             Task { @MainActor [weak self] in
                 guard let self else { return }
+                if self.isNetworkSatisfied != satisfied {
+                    self.isNetworkSatisfied = satisfied
+                    logger.info("[SyncCore] network \(satisfied ? "available" : "unavailable")")
+                }
                 if self.networkClass != cls {
                     self.networkClass = cls
                     logger.info("[SyncCore] network class changed → \(cls)")
@@ -732,7 +760,16 @@ final class SyncCore {
                 let ttl = strongSelf.echoTTL
                 strongSelf.recentlyPushedIds = strongSelf.recentlyPushedIds.filter { now.timeIntervalSince($0.value) < ttl }
             }
+            // [T-scroll-sync-pause] Each chunk is applied on the main thread
+            // (~20-60 ms for 25 records); one landing mid-fling dropped 4
+            // frames on device (60 ms, 2026-10-03). Hold the batch while the
+            // chat list is being dragged or decelerating and resume once it
+            // has been still for ChatScrollActivity.quietInterval. Order,
+            // thread and cursor-after-apply are unchanged; the batch only
+            // starts later. Capped so a very long scroll cannot starve sync.
+            var scrollWaitBudget = Self.scrollPauseBudget
             while i < allRecords.count {
+                scrollWaitBudget = await Self.waitWhileChatScrolls(budget: scrollWaitBudget)
                 let end = min(i + chunkSize, allRecords.count)
                 for j in i..<end {
                     let record = allRecords[j]
@@ -781,6 +818,9 @@ final class SyncCore {
                 // and so ARC has a chance to release the chunk's Codable
                 // intermediaries before the next chunk allocates more.
                 try? await Task.sleep(nanoseconds: 50_000_000)
+            }
+            if !allDeletes.isEmpty {
+                scrollWaitBudget = await Self.waitWhileChatScrolls(budget: scrollWaitBudget)
             }
             for deleteId in allDeletes {
                 guard registry.metadata(for: deleteId.type) != nil else {

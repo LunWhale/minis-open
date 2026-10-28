@@ -140,6 +140,8 @@ struct ProvidersCollection: ConfigCollection {
     /// App environment variables (reusing the existing EnvVarStore); anything
     /// else is treated as a literal secret. Throws if a `$$VAR` reference names
     /// a variable that doesn't exist (fail loud instead of saving an empty key).
+    /// [T-envvar-disable] A variable that exists but is disabled resolves to
+    /// an empty string, with a warning (log + the write's `warnings`).
     static func resolveSecret(_ raw: String) throws -> String {
         guard raw.hasPrefix("$$") else { return raw }
         let name = String(raw.dropFirst(2))
@@ -149,7 +151,64 @@ struct ProvidersCollection: ConfigCollection {
         guard let value = EnvVarStore.loadValueSync(forKey: name), !value.isEmpty else {
             throw ConfigError.invalidValue("Environment variable \"\(name)\" is not set — create it in Settings → Environment Variables first")
         }
+        // [T-envvar-disable] A disabled variable resolves to an empty value
+        // (product decision: warn, do not fail).
+        guard EnvVarStore.isKeyEnabledSync(name) else {
+            let warning = "$$\(name) refers to a disabled environment variable, so it resolved to an empty value. Enable it in Settings → Environment Variables and set this again to use it."
+            AppLogger(category: "EnvVarRef").warning("[EnvVarRef] \(warning)")
+            ConfigWriteWarnings.add(warning)
+            return ""
+        }
         return value
+    }
+
+    // MARK: [T-config-readable] Readable descriptions
+
+    let readableSubjectFormat = "Provider “%1$@” – %2$@"
+
+    func entityLabel(id: String) -> String? {
+        ConfigRefResolver.instanceLabel(id)
+    }
+
+    static let imageModeLabels: [String: String] = [
+        "auto": "Automatic",
+        "images_generations": "Images API",
+        "chat_completions": "Chat Completions",
+    ]
+
+    /// The payload is already masked: `apiKey` is either "••• (hidden)" or a
+    /// `$$VAR` reference. Only the fact that a key was given (or the variable
+    /// name) is described — never a value.
+    func readableForAdd(_ payload: RedactedConfigValue) -> [ReadableLine] {
+        guard case .object(let d) = payload.value else { return [] }
+        let label: String = { if case .string(let s)? = d["label"] { return s }; return "?" }()
+        let type: ReadableArg = {
+            if case .string(let t)? = d["providerType"], let pt = ProviderType(rawValue: t) { return .text(pt.displayName) }
+            if case .string(let t)? = d["providerType"] { return .text(t) }
+            return .text("?")
+        }()
+        var lines = [ReadableLine("Add provider “%1$@” (%2$@)", [.text(label), type])]
+        if case .string(let k)? = d["apiKey"], !k.isEmpty {
+            if k.hasPrefix("$$"), k.count > 2 {
+                lines.append(ReadableLine("API key from the environment variable $%@", [.text(String(k.dropFirst(2)))]))
+            } else {
+                lines.append(ReadableLine("API key provided (value hidden)"))
+            }
+        } else {
+            lines.append(ReadableLine("No API key yet"))
+        }
+        if case .string(let u)? = d["customBaseURL"], !u.isEmpty {
+            lines.append(ReadableLine("Base URL: %@", [.text(ReadableCore.safeURL(u))]))
+        }
+        return lines
+    }
+
+    /// Not reachable today (`removable = false`); kept so the text is right if
+    /// removal is ever allowed.
+    func readableForRemove(id: String) -> [ReadableLine] {
+        guard let label = ConfigRefResolver.instanceLabel(id) else { return [] }
+        let models = ProviderConfigStore.shared.config.modelEntries.filter { $0.providerInstanceId == id }.count
+        return [ReadableLine("Delete provider “%1$@” and its %2$@ models", [.text(label), .text("\(models)")])]
     }
 
     // MARK: Field factories
@@ -227,6 +286,7 @@ struct ProvidersCollection: ConfigCollection {
             description: "User-facing nickname for this instance.",
             valueSchema: .string(maxLength: 200),
             risk: .normal, revertable: true,
+            readable: ConfigReadable(.text()),
             reader: { [self] in
                 guard let inst = instance(id) else { return .null }
                 return .string(inst.label)
@@ -245,6 +305,7 @@ struct ProvidersCollection: ConfigCollection {
             description: "When false, the instance is excluded from agent calls.",
             valueSchema: .bool,
             risk: .sensitive, revertable: true,
+            readable: ConfigReadable(.bool(on: "Enabled", off: "Disabled"), label: "Status"),
             reader: { [self] in
                 guard let inst = instance(id) else { return .null }
                 return .bool(inst.isEnabled)
@@ -263,6 +324,7 @@ struct ProvidersCollection: ConfigCollection {
             description: "Override the default API endpoint. Empty string = use default.",
             valueSchema: .string(maxLength: 1000),
             risk: .sensitive, revertable: true,
+            readable: ConfigReadable(.url()),
             reader: { [self] in
                 guard let inst = instance(id) else { return .null }
                 return .string(inst.customBaseURL ?? "")
@@ -286,6 +348,7 @@ struct ProvidersCollection: ConfigCollection {
             description: "Override the outbound User-Agent header. Empty string = use default.",
             valueSchema: .string(maxLength: 256),
             risk: .normal, revertable: true,
+            readable: ConfigReadable(.text(preview: 60, empty: "Default")),
             reader: { [self] in
                 guard let inst = instance(id) else { return .null }
                 return .string(inst.customUserAgent ?? "")
@@ -315,6 +378,7 @@ struct ProvidersCollection: ConfigCollection {
             description: "When false, the custom base URL is treated as already-versioned.",
             valueSchema: .bool,
             risk: .normal, revertable: true,
+            readable: ConfigReadable(.bool()),
             reader: { [self] in
                 guard let inst = instance(id) else { return .null }
                 return .bool(inst.appendV1Suffix)
@@ -336,6 +400,7 @@ struct ProvidersCollection: ConfigCollection {
             description: "auto / images_generations / chat_completions.",
             valueSchema: .stringEnum(ImageEndpointMode.allCases.map(\.rawValue)),
             risk: .normal, revertable: true,
+            readable: ConfigReadable(.enumLabels(Self.imageModeLabels)),
             reader: { [self] in
                 guard let inst = instance(id) else { return .null }
                 return .string(inst.imageEndpointMode.rawValue)

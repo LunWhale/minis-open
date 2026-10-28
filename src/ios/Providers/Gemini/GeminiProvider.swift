@@ -777,29 +777,23 @@ final class GeminiProvider: LLMProvider {
             parts.append("  Headers:")
             for key in headers.keys.sorted() {
                 let value = headers[key] ?? ""
-                if key.lowercased() == "authorization" {
-                    parts.append("    \(key): Bearer ***")
-                } else {
-                    parts.append("    \(key): \(value)")
-                }
+                // [T-log-redaction] Covers x-goog-api-key etc., not only
+                // Authorization.
+                parts.append("    " + LogRedaction.headerLine(key, value))
             }
         }
 
         // Body as pretty JSON
         if let body = request.httpBody {
-            parts.append("  Body (\(body.count) bytes):")
+            // [T-log-redaction] The log line gets the size and a short head;
+            // the in-memory capture (debug.llmRequests) keeps the body.
+            parts.append("  Body: \(LogRedaction.bodySummary(body))")
             if let json = try? JSONSerialization.jsonObject(with: body),
                let pretty = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]),
                let str = String(data: pretty, encoding: .utf8) {
                 LastAPIRequestBody.shared.set(str, provider: "Gemini")
-                let truncated = String(str.prefix(3000))
-                parts.append(truncated)
-                if str.count > 3000 {
-                    parts.append("  ... (\(str.count) chars total)")
-                }
             } else if let str = String(data: body, encoding: .utf8) {
                 LastAPIRequestBody.shared.set(str, provider: "Gemini")
-                parts.append("  \(String(str.prefix(1000)))")
             }
         }
 

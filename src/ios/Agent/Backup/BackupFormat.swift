@@ -77,6 +77,24 @@ enum BackupCategory: String, Codable, CaseIterable, Sendable {
     }
 }
 
+extension BackupCategory {
+    /// [T-restore-progress-localized] The category's name as the user sees it.
+    /// Shared by the restore screen's rows and the importer's progress line,
+    /// which used to print the raw wire value ("shared_files") in English.
+    var localizedName: String {
+        switch self {
+        case .chats: return AppLocalized("Chats")
+        case .sharedFiles: return AppLocalized("Shared Files")
+        case .skills: return AppLocalized("Skills")
+        case .memory: return AppLocalized("Memory & Soul")
+        case .providers: return AppLocalized("Providers")
+        case .mcpServers: return AppLocalized("MCP Servers")
+        case .voiceCorrections: return AppLocalized("Voice Corrections")
+        case .environmentVariables: return AppLocalized("Environment Variables")
+        }
+    }
+}
+
 // MARK: - Manifest
 
 /// `manifest.json` — ALWAYS plaintext, even in an encrypted package (§2.1), so

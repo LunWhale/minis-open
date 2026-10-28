@@ -489,13 +489,17 @@ static int32_t _sweptContexts = 0;
     [ctx stdoutPipe][1] = -1;
     [ctx stderrPipe][1] = -1;
 
-    // Detect if we're launching node (for V8 flags injection)
+    // Detect if we're launching node
     const char *exec_path = executable.UTF8String;
     const char *base = strrchr(exec_path, '/');
     base = base ? base + 1 : exec_path;
     bool is_node = (strcmp(base, "node") == 0);
 
-    // Build argv (NUL-separated string), with V8 flags injection for node
+    // Build argv (NUL-separated string). node gets NO V8 flags from here: the
+    // ish kernel adds the right ones on every exec of node (its default mode,
+    // or the jitless fallback when ISH_NODE_MODE=jitless). A --jitless /
+    // --no-expose-wasm from the app would push node into that fallback, which
+    // halves the node AOT image's hit rate and drops WebAssembly.
     char argv_buf[16384];
     size_t pos = 0;
     int exec_argc = 0;
@@ -506,20 +510,6 @@ static int32_t _sweptContexts = 0;
         memcpy(argv_buf + pos, exec_path, len);
         pos += len;
         exec_argc++;
-        // Inject V8 flags
-        static const char *v8_flags[] = {
-            "--jitless",
-            "--no-lazy",
-            "--no-expose-wasm",
-            "--max-old-space-size=512",
-        };
-        for (int fi = 0; fi < (int)(sizeof(v8_flags)/sizeof(v8_flags[0])); fi++) {
-            len = strlen(v8_flags[fi]) + 1;
-            if (pos + len >= sizeof(argv_buf) - 1) break;
-            memcpy(argv_buf + pos, v8_flags[fi], len);
-            pos += len;
-            exec_argc++;
-        }
         // Copy remaining arguments
         for (NSString *arg in arguments) {
             const char *str = arg.UTF8String;
@@ -1011,9 +1001,28 @@ static BOOL ISHTaskIsDescendantOf(struct task *t, pid_t_ rootPid) {
 
 #pragma mark - Process Exit Handling
 
+// [T-ish-exit-status-decode] BEGIN decode-wait-status
+/// The kernel's exit hook reports a raw wait(2) status, not an exit code:
+/// `exit(n)` arrives as `n << 8` (kernel/exit.c sys_exit / sys_exit_group) and
+/// a fatal signal as the signal number in the low 7 bits, plus 0x80 for a core
+/// dump (kernel/signal.c do_exit_group(sig)). Shown raw, `exit 1` read as 256
+/// and "command not found" (127) as 32512. Decode it the way a shell reports
+/// `$?`: WEXITSTATUS for a normal exit, 128 + signal for a signal death.
+/// Negative values are the executor's own sentinels (timeout / launch
+/// failure) and pass through unchanged.
+static int ISHDecodeWaitStatus(int status) {
+    if (status < 0) return status;
+    int low = status & 0x7f;
+    if (low == 0) return (status >> 8) & 0xff;          // WIFEXITED  → WEXITSTATUS
+    if (low == 0x7f) return 128 + ((status >> 8) & 0xff); // WIFSTOPPED → 128 + stop signal
+    return 128 + low;                                    // WIFSIGNALED → 128 + WTERMSIG
+}
+// [T-ish-exit-status-decode] END decode-wait-status
+
 + (void)processDidExit:(NSNotification *)notification {
     int pid = [notification.userInfo[@"pid"] intValue];
-    int exitCode = [notification.userInfo[@"code"] intValue];
+    int rawStatus = [notification.userInfo[@"code"] intValue];
+    int exitCode = ISHDecodeWaitStatus(rawStatus);
 
     ISHShellExecutionContext *ctx;
     @synchronized(_activeExecutions) {
@@ -1034,8 +1043,8 @@ static BOOL ISHTaskIsDescendantOf(struct task *t, pid_t_ rootPid) {
     NSUInteger outLen, errLen;
     @synchronized(ctx.stdoutBuffer) { outLen = ctx.stdoutBuffer.length; }
     @synchronized(ctx.stderrBuffer) { errLen = ctx.stderrBuffer.length; }
-    NSLog(@"ISHShellExecutor[exit]: pid=%d exitCode=%d duration=%.2fs stdout=%lu stderr=%lu chars",
-          pid, exitCode, ctx.result.duration,
+    NSLog(@"ISHShellExecutor[exit]: pid=%d exitCode=%d (raw status=%d) duration=%.2fs stdout=%lu stderr=%lu chars",
+          pid, exitCode, rawStatus, ctx.result.duration,
           (unsigned long)outLen,
           (unsigned long)errLen);
 
@@ -1080,6 +1089,125 @@ static BOOL ISHTaskIsDescendantOf(struct task *t, pid_t_ rootPid) {
             }
         }
     });
+}
+
+// [T-shell-utf8-partial-lead] UTF-8 decoding for guest output (GH #428).
+//
+// The reader used to try NSUTF8StringEncoding on the whole decodable chunk and,
+// if that failed, re-decode the WHOLE chunk (up to 4 KB) as Latin-1. Output that
+// merely began mid-character - `tail -c`, `head -c`, `dd`, `cut -b` on Chinese
+// text - therefore came back as mojibake from its first byte to its last, and a
+// model reading a long pasted .txt that way invented the answer. Decoding is now
+// per character; only chunks that are clearly not text keep the Latin-1 view.
+
+/// Length of the well-formed UTF-8 sequence at b[i] (Unicode Table 3-7: no
+/// overlongs, no surrogates, nothing above U+10FFFF), or 0 if there is none.
+static NSUInteger ISHUTF8SequenceLength(const uint8_t *b, NSUInteger i, NSUInteger len) {
+    uint8_t c = b[i];
+    if (c < 0x80) return 1;
+    NSUInteger n;
+    uint8_t lo = 0x80, hi = 0xBF;  // allowed range of the SECOND byte
+    if (c >= 0xC2 && c <= 0xDF) n = 2;
+    else if (c == 0xE0) { n = 3; lo = 0xA0; }
+    else if ((c >= 0xE1 && c <= 0xEC) || c == 0xEE || c == 0xEF) n = 3;
+    else if (c == 0xED) { n = 3; hi = 0x9F; }
+    else if (c == 0xF0) { n = 4; lo = 0x90; }
+    else if (c >= 0xF1 && c <= 0xF3) n = 4;
+    else if (c == 0xF4) { n = 4; hi = 0x8F; }
+    else return 0;
+    if (i + n > len) return 0;
+    if (b[i + 1] < lo || b[i + 1] > hi) return 0;
+    for (NSUInteger k = 2; k < n; k++) {
+        if ((b[i + k] & 0xC0) != 0x80) return 0;
+    }
+    return n;
+}
+
+/// Bytes an ill-formed sequence at b[i] spans, so a truncated character costs
+/// ONE replacement: its lead byte plus the continuation bytes that follow it,
+/// up to what the lead byte promised. A stray byte spans 1.
+static NSUInteger ISHUTF8InvalidSpan(const uint8_t *b, NSUInteger i, NSUInteger len) {
+    uint8_t c = b[i];
+    NSUInteger want = (c >= 0xC2 && c <= 0xDF) ? 2 : (c >= 0xE0 && c <= 0xEF) ? 3 : (c >= 0xF0 && c <= 0xF4) ? 4 : 1;
+    NSUInteger span = 1;
+    while (span < want && i + span < len && (b[i + span] & 0xC0) == 0x80) span++;
+    return span;
+}
+
+/// Decode one complete chunk (no sequence is still waiting for more bytes).
+static NSString *ISHDecodeUTF8Chunk(const uint8_t *b, NSUInteger len) {
+    if (len == 0) return @"";
+    NSString *fast = [[NSString alloc] initWithBytes:b length:len encoding:NSUTF8StringEncoding];
+    if (fast) return fast;
+
+    // Output that starts mid-character: drop up to 3 orphan continuation bytes
+    // (a UTF-8 character is at most 4 bytes, so at most 3 can be cut off).
+    NSUInteger start = 0;
+    while (start < len && start < 3 && (b[start] & 0xC0) == 0x80) start++;
+
+    // Text or binary? Judged on what follows the orphans, so a short chunk that
+    // only starts mid-character is not mistaken for binary. More than a quarter
+    // invalid = not UTF-8 text (e.g. `cat` of an executable): keep the Latin-1
+    // rendering such output always had, for the WHOLE chunk.
+    // A character cut off by the END of the chunk (only at EOF, where nothing
+    // is held back) is a truncation, not evidence of binary: it is not counted.
+    NSUInteger invalid = 0;
+    for (NSUInteger i = start; i < len; ) {
+        NSUInteger n = ISHUTF8SequenceLength(b, i, len);
+        if (n) { i += n; continue; }
+        NSUInteger span = ISHUTF8InvalidSpan(b, i, len);
+        BOOL truncatedAtEnd = (i + span == len) && b[i] >= 0xC2 && b[i] <= 0xF4;
+        if (!truncatedAtEnd) invalid += span;
+        i += span;
+    }
+    if (invalid * 4 > len - start) {
+        return [[NSString alloc] initWithBytes:b length:len encoding:NSISOLatin1StringEncoding] ?: @"";
+    }
+
+    // Text with a few bad bytes: decode valid runs, one U+FFFD per bad sequence.
+    NSMutableString *out = [NSMutableString stringWithCapacity:len];
+    NSUInteger runStart = start, i = start;
+    while (i < len) {
+        NSUInteger n = ISHUTF8SequenceLength(b, i, len);
+        if (n) { i += n; continue; }
+        if (i > runStart) {
+            NSString *run = [[NSString alloc] initWithBytes:b + runStart length:i - runStart encoding:NSUTF8StringEncoding];
+            if (run) [out appendString:run];
+        }
+        [out appendString:@"\uFFFD"];
+        i += ISHUTF8InvalidSpan(b, i, len);
+        runStart = i;
+    }
+    if (len > runStart) {
+        NSString *run = [[NSString alloc] initWithBytes:b + runStart length:len - runStart encoding:NSUTF8StringEncoding];
+        if (run) [out appendString:run];
+    }
+    return out;
+}
+
++ (NSString *)decodeShellOutputFromPending:(NSMutableData *)pending isFinal:(BOOL)isFinal {
+    NSUInteger len = pending.length;
+    if (len == 0) return @"";
+    const uint8_t *b = (const uint8_t *)pending.bytes;
+    NSUInteger take = len;
+    if (!isFinal) {
+        // Keep an incomplete trailing sequence for the next read (unchanged).
+        take = [self lastCompleteUTF8Length:b length:len];
+        if (take == 0) {
+            // Nothing decodable before the tail. A lone, still-incomplete
+            // character (a valid lead byte with fewer continuation bytes than it
+            // needs) waits for the rest - the old code decoded it as Latin-1 on
+            // the spot. Anything else (only orphan continuation bytes, an
+            // invalid lead byte) cannot be completed: decode it now.
+            uint8_t c = b[0];
+            NSUInteger want = (c >= 0xC2 && c <= 0xDF) ? 2 : (c >= 0xE0 && c <= 0xEF) ? 3 : (c >= 0xF0 && c <= 0xF4) ? 4 : 0;
+            if (want > len) return @"";
+            take = len;
+        }
+    }
+    NSString *text = ISHDecodeUTF8Chunk(b, take);
+    [pending replaceBytesInRange:NSMakeRange(0, take) withBytes:NULL length:0];
+    return text;
 }
 
 /// Return the length of the longest prefix that is valid UTF-8.
@@ -1189,29 +1317,9 @@ static BOOL ISHTaskIsDescendantOf(struct task *t, pid_t_ rootPid) {
         if (bytesRead > 0) {
             [pendingBytes appendBytes:buffer length:bytesRead];
 
-            NSUInteger safeLen = [self lastCompleteUTF8Length:(const uint8_t *)pendingBytes.bytes
-                                                      length:pendingBytes.length];
-            if (safeLen == 0 && pendingBytes.length > 0) {
-                // No valid UTF-8 at all — fallback to Latin1 for the entire buffer
-                NSString *chunk = [[NSString alloc] initWithBytes:pendingBytes.bytes
-                                                           length:pendingBytes.length
-                                                         encoding:NSISOLatin1StringEncoding];
-                if (chunk) [lineBuffer appendString:chunk];
-                [pendingBytes setLength:0];
-            } else if (safeLen > 0) {
-                NSString *chunk = [[NSString alloc] initWithBytes:pendingBytes.bytes
-                                                           length:safeLen
-                                                         encoding:NSUTF8StringEncoding];
-                if (!chunk) {
-                    // UTF-8 decode still failed — fallback to Latin1
-                    chunk = [[NSString alloc] initWithBytes:pendingBytes.bytes
-                                                     length:safeLen
-                                                   encoding:NSISOLatin1StringEncoding];
-                }
-                if (chunk) [lineBuffer appendString:chunk];
-                // Remove consumed bytes, keep incomplete trailing sequence
-                [pendingBytes replaceBytesInRange:NSMakeRange(0, safeLen) withBytes:NULL length:0];
-            }
+            // [T-shell-utf8-partial-lead] Decode what is complete; an
+            // incomplete trailing sequence stays in pendingBytes.
+            [lineBuffer appendString:[self decodeShellOutputFromPending:pendingBytes isFinal:NO]];
 
             // Process complete lines
             [self processLines:lineBuffer
@@ -1234,12 +1342,7 @@ static BOOL ISHTaskIsDescendantOf(struct task *t, pid_t_ rootPid) {
 
     // Flush any remaining pending bytes (incomplete UTF-8 at EOF)
     if (pendingBytes.length > 0) {
-        NSString *remaining = [[NSString alloc] initWithData:pendingBytes encoding:NSUTF8StringEncoding];
-        if (!remaining) {
-            remaining = [[NSString alloc] initWithData:pendingBytes encoding:NSISOLatin1StringEncoding];
-        }
-        if (remaining) [lineBuffer appendString:remaining];
-        [pendingBytes setLength:0];
+        [lineBuffer appendString:[self decodeShellOutputFromPending:pendingBytes isFinal:YES]];
     }
 
     // Process any remaining partial line

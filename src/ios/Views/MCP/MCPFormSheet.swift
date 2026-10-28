@@ -195,10 +195,14 @@ struct MCPFormSheet: View {
                     envReferenceMenu(into: $url, separator: "")
                 }
             }
-            Section(AppLocalized("Custom Headers")) {
+            Section {
                 keyValueEditor($headers, keyPlaceholder: AppLocalized("Header"),
                                valuePlaceholder: AppLocalized("Value"),
                                showEnvPicker: true)
+            } header: {
+                Text(AppLocalized("Custom Headers"))
+            } footer: {
+                disabledReferenceWarning(in: [url] + headers.map(\.value))
             }
             oauthSection
         }
@@ -459,7 +463,10 @@ struct MCPFormSheet: View {
             } header: {
                 Text("Environment Variables")
             } footer: {
-                Text("Use the braces button to insert a reference to an App environment variable as $$NAME. Its value is filled in at runtime.")
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Use the braces button to insert a reference to an App environment variable as $$NAME. Its value is filled in at runtime.")
+                    disabledReferenceWarning(in: env.map(\.value))
+                }
             }
             Section {
                 TextField(AppLocalized("Default 60"), text: $startupTimeoutText)
@@ -475,6 +482,25 @@ struct MCPFormSheet: View {
     /// Names of the App-level environment variables the user can reference.
     private var appEnvKeys: [String] {
         envVarStore.entries.map(\.key)
+    }
+
+    /// [T-envvar-disable] Warn when a value references a disabled variable:
+    /// at runtime it expands to an empty value (the variable is not in the
+    /// environment), which is easy to miss in a saved config.
+    @ViewBuilder
+    private func disabledReferenceWarning(in values: [String]) -> some View {
+        let names = MCPEnvReferences.names(in: values).filter { disabledEnvKeys.contains($0) }
+        if !names.isEmpty {
+            Label(AppLocalized("\(names.map { "$$" + $0 }.joined(separator: ", ")) refers to a disabled environment variable and resolves to an empty value."),
+                  systemImage: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+        }
+    }
+
+    /// [T-envvar-disable] Names whose every entry is disabled.
+    private var disabledEnvKeys: Set<String> {
+        let enabled = Set(envVarStore.entries.filter { envVarStore.isEnabled(id: $0.id) }.map(\.key))
+        return Set(envVarStore.entries.map(\.key)).subtracting(enabled)
     }
 
     /// [T-mcp-envrow-delete-index-crash] A binding to ONE row, addressed by its
@@ -603,8 +629,19 @@ struct MCPFormSheet: View {
                 Text("No App environment variables — add them in Settings → Environment Variables")
             } else {
                 ForEach(appEnvKeys, id: \.self) { key in
-                    Button("$$\(key)") {
-                        insertEnvReference(key, into: value, separator: separator)
+                    // [T-envvar-disable] A disabled variable can still be
+                    // referenced (the user may enable it later) but is marked:
+                    // until then it resolves to nothing.
+                    if disabledEnvKeys.contains(key) {
+                        Button {
+                            insertEnvReference(key, into: value, separator: separator)
+                        } label: {
+                            Label(AppLocalized("$$\(key) (disabled)"), systemImage: "nosign")
+                        }
+                    } else {
+                        Button("$$\(key)") {
+                            insertEnvReference(key, into: value, separator: separator)
+                        }
                     }
                 }
             }
@@ -768,3 +805,23 @@ private struct MCPConfigShareSheet: UIViewControllerRepresentable {
     }
     func updateUIViewController(_ vc: UIActivityViewController, context: Context) {}
 }
+
+// BEGIN MCPEnvReferences
+/// [T-envvar-disable] The `$$NAME` / `$${NAME}` references in MCP config
+/// values (the in-guest transport also expands `$NAME`, but only `$$` is the
+/// documented App-variable form the picker inserts), in first-seen order.
+enum MCPEnvReferences {
+    static func names(in values: [String]) -> [String] {
+        var seen: Set<String> = [], out: [String] = []
+        let re = try! NSRegularExpression(pattern: #"\$\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?"#)
+        for v in values {
+            let ns = v as NSString
+            for m in re.matches(in: v, range: NSRange(location: 0, length: ns.length)) {
+                let name = ns.substring(with: m.range(at: 1))
+                if seen.insert(name).inserted { out.append(name) }
+            }
+        }
+        return out
+    }
+}
+// END MCPEnvReferences

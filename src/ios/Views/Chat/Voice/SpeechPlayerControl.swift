@@ -75,21 +75,15 @@ struct SpeechPlayerControl: View {
     /// The avoidance offset currently applied (points the capsule is lifted up).
     @State private var avoidLift: CGFloat = 0
 
-    /// [T-voice-capsule-cramped-hide] True when the lift required to clear the
-    /// obstacle stack (keyboard + a tall voice panel while the transcript is
-    /// being edited) would push the capsule above the safe top region — i.e.
-    /// there is no STABLE place to put it. Rather than keep re-computing a
-    /// twitchy lift that makes the circular button jump/flicker as the panel and
-    /// keyboard animate, we hide it (fade out) and bring it back once there's
-    /// room again. Hysteresis (below) prevents flicker right at the boundary.
+    /// [T-voice-capsule-cramped-hide → GH#399] True when the lift needed to
+    /// clear the obstacle stack (keyboard + a tall voice panel) would push the
+    /// capsule above the top limit. It used to HIDE the capsule (opacity 0, no
+    /// hit testing) — and with a saved offset near the top that state never
+    /// ended, so pause / speed were unreachable even after a relaunch. Now the
+    /// capsule collapses to the compact button and is pinned at the top limit
+    /// (SpeechCapsuleGeometry.placement): a fixed spot, so no jitter, and
+    /// always tappable.
     @State private var spaceInsufficient = false
-    /// Once hidden, require this much EXTRA headroom before showing again, so a
-    /// value hovering at the threshold can't toggle hide/show every recompute.
-    private static let crampedHideHysteresis: CGFloat = 24
-    /// Minimum clear vertical gap that must exist between the lifted capsule's
-    /// top and the safe top boundary (nav area) for a placement to count as
-    /// stable. Below this the capsule is considered to have nowhere to go.
-    private static let minStableHeadroom: CGFloat = 8
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
@@ -115,20 +109,20 @@ struct SpeechPlayerControl: View {
                     )
                     .offset(y: -avoidLift)
                     .animation(.easeInOut(duration: 0.2), value: avoidLift)
-                    // [T-voice-capsule-cramped-hide] Fade out when there's no
-                    // stable place to lift the button into (keyboard + tall voice
-                    // panel while editing the transcript). It fades smoothly back
-                    // in once space recovers. `allowsHitTesting(false)` while
-                    // hidden so the invisible button can't intercept taps.
-                    .opacity(spaceInsufficient ? 0 : 1)
-                    .allowsHitTesting(!spaceInsufficient)
-                    .animation(.easeInOut(duration: 0.2), value: spaceInsufficient)
+                    // [GH#399] Never hidden: when cramped, recompute() pins it
+                    // at the top limit as the compact button instead.
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         .ignoresSafeArea(.keyboard)
         .animation(.easeInOut(duration: 0.2), value: isActive)
         .onReceive(placement.$protectedRects) { _ in scheduleRecompute() }
+        // [GH#399] Turning read-replies on re-checks the position: a saved
+        // offset that is no longer usable is dropped and the capsule comes back
+        // at the resting corner, so re-enabling always brings it into view.
+        .onChange(of: state.isEnabled) { enabled in
+            if enabled { healPositionIfNeeded(reason: "enabled") }
+        }
         // Window resize (rotation / iPad Stage Manager / Split View): the
         // resting corner moves with the layout, but a dragged offset that was
         // valid in the old size may now push the capsule outside the window —
@@ -173,34 +167,22 @@ struct SpeechPlayerControl: View {
     private func recompute(allowDescent: Bool = false) {
         let rf = restingFrame
         guard rf.width > 0 else { return }
-        let newLift = placement.requiredLift(forCapsule: rf)
+        let requiredLift = placement.requiredLift(forCapsule: rf)
 
-        // [T-voice-capsule-cramped-hide] Decide whether a STABLE placement exists.
-        // The lifted capsule's top must clear the safe top boundary (nav area)
-        // with at least `minStableHeadroom` of slack. When the transcript is
-        // being edited the keyboard + a tall (up to 60%-screen) voice panel stack
-        // up and the needed lift can push the capsule to/over the top — there's
-        // nowhere stable to sit, and continuing to track the animating lift makes
-        // the button jitter. In that case hide it instead. Hysteresis: once
-        // hidden, require extra headroom before showing again so a value sitting
-        // on the threshold can't flip hide/show on every recompute.
-        let liftedTop = rf.minY - newLift
-        let safeTop = Self.safeAreaTopInset() + 44 + 8 // nav bar band, matches clamp
-        let headroom = liftedTop - safeTop
-        let threshold = spaceInsufficient
-            ? Self.minStableHeadroom + Self.crampedHideHysteresis
-            : Self.minStableHeadroom
-        let shouldHide = headroom < threshold
-        if shouldHide != spaceInsufficient {
-            VoiceLog.log("[capsule] space \(shouldHide ? "INSUFFICIENT → hide" : "recovered → show") (headroom=\(Int(headroom)) liftedTop=\(Int(liftedTop)) safeTop=\(Int(safeTop)))")
-            withAnimation(.easeInOut(duration: 0.2)) { spaceInsufficient = shouldHide }
+        // [GH#399] Cap the lift at the top limit. When the obstacle stack
+        // (keyboard + a tall voice panel) needs more, the capsule is cramped:
+        // it collapses to the compact button and stays pinned just below the
+        // nav band — a fixed spot (no jitter), visible and tappable. It used
+        // to fade out here, and a capsule saved near the top never came back.
+        let topLimit = SpeechCapsuleGeometry.topLimit(safeTopInset: Self.safeAreaTopInset())
+        let (newLift, cramped) = SpeechCapsuleGeometry.placement(
+            requiredLift: requiredLift, restingTop: rf.minY, topLimit: topLimit,
+            wasCramped: spaceInsufficient)
+        if cramped != spaceInsufficient {
+            VoiceLog.log("[capsule] space \(cramped ? "CRAMPED → compact, pinned at top limit" : "recovered") (required=\(Int(requiredLift)) capped=\(Int(newLift)) restingTop=\(Int(rf.minY)) topLimit=\(Int(topLimit)))")
+            spaceInsufficient = cramped
+            if cramped, expanded { setExpanded(false) }
         }
-
-        // Only track the lift while we actually have somewhere to put the button.
-        // While hidden, leave `avoidLift` where it is (no re-lift churn) — the
-        // button is faded out anyway, and freezing it avoids the very jitter we're
-        // suppressing. It re-applies the settled value once space recovers.
-        guard !shouldHide else { return }
 
         // [T-voice-capsule-streaming-ratchet] Ratchet with settle-window
         // descent. During a streaming reply the obstacle set under the capsule
@@ -340,6 +322,7 @@ struct SpeechPlayerControl: View {
                 // capsule re-anchors correctly after rotation / Stage Manager
                 // resizes. Only on release.
                 VoiceOutputPreferences.capsuleAnchorOffset = dragOffset
+                VoiceOutputPreferences.capsuleAnchorWindowHeight = Self.windowBounds().height
                 VoiceLog.log("[capsule] saved anchor offset=(\(Int(dragOffset.width)),\(Int(dragOffset.height)))")
             }
     }
@@ -349,27 +332,24 @@ struct SpeechPlayerControl: View {
     /// top-left = baseFrame.origin − baseFrameOffset — so it never drifts no matter
     /// how often this is called or how large the offset grows.
     private func clampedOffset(_ proposed: CGSize) -> CGSize {
-        guard baseFrame.width > 0 else { return proposed }
-        let screen = Self.windowBounds()
-        let m = Self.edgeMargin
-        // Real resting top-left (offset removed via the offset that MADE this frame).
-        let restLeft = baseFrame.minX - baseFrameOffset.width
-        let restTop  = baseFrame.minY - baseFrameOffset.height
-        let w = baseFrame.width, h = baseFrame.height
+        guard let b = offsetBounds() else { return proposed }
+        return SpeechCapsuleGeometry.clamp(proposed, into: b)
+    }
 
-        let minX = m - restLeft
-        let maxX = (screen.width - m - w) - restLeft
-
-        let topInset = Self.safeAreaTopInset()
-        let navBottom = topInset + 44 + 8
-        let lowestTop = screen.maxY - bottomReserve - h
-        let minY = navBottom - restTop
-        let maxY = lowestTop - restTop
-
-        return CGSize(
-            width: min(max(proposed.width, min(minX, maxX)), max(minX, maxX)),
-            height: min(max(proposed.height, min(minY, maxY)), max(minY, maxY))
-        )
+    /// Legal drag offsets for the current window. Real resting top-left =
+    /// baseFrame.origin − baseFrameOffset (the offset that MADE that frame).
+    /// [GH#399] The top limit is the same one the cramped rule uses, so a
+    /// capsule at rest can never sit where it would count as cramped.
+    private func offsetBounds() -> SpeechCapsuleGeometry.Bounds? {
+        guard baseFrame.width > 0 else { return nil }
+        return SpeechCapsuleGeometry.offsetBounds(
+            restLeft: baseFrame.minX - baseFrameOffset.width,
+            restTop: baseFrame.minY - baseFrameOffset.height,
+            size: baseFrame.size,
+            window: Self.windowBounds(),
+            topLimit: SpeechCapsuleGeometry.topLimit(safeTopInset: Self.safeAreaTopInset()),
+            bottomReserve: bottomReserve,
+            edgeMargin: Self.edgeMargin)
     }
 
     private static func safeAreaTopInset() -> CGFloat {
@@ -402,14 +382,52 @@ struct SpeechPlayerControl: View {
     /// `baseFrame` is already valid — no timing dependence on a deferred task.
     private func restoreSavedPositionIfNeeded() {
         guard !hasUserDragged, let saved = VoiceOutputPreferences.capsuleAnchorOffset else { return }
-        // baseFrame must be measured for clampedOffset to do anything; if it
-        // isn't yet, apply the raw saved offset and let the next measurement
-        // callback clamp it.
-        let target = baseFrame.width > 0 ? clampedOffset(saved) : saved
+        // [GH#399] Only with a measured base frame: the saved value is judged
+        // against real bounds (it used to be applied raw first, which is how an
+        // offset in the hidden band reached the screen).
+        guard let bounds = offsetBounds() else { return }
+        let target: CGSize
+        switch SpeechCapsuleGeometry.restoreDecision(
+            saved: saved, savedWindowHeight: VoiceOutputPreferences.capsuleAnchorWindowHeight,
+            window: Self.windowBounds(), bounds: bounds) {
+        case .apply(let clamped):
+            target = clamped
+        case .discard(let reason):
+            VoiceLog.log("[capsule] saved offset (\(Int(saved.width)),\(Int(saved.height))) DISCARDED (\(reason)) → resting corner")
+            resetPositionToDefault()
+            return
+        }
         guard abs(target.width - dragOffset.width) > 0.5
                 || abs(target.height - dragOffset.height) > 0.5 else { return }
         VoiceLog.log("[capsule] restore anchor offset (\(Int(dragOffset.width)),\(Int(dragOffset.height))) → (\(Int(target.width)),\(Int(target.height)))")
         dragOffset = target
+        scheduleRecompute()
+    }
+
+    /// [GH#399] Back to the default bottom-trailing corner and forget the saved
+    /// offset.
+    private func resetPositionToDefault() {
+        VoiceOutputPreferences.capsuleAnchorOffset = nil
+        withAnimation(.easeInOut(duration: 0.25)) { dragOffset = .zero }
+        scheduleRecompute()
+    }
+
+    /// [GH#399] Self-heal: if the current or saved position has no legal place
+    /// in this window, return to the resting corner.
+    private func healPositionIfNeeded(reason: String) {
+        guard !isDragging, let bounds = offsetBounds() else { return }
+        let saved = VoiceOutputPreferences.capsuleAnchorOffset ?? dragOffset
+        if case .discard(let why) = SpeechCapsuleGeometry.restoreDecision(
+            saved: saved, savedWindowHeight: VoiceOutputPreferences.capsuleAnchorWindowHeight,
+            window: Self.windowBounds(), bounds: bounds) {
+            VoiceLog.log("[capsule] heal (\(reason)): position unusable (\(why)) → resting corner")
+            resetPositionToDefault()
+            return
+        }
+        let clamped = SpeechCapsuleGeometry.clamp(dragOffset, into: bounds)
+        if clamped != dragOffset {
+            withAnimation(.easeInOut(duration: 0.2)) { dragOffset = clamped }
+        }
         scheduleRecompute()
     }
 
@@ -490,7 +508,56 @@ struct SpeechPlayerControl: View {
 
     // MARK: - Expanded
 
+    /// [T-readaloud-volume] Expanded = the read-aloud volume row on top of the
+    /// controls capsule. A separate fixed-width row (not a member of the
+    /// capsule's HStack), so it never widens the capsule or squeezes its
+    /// controls, and the whole stack stays trailing-anchored for the in-place
+    /// expand morph. The control's measured size (drag bounds, keyboard
+    /// avoidance, cramped → compact) includes it automatically.
     private var expandedCapsule: some View {
+        VStack(alignment: .trailing, spacing: 6) {
+            volumeRow
+            controlsCapsule
+        }
+    }
+
+    /// Width of the volume row: room for icon + slider + "100%" while fitting
+    /// a 320 pt screen with the 16 pt edge margins.
+    static let volumeRowWidth: CGFloat = 200
+
+    private var volumeRow: some View {
+        HStack(spacing: 8) {
+            Image(systemName: state.readAloudVolume <= 0 ? "speaker.fill" : "speaker.wave.1.fill")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 16)
+                .accessibilityHidden(true)
+            Slider(value: Binding(
+                get: { Double(state.readAloudVolume) },
+                set: { state.readAloudVolume = Float($0); bumpIdle() }
+            ), in: 0...1, step: 0.05)
+            .controlSize(.small)
+            .accessibilityLabel(Text("Read-aloud volume"))
+            .accessibilityValue(Text(verbatim: "\(ReadAloudVolume.percent(state.readAloudVolume))%"))
+            Text(verbatim: "\(ReadAloudVolume.percent(state.readAloudVolume))%")
+                .font(.caption2.weight(.semibold).monospacedDigit())
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                // Large Dynamic Type shrinks the digits instead of truncating
+                // them inside the fixed-width row.
+                .minimumScaleFactor(0.6)
+                .frame(width: 34, alignment: .trailing)
+                .accessibilityHidden(true)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .frame(width: Self.volumeRowWidth)
+        .background(Capsule().fill(.ultraThinMaterial))
+        .overlay(Capsule().stroke(Color.gray.opacity(0.25), lineWidth: 0.5))
+        .accessibilityElement(children: .contain)
+    }
+
+    private var controlsCapsule: some View {
         HStack(spacing: 10) {
             // Pause / resume — on = blue speaker, off = dimmed muted-speaker.
             // Speaker = MUTE toggle (temporary silence; capsule stays visible).
@@ -607,3 +674,100 @@ private struct RotatingArc: View {
         }
     }
 }
+
+// BEGIN SpeechCapsuleGeometry
+/// [GH#399] Where the read-replies capsule may sit, as pure math (CoreGraphics
+/// only) so MinisTests/Standalone/SpeechCapsuleGeometryTests.swift compiles it.
+///
+/// The bug: the drag clamp let the capsule's top reach the nav band
+/// (`safeTop + 52`), while the "no stable place" rule hid it (opacity 0, no hit
+/// testing) whenever its top was less than 8 pt below that band — 32 pt to
+/// come back. A capsule dragged to the top was saved there, and from then on
+/// it was invisible after every relaunch and every re-enable. Now both use ONE
+/// top limit (`topLimit`), a capsule at rest can never be in the band, a bad
+/// saved offset is discarded, and "cramped" pins the capsule instead of hiding it.
+enum SpeechCapsuleGeometry {
+    /// Clear gap the capsule's top keeps below the nav band.
+    static let minStableHeadroom: CGFloat = 8
+    /// Once cramped, extra room needed before counting as uncramped again.
+    static let crampedHysteresis: CGFloat = 24
+    /// Nav bar height + gap below it (matches the chat's navigation band).
+    static let navBand: CGFloat = 44 + 8
+
+    /// Highest point (smallest y) the capsule's top may reach.
+    static func topLimit(safeTopInset: CGFloat) -> CGFloat {
+        safeTopInset + navBand + minStableHeadroom
+    }
+
+    struct Bounds: Equatable {
+        var minX: CGFloat, maxX: CGFloat, minY: CGFloat, maxY: CGFloat
+        /// The window is too small to fit the capsule anywhere legal.
+        var isEmpty: Bool { minX > maxX || minY > maxY }
+    }
+
+    /// Allowed drag offsets for a capsule whose un-offset top-left is
+    /// (restLeft, restTop): inside the window's side margins, top at or below
+    /// `topLimit`, bottom above `bottomReserve`.
+    static func offsetBounds(restLeft: CGFloat, restTop: CGFloat, size: CGSize,
+                             window: CGRect, topLimit: CGFloat,
+                             bottomReserve: CGFloat, edgeMargin: CGFloat) -> Bounds {
+        Bounds(minX: window.minX + edgeMargin - restLeft,
+               maxX: window.maxX - edgeMargin - size.width - restLeft,
+               minY: topLimit - restTop,
+               maxY: window.maxY - bottomReserve - size.height - restTop)
+    }
+
+    /// Pull an offset inside `b`. On an empty axis the offset goes to 0 there
+    /// (the resting corner) rather than to either inverted end.
+    static func clamp(_ o: CGSize, into b: Bounds) -> CGSize {
+        let x = b.minX <= b.maxX ? min(max(o.width, b.minX), b.maxX) : 0
+        let y = b.minY <= b.maxY ? min(max(o.height, b.minY), b.maxY) : 0
+        return CGSize(width: x, height: y)
+    }
+
+    enum RestoreDecision: Equatable {
+        /// Apply this (clamped) offset.
+        case apply(CGSize)
+        /// Delete the saved offset and use the resting corner.
+        case discard(reason: String)
+    }
+
+    /// Decide what to do with a persisted offset.
+    ///  - Corrupt (non-finite, or further than twice the window away): discard.
+    ///  - Saved in THIS window size (or by a build that did not record the
+    ///    size) and outside the bounds on the top side — the band the old clamp
+    ///    allowed and the old hide rule made invisible — or no legal place at
+    ///    all: discard, back to the resting corner.
+    ///  - Otherwise (a valid offset, or one from a different window size after
+    ///    rotation / a Stage Manager resize): clamp and apply, keeping the
+    ///    user's chosen position as close as the new window allows.
+    static func restoreDecision(saved: CGSize, savedWindowHeight: CGFloat?,
+                                window: CGRect, bounds: Bounds,
+                                tolerance: CGFloat = 1) -> RestoreDecision {
+        guard saved.width.isFinite, saved.height.isFinite,
+              abs(saved.width) <= window.width * 2, abs(saved.height) <= window.height * 2 else {
+            return .discard(reason: "corrupt")
+        }
+        guard !bounds.isEmpty else { return .discard(reason: "no legal position in this window") }
+        let sameWindow = savedWindowHeight.map { abs($0 - window.height) <= 1 } ?? true
+        if sameWindow, saved.height < bounds.minY - tolerance {
+            return .discard(reason: "above the top limit")
+        }
+        return .apply(clamp(saved, into: bounds))
+    }
+
+    /// How far to lift a capsule resting with its top at `restingTop` when
+    /// the obstacles below need `requiredLift`. The lift is capped so the top
+    /// never goes above `topLimit`; when the cap bites the capsule is
+    /// "cramped" — pinned at the limit, still visible and tappable. Hysteresis
+    /// keeps a value near the boundary from flipping the state every pass.
+    static func placement(requiredLift: CGFloat, restingTop: CGFloat,
+                          topLimit: CGFloat, wasCramped: Bool) -> (lift: CGFloat, cramped: Bool) {
+        let maxLift = max(0, restingTop - topLimit)
+        let cramped = wasCramped
+            ? requiredLift > maxLift - crampedHysteresis
+            : requiredLift > maxLift
+        return (min(requiredLift, maxLift), cramped)
+    }
+}
+// END SpeechCapsuleGeometry

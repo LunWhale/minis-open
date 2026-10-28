@@ -129,13 +129,13 @@ actor BackupImporter {
         // Unpack to a working directory. The package must be expanded before
         // anything is applied — a half-applied restore from a corrupt archive
         // is the worst possible outcome.
-        progress?("Opening package…")
+        progress?(AppLocalized("Opening package…"))
         let work = fm.temporaryDirectory
             .appendingPathComponent("minisbak-import-\(UUID().uuidString)", isDirectory: true)
         defer { try? fm.removeItem(at: work) }
         let root = try unpack(packageURL, to: work)
 
-        progress?("Reading manifest…")
+        progress?(AppLocalized("Reading manifest…"))
         let manifest = try readManifest(at: root)
         try checkFormat(manifest)
 
@@ -150,7 +150,7 @@ actor BackupImporter {
         // Checking integrity first means a truncated package is rejected before
         // the user is even asked for a passphrase.
         if !options.skipIntegrityCheck {
-            progress?("Verifying integrity…")
+            progress?(AppLocalized("Verifying integrity…"))
             let (checked, failed) = verifyIntegrity(manifest: manifest, root: root)
             report.integrityChecked = checked
             report.integrityFailed = failed
@@ -158,7 +158,7 @@ actor BackupImporter {
         }
 
         if let encryption = manifest.encryption {
-            progress?("Decrypting…")
+            progress?(AppLocalized("Decrypting…"))
             guard encryption.scheme == BackupCrypto.scheme else {
                 throw BackupCrypto.CryptoError.unsupportedScheme(encryption.scheme)
             }
@@ -202,7 +202,7 @@ actor BackupImporter {
                 "This package contains encrypted content but its manifest declares none — it may have been modified.")
         }
 
-        progress?("Preflight…")
+        progress?(AppLocalized("Preparing…"))
         try preflight(manifest: manifest, options: options)
 
         let wanted = options.categories
@@ -233,7 +233,10 @@ actor BackupImporter {
         // Order matters: sessions must exist before messages/markers reference
         // them, so chats runs as one unit internally.
         for category in orderedCategories(wanted) {
-            progress?("Restoring \(category.rawValue)…")
+            // [T-restore-progress-localized] These lines are shown verbatim on
+            // the restore button, so they are localized here at the source;
+            // this used the raw wire value ("Restoring shared_files…").
+            progress?(String(format: AppLocalized("Restoring %@…"), category.localizedName))
             var snapshot: BackupRollbackSnapshot?
             do {
                 snapshot = try snapshotForRollback(category: category, staging: staging)
@@ -261,7 +264,7 @@ actor BackupImporter {
             }
         }
 
-        progress?("Reloading stores…")
+        progress?(AppLocalized("Reloading stores…"))
         await reloadStores(for: wanted)
 
         report.duration = Date().timeIntervalSince(started)

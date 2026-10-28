@@ -1,0 +1,266 @@
+{
+  "live" : {
+    "anthropic" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 626,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/doc.pdf\" url=\"minis:\/\/attachments\/uploads\/doc.pdf\" size=\"9363\" modified=\"2027-01-15T08:00:00Z",
+              "sha8" : "276006cf",
+              "tail" : "2\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 5,
+              "head" : "files",
+              "sha8" : "3d7db37d",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "antigravity" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 626,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/doc.pdf\" url=\"minis:\/\/attachments\/uploads\/doc.pdf\" size=\"9363\" modified=\"2027-01-15T08:00:00Z",
+              "sha8" : "276006cf",
+              "tail" : "2\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 5,
+              "head" : "files",
+              "sha8" : "3d7db37d",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "chat" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 626,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/doc.pdf\" url=\"minis:\/\/attachments\/uploads\/doc.pdf\" size=\"9363\" modified=\"2027-01-15T08:00:00Z",
+              "sha8" : "276006cf",
+              "tail" : "2\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 5,
+              "head" : "files",
+              "sha8" : "3d7db37d",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "gemini" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 626,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/doc.pdf\" url=\"minis:\/\/attachments\/uploads\/doc.pdf\" size=\"9363\" modified=\"2027-01-15T08:00:00Z",
+              "sha8" : "276006cf",
+              "tail" : "2\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 5,
+              "head" : "files",
+              "sha8" : "3d7db37d",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "responses" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 626,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/doc.pdf\" url=\"minis:\/\/attachments\/uploads\/doc.pdf\" size=\"9363\" modified=\"2027-01-15T08:00:00Z",
+              "sha8" : "276006cf",
+              "tail" : "2\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 5,
+              "head" : "files",
+              "sha8" : "3d7db37d",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ]
+  },
+  "restart" : {
+    "anthropic" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 626,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/doc.pdf\" url=\"minis:\/\/attachments\/uploads\/doc.pdf\" size=\"9363\" modified=\"2027-01-15T08:00:00Z",
+              "sha8" : "276006cf",
+              "tail" : "2\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 5,
+              "head" : "files",
+              "sha8" : "3d7db37d",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "antigravity" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 626,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/doc.pdf\" url=\"minis:\/\/attachments\/uploads\/doc.pdf\" size=\"9363\" modified=\"2027-01-15T08:00:00Z",
+              "sha8" : "276006cf",
+              "tail" : "2\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 5,
+              "head" : "files",
+              "sha8" : "3d7db37d",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "chat" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 626,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/doc.pdf\" url=\"minis:\/\/attachments\/uploads\/doc.pdf\" size=\"9363\" modified=\"2027-01-15T08:00:00Z",
+              "sha8" : "276006cf",
+              "tail" : "2\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 5,
+              "head" : "files",
+              "sha8" : "3d7db37d",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "gemini" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 626,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/doc.pdf\" url=\"minis:\/\/attachments\/uploads\/doc.pdf\" size=\"9363\" modified=\"2027-01-15T08:00:00Z",
+              "sha8" : "276006cf",
+              "tail" : "2\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 5,
+              "head" : "files",
+              "sha8" : "3d7db37d",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "responses" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 626,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/doc.pdf\" url=\"minis:\/\/attachments\/uploads\/doc.pdf\" size=\"9363\" modified=\"2027-01-15T08:00:00Z",
+              "sha8" : "276006cf",
+              "tail" : "2\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 5,
+              "head" : "files",
+              "sha8" : "3d7db37d",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ]
+  }
+}

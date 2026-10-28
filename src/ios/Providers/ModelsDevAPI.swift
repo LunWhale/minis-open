@@ -523,13 +523,16 @@ enum ModelsDevAPI {
             result.modalityOverride = devModality
         }
 
-        // Context window: models.dev is the source of truth
-        if let ctx = devModel.limit?.context {
+        // Context window / max output: models.dev is the source of truth, EXCEPT
+        // for limits the endpoint reported on its own /models entry
+        // ([OpenMinis#438]). Those are a statement about this exact endpoint;
+        // the catalog only fills the ones it left nil. Built-in model lists
+        // never set the flag, so their hardcoded values stay overridable.
+        let keepReported = model.limitsReportedByEndpoint == true
+        if let ctx = devModel.limit?.context, !(keepReported && result.contextWindow != nil) {
             result.contextWindow = ctx
         }
-
-        // Max output tokens: models.dev is the source of truth
-        if let out = devModel.limit?.output {
+        if let out = devModel.limit?.output, !(keepReported && result.maxOutputTokens != nil) {
             result.maxOutputTokens = out
         }
 

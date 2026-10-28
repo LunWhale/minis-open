@@ -387,7 +387,8 @@ enum VisionGroupResolver {
 
     /// One describe request against one entry, bounded by `perAttemptTimeout`.
     private static func describeOnce(entry: ModelEntry, imageData: Data, mimeType: String, instruction: String) async throws -> String {
-        let provider = await AIChatViewModel.makeAgentProvider(for: entry)
+        // [T-opencode-every-entry] One describe request is its own one-off conversation.
+        let provider = await AIChatViewModel.makeAgentProvider(for: entry, sessionId: OpenCodeChannel.oneOffSessionId())
 
         // [T-vision-silent-image-drop] Fail loudly instead of asking a text-only
         // model to describe an image it never received.

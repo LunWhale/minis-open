@@ -245,13 +245,36 @@ final class SystemVoiceProvider: NSObject, VoiceInputCapable, VoiceOutputCapable
                 }
             }
 
-            // Watchdog: never hang. After 8s, finish with whatever partial text
-            // we have (empty → treated as a no-op utterance upstream).
-            DispatchQueue.global().asyncAfter(deadline: .now() + 8) {
+            // Watchdog: never hang, but give long speech the time it needs.
+            // [T-voice-asr-failure-retry-prompt] A flat 8 s cut long dictation
+            // off mid-recognition (a minute of speech returned its first half,
+            // or nothing), and an empty result then read as "no speech" and
+            // the audio was dropped. Scale with the audio's length, and treat
+            // "nothing recognized in time" as a failure the user can retry.
+            let watchdog = Self.recognitionWatchdogSeconds(forWAV: request.audioData)
+            DispatchQueue.global().asyncAfter(deadline: .now() + watchdog) {
                 lock.lock(); let salvage = latestText; lock.unlock()
-                finish(.success(salvage))
+                if salvage.isEmpty {
+                    VoiceLog.log("system ASR watchdog fired after \(Int(watchdog))s with no text — reporting timeout")
+                    finish(.failure(VoiceProviderError.timedOut))
+                } else {
+                    finish(.success(salvage))
+                }
             }
         }
+    }
+
+    /// [T-voice-asr-failure-retry-prompt] Watchdog for one file recognition:
+    /// at least 8 s (the old flat value), plus the audio's own duration, capped
+    /// at 2 minutes. Duration is read from the 16-bit PCM WAV header the VAD
+    /// writes (byte rate at offset 28); an unreadable header falls back to 8 s.
+    static func recognitionWatchdogSeconds(forWAV data: Data) -> TimeInterval {
+        guard data.count > 44 else { return 8 }
+        let byteRate = data.subdata(in: 28..<32).withUnsafeBytes { $0.loadUnaligned(as: UInt32.self) }
+        let rate = UInt32(littleEndian: byteRate)
+        guard rate > 0 else { return 8 }
+        let seconds = Double(data.count - 44) / Double(rate)
+        return min(max(8, seconds + 8), 120)
     }
 
     // MARK: - Voice output (AVSpeechSynthesizer)
@@ -263,7 +286,10 @@ final class SystemVoiceProvider: NSObject, VoiceInputCapable, VoiceOutputCapable
         utterance.rate  = mapSpeed(request.speed ?? 1.0)
         utterance.voice = Self.resolveVoice(request: request, fallbackLocale: locale)
         utterance.pitchMultiplier = SystemVoicePreferences.pitch
-        utterance.volume = SystemVoicePreferences.volume
+        // [T-readaloud-volume] Render at full scale: this WAV is played by
+        // VoiceOutputPlayer, which applies the read-aloud volume (live). Baking
+        // it in here as well applied it twice (v²).
+        utterance.volume = 1.0
 
         // A dedicated synthesizer per write() call — the shared `synthesizer` is
         // used for live speak(); mixing write() onto it can drop callbacks.

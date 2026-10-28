@@ -13,6 +13,37 @@
 // simulator and an XCTest bundle has nowhere to run.
 import Foundation
 
+/// The chat page's sources, read as one text: AIChatView.swift (state and
+/// `body`) first, then every other file under Views/Chat/AIChatView/ - the
+/// old single AIChatView.swift was split into them.
+func chatViewSource() -> String {
+    let ios = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let dir = ios.appendingPathComponent("Views/Chat/AIChatView")
+    let main = dir.appendingPathComponent("AIChatView.swift")
+    let rest = (FileManager.default.enumerator(at: dir, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? [])
+        .filter { $0.pathExtension == "swift" && $0.lastPathComponent != "AIChatView.swift" }
+        .sorted { $0.path < $1.path }
+    return ([main] + rest).compactMap { try? String(contentsOf: $0, encoding: .utf8) }.joined(separator: "\n")
+}
+
+/// The sources that used to be the single file Agent/Chat/AIChatViewModel.swift -
+/// the class body plus the AIChatViewModel+<Concern>.swift files it was split
+/// into (the older extension files are NOT included) - read as one text.
+func chatViewModelSource() -> String {
+    let chat = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Agent/Chat")
+    let names = ["AIChatViewModel", "AIChatViewModel+Lifecycle", "AIChatViewModel+ContextUsage",
+                 "AIChatViewModel+StreamingUI", "AIChatViewModel+Speech", "AIChatViewModel+AutoPlayAudio",
+                 "AIChatViewModel+SystemPrompt", "AIChatViewModel+Send", "AIChatViewModel+Rerun",
+                 "AIChatViewModel+EditMessage", "AIChatViewModel+Cancel", "AIChatViewModel+PromptQueue",
+                 "AIChatViewModel+DebugDumps", "AIChatViewModel+TurnCompletion", "AIChatViewModel+AgentLoop",
+                 "AIChatViewModel+ThinkingLevel", "LLMProviderError"]
+    return names.compactMap { try? String(contentsOf: chat.appendingPathComponent($0 + ".swift"), encoding: .utf8) }
+        .joined(separator: "\n")
+}
+
 var failures = 0
 func check(_ l: String, _ a: Bool, _ e: Bool = true) {
     if a == e { print("  ✅ \(l)") } else { print("  ❌ \(l) — expected \(e), got \(a)"); failures += 1 }
@@ -72,8 +103,8 @@ checkEq("124000 → 124k", TokenCountFormatter.short(124_000), "124k")
 checkEq("200000 → 200k", TokenCountFormatter.short(200_000), "200k")
 
 print("\n▶️  number segments are found by exact string, in any word order")
-let pct = "62%", size = "124k / 200k"
-for (locale, template) in [("en", "Context %@ used · %@"), ("zh-Hans", "上下文已用 %1$@ · %2$@"), ("ja", "コンテキスト使用率 %1$@ · %2$@")] {
+let pct = "62%", size = "124k/200k"
+for (locale, template) in [("en", "Context %@ · %@"), ("zh-Hans", "上下文 %1$@ · %2$@"), ("ja", "コンテキスト %1$@ · %2$@")] {
     let text = String(format: template, pct, size)
     let ranges = highlightRanges(in: text, segments: [pct, size])
     checkEq("\(locale): both segments located", ranges.count, 2)
@@ -83,7 +114,7 @@ for (locale, template) in [("en", "Context %@ used · %@"), ("zh-Hans", "上下�
 }
 // A percent that also appears inside the size string must still resolve to
 // the percent segment first (range(of:) is leftmost; the size has no '%').
-let tricky = String(format: "Context %@ used · %@", "20%", "20k / 100k")
+let tricky = String(format: "Context %@ · %@", "20%", "20k/100k")
 checkEq("20% is not confused with 20k", (tricky as NSString).substring(with: highlightRanges(in: tricky, segments: ["20%"])[0]), "20%")
 
 // MARK: - Source invariants
@@ -92,8 +123,8 @@ print("\n▶️  source invariants")
 let root = "../../"
 func src(_ p: String) -> String { (try? String(contentsOfFile: root + p, encoding: .utf8)) ?? "" }
 let bar = src("Views/Chat/ChatInputBar.swift")
-let view = src("Views/Chat/AIChatView.swift")
-let vm = src("Agent/Chat/AIChatViewModel.swift")
+let view = chatViewSource()
+let vm = chatViewModelSource()
 let models = src("Agent/Chat/ChatModels.swift")
 let xc = src("Localizable.xcstrings")
 check("sources readable", !bar.isEmpty && !view.isEmpty && !vm.isEmpty && !models.isEmpty && !xc.isEmpty)
@@ -106,7 +137,7 @@ check("persistence is a plain boolean, not a deadline", bar.contains("private(se
 check("Coordinator.parent is refreshed on every update (the root-cause fix)",
       bar.contains("func updateUIView(_ tv: PastableUITextView, context: Context) {\n        // [T-ios-context-usage-hint]") && bar.contains("        context.coordinator.parent = self\n"))
 check("the unconsumed flag is claimed at sync time, before the debounce", bar.range(of: "hasUnconsumedTransientHint = true")!.lowerBound < bar.range(of: "DispatchQueue.main.asyncAfter(deadline: .now() + 0.4")!.lowerBound)
-check("re-assertion waits for the visual apply", bar.contains("if transientHintApplied, label.text != hint.text {"))
+check("re-assertion waits for the visual apply", bar.contains("if transientHintApplied,\n                   label.text != Self.page(of: hint, at: transientPageIndex).text"))
 check("focusing without typing does not dismiss the line", bar.contains("[rotate] yield — usage line keeps the label"))
 check("typing consumes the line on the empty → non-empty edge", bar.contains("guard hasUnconsumedTransientHint, !textView.text.isEmpty else { return }"))
 check("keystrokes/paste consume it (textViewDidChange)", bar.contains("parent.text = textView.text\n            // [T-ios-context-usage-hint]") && bar.contains("consumeTransientHintIfNeeded(in: textView)\n            textView.invalidateIntrinsicContentSize()"))
@@ -116,7 +147,7 @@ check("only a new generation shows a line again", bar.components(separatedBy: "s
 check("debounce is a Coordinator work item, not @State", bar.contains("private var contextHintDebounce: DispatchWorkItem?"))
 check("no DispatchWorkItem lives in composer @State", !view.contains("@State private var") || !view.contains("@State private var sessionRefreshCooldownWork"))
 check("Reduce Motion skips the crossfade", bar.contains("if UIAccessibility.isReduceMotionEnabled {\n                apply()"))
-check("Coordinator cleans up the debounce on deinit", bar.contains("deinit {\n            contextHintDebounce?.cancel()\n        }"))
+check("Coordinator cleans up the debounce and the page timer on deinit", bar.contains("deinit {\n            contextHintDebounce?.cancel()\n            hintPageTimer?.invalidate()\n        }"))
 check("highlight uses range(of:) on formatted segments, no regex", bar.contains("ns.range(of: segment)") && !bar.contains("NSRegularExpression(pattern: \"\\\\d"))
 check("normal tier gets no highlight colour", bar.contains("case .normal: return nil"))
 check("warning highlight is toned-down system orange", bar.contains("case .warning: return UIColor.systemOrange.withAlphaComponent(0.50)"))
@@ -130,7 +161,7 @@ check("glow is clipped INSIDE the composer shape", view.contains("              
 check("dark adds light, light tints (no .screen)", view.contains(".blendMode(colorScheme == .dark ? .plusLighter : .normal)") && !view.contains(".screen)"))
 check("no destinationOut mask remains", !view.contains("blendMode(.destinationOut)"))
 check("glow is one soft diffusion stroke, no outline ring", view.contains(".stroke(color, lineWidth: 13)\n                    .blur(radius: 7)") && !view.contains("outlineWeight") && !view.contains(".inset(by: 0.875)"))
-check("glow does not use drawingGroup", !view.contains("ComposerContextGlow") || !view[view.range(of: "private struct ComposerContextGlow")!.lowerBound...].contains("drawingGroup"))
+check("glow does not use drawingGroup", !view.contains("ComposerContextGlow") || !view[view.range(of: "struct ComposerContextGlow")!.lowerBound...].contains("drawingGroup"))
 check("breathing respects Reduce Motion", view.contains("if tier == .critical && !reduceMotion {"))
 
 check("hint requires user-started, uncancelled turn and empty composer",
@@ -138,8 +169,37 @@ check("hint requires user-started, uncancelled turn and empty composer",
 check("usage hidden when either side is unknown", vm.contains("(used > 0 && window > 0)"))
 check("publishContextUsage is called where usage is written", vm.components(separatedBy: "publishContextUsage()").count - 1 >= 4)
 check("source warning threshold is 0.7 (critical 0.8)", models.contains("static let warningFraction: Double = 0.7") && models.contains("static let criticalFraction: Double = 0.8"))
-check("localization key present", xc.contains("\"Context %@ used · %@\" : {"))
-check("zh-Hans translation present", xc.contains("上下文已用 %1$@ · %2$@"))
+check("localization key present", xc.contains("\"Context %@ · %@\" : {"))
+check("zh-Hans translation present", xc.contains("上下文 %1$@ · %2$@"))
+// [T-composer-hint-carousel] Context and quota take turns as separate lines,
+// so the wording T-composer-hint-compact trimmed is back: "used" and spaces
+// around the slash.
+check("hint uses the full key again", models.contains("AppLocalized(\"Context \\(pct) used · \\(size)\")")
+      && !models.contains("AppLocalized(\"Context \\(pct) · \\(size)\")"))
+check("size has spaces around the slash", models.contains("TokenCountFormatter.short(usage.usedTokens)) / \\(TokenCountFormatter.short(usage.windowTokens))"))
+check("pages: context first, then the quota (own text, highlight, tier)",
+      models.contains("var pages = [Page(text: contextText, highlights: [pct, size], tier: usage.tier)]")
+      && models.contains("pages.append(Page(text: quota.text, highlights: [quota.highlight], tier: quota.tier))"))
+check("the placeholder turns the pages every 5 s, only while the line is up and on screen, not under VoiceOver",
+      bar.contains("static let hintPageInterval: TimeInterval = 5")
+      && bar.contains("guard hintPageTimer == nil, hasUnconsumedTransientHint, transientHintApplied,\n                  !hintCarouselFinished,\n                  let hint = transientHint, hint.pages.count > 1,\n                  !UIAccessibility.isVoiceOverRunning, textView.window != nil else { return }")
+      && bar.contains("RunLoop.main.add(timer, forMode: .common)")
+      && bar.contains("transientPageIndex = (transientPageIndex + 1) % hint.pages.count"))
+// [T-composer-hint-carousel-rounds]
+check("after 3 full rounds the line settles on the context page and the carousel stops for these figures",
+      bar.contains("static let hintCarouselRounds = 3")
+      && bar.contains("hintPageTurns += 1\n")
+      && bar.contains("if hintPageTurns >= Self.hintCarouselRounds * hint.pages.count {\n                hintCarouselFinished = true\n                transientPageIndex = 0\n                stopHintCarousel()"))
+check("new figures start a fresh set of rounds",
+      bar.contains("transientPageIndex = 0\n            hintPageTurns = 0\n            hintCarouselFinished = false\n            contextHintDebounce?.cancel()"))
+check("the carousel stops when the line is consumed, retired, replaced, or the view leaves the screen",
+      bar.contains("→ back to default\")\n            stopHintCarousel()")
+      && bar.contains("contextHintDebounce = nil\n                stopHintCarousel()")
+      && bar.contains("hasProtectedFirstFocus = false\n            stopHintCarousel()")
+      && bar.contains("guard textView.window != nil, hasUnconsumedTransientHint, transientHintApplied,\n                  !UIAccessibility.isVoiceOverRunning,"))
+check("VoiceOver hears the whole line (both pages) from the accessibility label",
+      bar.contains("label.accessibilityLabel = hint.text"))
+check("no Android file touched by this feature", !FileManager.default.fileExists(atPath: root + "../android/CONTEXT_USAGE_MARKER"))
 
 print(failures == 0 ? "\n✅ All context-usage hint tests passed" : "\n❌ \(failures) failure(s)")
 exit(failures == 0 ? 0 : 1)

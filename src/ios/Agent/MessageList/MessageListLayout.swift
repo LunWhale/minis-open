@@ -40,6 +40,13 @@ final class MessageListLayout: UICollectionViewLayout {
         precalcHeights[index] = height
     }
 
+    /// [T-stream-precalc-freeze] Drop a precalc that no longer describes the
+    /// row - used for rows of a message that is still growing, whose content
+    /// outruns any height computed at snapshot time.
+    func clearPrecalcHeight(at index: Int) {
+        precalcHeights.removeValue(forKey: index)
+    }
+
     /// When true, ALL self-sizing invalidation is deferred (heights stored in
     /// `deferredHeights`). Set by the Coordinator when `scrollMode == .userBrowsing`
     /// to cover the entire browse period — not just the moments where UIKit reports
@@ -81,6 +88,26 @@ final class MessageListLayout: UICollectionViewLayout {
     /// The old `Int?` was immune (trivial value; a torn read is at worst a
     /// stale Int). Guard every access with an unfair lock so reads copy a
     /// consistent snapshot and the write is atomic w.r.t. those reads.
+    /// [T-user-ask-toggle-drift] Item whose top must stay put while the user
+    /// expands or collapses it in place (set by the Coordinator for a moment
+    /// around a user toggle). The visible-cell compensation below would
+    /// otherwise turn its growth into "content below stays, cell grows
+    /// upward". Read from `invalidationContext`, which can run off-main, so
+    /// it shares `_streamingLock`.
+    private var _topAnchoredIndex: Int?
+    var topAnchoredIndex: Int? {
+        get {
+            os_unfair_lock_lock(&_streamingLock)
+            defer { os_unfair_lock_unlock(&_streamingLock) }
+            return _topAnchoredIndex
+        }
+        set {
+            os_unfair_lock_lock(&_streamingLock)
+            _topAnchoredIndex = newValue
+            os_unfair_lock_unlock(&_streamingLock)
+        }
+    }
+
     private var _streamingCellRanges: [Range<Int>] = []
     private var _streamingLock = os_unfair_lock_s()
 
@@ -160,6 +187,11 @@ final class MessageListLayout: UICollectionViewLayout {
     /// Total content height (sum of all item heights).
     private var totalHeight: CGFloat = 0
 
+    /// [T-new-session-first-block-jump] Net height change self-sizing has
+    /// reported since the last `prepare()`, so `totalHeight` plus this is the
+    /// content height those corrections produce, before the next re-flow.
+    private var heightDeltaSincePrepare: CGFloat = 0
+
     /// Number of items at last prepare() call — used to detect insertions.
     private var lastItemCount: Int = 0
 
@@ -187,6 +219,9 @@ final class MessageListLayout: UICollectionViewLayout {
         itemAttributes.reserveCapacity(itemCount)
 
         var y: CGFloat = 0
+        // [T-queued-candidate-spacing] True while the row being laid out is a
+        // hugging footer the row above gave its gap up for.
+        var gapWithheld = false
         for i in 0..<itemCount {
             let ip = IndexPath(item: i, section: 0)
             let attrs = UICollectionViewLayoutAttributes(forCellWith: ip)
@@ -227,9 +262,16 @@ final class MessageListLayout: UICollectionViewLayout {
             // cell is zero-height (an empty text block renders nothing — its
             // trailing gap would double the spacing between its neighbors).
             // [T-ios-empty-textblock-gap]
-            if !isLast, !nextIsFooter, h > 0 { y += itemSpacing }
+            // [T-queued-candidate-spacing] ... except an EMPTY hugging footer,
+            // which hands on the gap the row above withheld for it: without
+            // that, whatever follows it (a queued candidate, the next user
+            // bubble) touched the reply. The rule is MessageRowGap.
+            y += MessageRowGap.after(height: h, isLast: isLast, nextIsHuggingFooter: nextIsFooter,
+                                     gapWithheldBefore: gapWithheld, spacing: itemSpacing)
+            gapWithheld = nextIsFooter && h > 0
         }
         totalHeight = y
+        heightDeltaSincePrepare = 0
         lastItemCount = itemCount
         // [ScrollStall] prepare() runs on every invalidateLayout; on long
         // sessions iterating the full itemCount can show up as scroll hitches.
@@ -490,6 +532,7 @@ final class MessageListLayout: UICollectionViewLayout {
 
         // Cache the new height. prepare() will use this to compute correct totalHeight.
         heightCache[index] = newHeight
+        heightDeltaSincePrepare += delta
 
         // [SettleJitter] Evidence log (H2): a correction passing through DURING
         // deceleration gets NO contentOffsetAdjustment (the !isDecelerating
@@ -538,7 +581,8 @@ final class MessageListLayout: UICollectionViewLayout {
                 // Cell entirely above viewport — always adjust to keep
                 // visible content in place.
                 ctx.contentOffsetAdjustment = CGPoint(x: 0, y: delta)
-            } else if cellTop >= viewportTop && cellTop < viewportBottom && !isStreamingCell(index) {
+            } else if cellTop >= viewportTop && cellTop < viewportBottom && !isStreamingCell(index)
+                        && !ToggleAnchorMath.skipsVisibleCompensation(index: index, anchored: topAnchoredIndex) {
                 // Cell is visible and NOT the actively streaming cell —
                 // adjust offset so content below doesn't jump (e.g. image
                 // finished loading and changed the cell's height).
@@ -553,7 +597,21 @@ final class MessageListLayout: UICollectionViewLayout {
                 // chasing it a frame later (the "grow-then-catch-up" jitter).
                 // Browse mode keeps the historical skip (isAutoScrollPinning
                 // is false), so streaming growth never yanks a reading user.
-                ctx.contentOffsetAdjustment = CGPoint(x: 0, y: delta)
+                //
+                // [T-new-session-first-block-jump] Only the part of the growth
+                // that pushes the content's bottom past the pin line. Content
+                // shorter than the viewport (a new session's first reply) sits
+                // at the top with nothing glued to the bottom: adding the full
+                // delta pushed the user bubble and reply up by it for one
+                // frame, until the bottom pin clamped the offset back to the
+                // top limit (offset -116 -> -98 -> -116 on device, an 18pt jump
+                // when the first thinking block replaced the typing row).
+                let pinLine = viewportTop + cv.bounds.height - cv.adjustedContentInset.bottom
+                let glue = StreamGrowthPin.offsetAdjustment(
+                    delta: delta, contentBottomAfter: totalHeight + heightDeltaSincePrepare, pinLine: pinLine)
+                if glue > 0 {
+                    ctx.contentOffsetAdjustment = CGPoint(x: 0, y: glue)
+                }
             }
         }
 
@@ -746,14 +804,38 @@ final class MessageListLayout: UICollectionViewLayout {
             // too — otherwise prepare() uses stale heights from the old width,
             // producing an incorrect contentSize that prevents scroll-to-bottom
             // from reaching the true end.
+            // [T-rotate-scroll-jank] Counts for the log line below, taken
+            // before the clear.
+            let dropped = (cache: self.heightCache.count, precalc: self.precalcHeights.count,
+                           est: self.estimatedHeights.count)
+            let oldWidth = self.lastSettledWidth
             self.heightCache.removeAll()
             self.precalcHeights.removeAll()
             self.estimatedHeights.removeAll()
             self.geometryReaderConfirmed.removeAll()
             self.lastSettledWidth = cv.bounds.width
+            // [T-rotate-scroll-jank] Re-seed before re-laying out. The clear
+            // above used to be the end of it: with cell prefetch disabled,
+            // estimates are only ever written by the Coordinator's snapshot
+            // pass, so after a rotation every off-screen row fell back to the
+            // flat `estimatedItemHeight` (200pt) and was corrected only when
+            // it scrolled on screen - mid-glide, without offset compensation.
+            // Device log 2026-10-06 09:00:10/15 (portrait -> landscape ->
+            // portrait), then 13 such corrections in 5s of scrolling up, the
+            // largest +2225pt and +1778pt. The snapshot pass looks up the
+            // width-keyed measured memo first, so returning to a width the
+            // rows were already measured at restores their exact heights; for
+            // a new width it writes the per-kind estimates.
+            AppLogger(category: "CellSizing").info("[WidthPurge] width \(String(format: "%.1f", oldWidth))→\(String(format: "%.1f", cv.bounds.width)) cleared cache=\(dropped.cache) precalc=\(dropped.precalc) est=\(dropped.est) items=\(cv.numberOfSections > 0 ? cv.numberOfItems(inSection: 0) : 0) reseed=\(self.onWidthCachesPurged != nil)")
+            self.onWidthCachesPurged?()
             self.invalidateLayout()
         }
     }
+
+    /// [T-rotate-scroll-jank] Called after a settled width change has cleared
+    /// every width-dependent height, BEFORE the layout is invalidated, so the
+    /// owner can re-seed precalc / estimates at the new width.
+    var onWidthCachesPurged: (() -> Void)?
 
     // MARK: - Height Cache Management
 
@@ -800,6 +882,15 @@ final class MessageListLayout: UICollectionViewLayout {
         }
     }
 
+    /// [T-user-ask-expand-anim] Store a height the caller just measured from
+    /// the visible cell, WITHOUT marking it GeometryReader-confirmed (later
+    /// self-sizing still applies). Lets an in-place toggle move straight from
+    /// the old height to the new one in a single (animated) layout pass,
+    /// instead of `invalidateHeight` dropping the cell to its estimate first.
+    func setMeasuredHeight(_ height: CGFloat, at index: Int) {
+        heightCache[index] = height
+    }
+
     /// Directly set the cached height for a specific item index.
     /// Used when the SwiftUI GeometryReader reports a height that differs
     /// from what `preferredLayoutAttributesFitting` returned, bypassing
@@ -842,8 +933,13 @@ final class MessageListLayout: UICollectionViewLayout {
     /// apply, same lifecycle as contentKeyByIndex.
     private var footerHugByIndex: [Int: Bool] = [:]
 
-    func setFooterHug(_ hug: Bool, at index: Int) {
+    /// Returns true when the stored policy changed (the caller then owes the
+    /// layout an `invalidateLayout()` if it is outside a snapshot apply).
+    @discardableResult
+    func setFooterHug(_ hug: Bool, at index: Int) -> Bool {
+        let changed = (footerHugByIndex[index] ?? true) != hug
         footerHugByIndex[index] = hug
+        return changed
     }
 
     #if DEBUG
@@ -888,6 +984,56 @@ final class MessageListLayout: UICollectionViewLayout {
         // skipping the memo costs nothing.
         guard !key.hasPrefix("f:") else { return }
         measuredHeightByContentKey[key] = (height: height, width: boundsWidth)
+        // [T-scroll-estimate-fidelity] Every assistant header has the same
+        // layout, so one real measurement is the estimate for all the others.
+        if key.hasPrefix("h:") {
+            learnedHeaderHeight = (height, boundsWidth, AssistantHeaderMetrics.fontKey())
+        }
+        // Cross-load memo: the same content measured in an earlier load of
+        // any session seeds the estimate (never the measured height) next time.
+        let baseKey = Self.stripRenderQualifier(key)
+        if let stable = stableHeightKeyByContentKey[baseKey] {
+            CrossLoadHeightMemo.shared.record(stable, width: boundsWidth, height: height)
+        }
+    }
+
+    // MARK: - [T-scroll-estimate-fidelity] Header estimate
+
+    /// The last measured assistant-header height, with the width and font size
+    /// it was measured at. Survives clearHeightCache (session switch): it does
+    /// not depend on the session, and a font-size change makes it miss by key.
+    private var learnedHeaderHeight: (height: CGFloat, width: CGFloat, font: CGFloat)?
+
+    /// Estimate for an assistant header row: the learned height when it was
+    /// measured at this width and font size, otherwise the layout formula.
+    /// The old fixed 30 pt was 4 pt taller than the real 26 pt, so every header
+    /// shrank as it scrolled into view - 48 times mid-fling in one recording.
+    func headerEstimate(width: CGFloat) -> CGFloat {
+        if let learned = learnedHeaderHeight, abs(learned.width - width) < 1,
+           learned.font == AssistantHeaderMetrics.fontKey() {
+            return learned.height
+        }
+        return AssistantHeaderMetrics.formulaHeight()
+    }
+
+    // MARK: - [T-scroll-estimate-fidelity] Cross-load memo link
+
+    /// contentKey → content-hash key of the same row, registered by the
+    /// Coordinator. contentKeys embed runtime ids regenerated on every load,
+    /// so the cross-load memo is keyed by content instead.
+    private var stableHeightKeyByContentKey: [String: String] = [:]
+
+    func setStableHeightKey(_ stableKey: String, forContentKey contentKey: String) {
+        stableHeightKeyByContentKey[contentKey] = stableKey
+    }
+
+    /// `key` without the `:r<signal>` render-state suffix that
+    /// SelfSizingCell.renderQualifiedKey appends.
+    static func stripRenderQualifier(_ key: String) -> String {
+        guard let range = key.range(of: ":r", options: .backwards) else { return key }
+        let suffix = key[range.upperBound...]
+        guard !suffix.isEmpty, suffix.allSatisfy({ $0.isNumber || $0 == "-" }) else { return key }
+        return String(key[..<range.lowerBound])
     }
 
     /// Drop a single memo entry — used to evict an actively-streaming cell's
@@ -905,12 +1051,86 @@ final class MessageListLayout: UICollectionViewLayout {
         measuredHeightByContentKey.removeAll()
         contentKeyByIndex.removeAll()
         footerHugByIndex.removeAll()
+        stableHeightKeyByContentKey.removeAll()
     }
 
     // MARK: - Diagnostics
 
     var debugCachedHeightCount: Int { heightCache.count }
     var debugPrecalcHeightCount: Int { precalcHeights.count }
+}
+
+// MARK: - [T-scroll-estimate-fidelity] Header metrics and cross-load height memo
+
+/// Height of the assistant header row (AssistantHeaderV3): the 22 pt soul icon
+/// beside the semibold body-font name, `.padding(.top, 4)`. 26 pt at the default
+/// text size; Dynamic Type grows it with the name's line height.
+enum AssistantHeaderMetrics {
+    static func formulaHeight() -> CGFloat {
+        let body = UIFont.preferredFont(forTextStyle: .body)
+        let name = UIFont.systemFont(ofSize: body.pointSize, weight: .semibold)
+        return ceil(max(22, name.lineHeight)) + 4
+    }
+
+    /// What a learned header height depends on besides width: the body size.
+    static func fontKey() -> CGFloat {
+        UIFont.preferredFont(forTextStyle: .body).pointSize
+    }
+}
+
+/// Real heights measured in this process, keyed by row CONTENT (a hash of the
+/// text plus kind), width and message font size - not by the runtime ids in
+/// contentKey, which are regenerated on every load. Reopening a session, or
+/// scrolling back into rows paged out and reloaded, then starts every row it
+/// has seen before from its real height instead of a heuristic.
+///
+/// Used as an ESTIMATE only (precalc): the cell still measures itself, so a
+/// stale entry costs at most the correction the heuristic would have caused.
+/// Bounded (LRU-ish, oldest dropped in batches) and cleared on memory warning.
+@MainActor
+final class CrossLoadHeightMemo {
+    static let shared = CrossLoadHeightMemo()
+
+    static let capacity = 20_000
+    private var entries: [String: (height: CGFloat, tick: UInt64)] = [:]
+    private var tick: UInt64 = 0
+
+    private init() {
+        NotificationCenter.default.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification,
+                                               object: nil, queue: .main) { [weak self] _ in
+            self?.entries.removeAll()
+        }
+    }
+
+    private static func key(_ stable: String, width: CGFloat) -> String {
+        "\(stable)|w\(Int(width.rounded()))|f\(Int((FontSettings.shared.scaledMessage(16.5) * 10).rounded()))"
+    }
+
+    func height(for stable: String, width: CGFloat) -> CGFloat? {
+        let k = Self.key(stable, width: width)
+        guard let entry = entries[k] else { return nil }
+        tick &+= 1
+        entries[k] = (entry.height, tick)
+        return entry.height
+    }
+
+    func record(_ stable: String, width: CGFloat, height: CGFloat) {
+        guard height >= 4, width > 1 else { return }
+        tick &+= 1
+        entries[Self.key(stable, width: width)] = (height, tick)
+        if entries.count > Self.capacity { evictOldest() }
+    }
+
+    /// Drop the oldest 10% at once, so eviction is rare rather than per insert.
+    private func evictOldest() {
+        let drop = entries.count - Self.capacity + Self.capacity / 10
+        let oldest = entries.sorted { $0.value.tick < $1.value.tick }.prefix(drop).map(\.key)
+        for k in oldest { entries.removeValue(forKey: k) }
+    }
+
+    #if DEBUG
+    var debugCount: Int { entries.count }
+    #endif
 }
 
 // MARK: - [T-ios-scroll-metrics-ring] In-memory scroll diagnostics ring buffer
@@ -1012,3 +1232,409 @@ final class ScrollMetricsRecorder {
     }
 }
 #endif
+
+// Kept byte-identical with MinisTests/Standalone/ToggleAnchorMathTests.swift.
+// BEGIN ToggleAnchorMath
+/// [T-user-ask-toggle-drift] Geometry for expanding / collapsing a cell in
+/// place on a user tap: its top stays where it was on screen and only the
+/// bottom moves. Without it an expand grew the cell upward (the layout's
+/// visible-cell compensation kept the content below fixed) while a collapse
+/// kept the top fixed, so every expand/collapse pair moved the whole list up
+/// by the cell's height change.
+enum ToggleAnchorMath {
+    /// Notification userInfo key: set to `true` on a `.thinkingBlockToggled`
+    /// post that comes from the user tapping the cell.
+    static let anchorTopKey = "anchorTop"
+
+    /// The content offset that puts the cell's top back at `anchorY` (its
+    /// distance from the viewport top before the change), clamped to the
+    /// scrollable range.
+    static func anchoredOffset(newMinY: CGFloat, anchorY: CGFloat,
+                               minOffset: CGFloat, maxOffset: CGFloat) -> CGFloat {
+        min(max(newMinY - anchorY, minOffset), max(minOffset, maxOffset))
+    }
+
+    /// One scroll after an expansion so the grown cell's bottom becomes
+    /// visible, never moving its top above the visible top (plus `margin`).
+    /// 0 when the bottom already fits or the top has no room to move.
+    static func revealShift(cellMinY: CGFloat, cellMaxY: CGFloat,
+                            visibleTop: CGFloat, visibleBottom: CGFloat,
+                            margin: CGFloat = 8) -> CGFloat {
+        let overflow = cellMaxY + margin - visibleBottom
+        guard overflow > 0 else { return 0 }
+        let room = cellMinY - (visibleTop + margin)
+        return max(0, min(overflow, room))
+    }
+
+    /// The layout skips its visible-cell offset compensation for the cell
+    /// being toggled, so a late self-size correction cannot push it upward.
+    static func skipsVisibleCompensation(index: Int, anchored: Int?) -> Bool {
+        anchored == index
+    }
+
+    /// [T-user-ask-expand-anim] Length of the expand / collapse animation:
+    /// short, ease-out, no overshoot.
+    static let animationDuration: TimeInterval = 0.2
+
+    /// nil = apply without animation (Reduce Motion).
+    static func animationDuration(reduceMotion: Bool) -> TimeInterval? {
+        reduceMotion ? nil : animationDuration
+    }
+
+    /// Notification userInfo key for a `ToggleRequest`.
+    static let toggleRequestKey = "toggleRequest"
+}
+
+/// [T-user-ask-expand-anim] One expand / collapse, applied exactly once. The
+/// card no longer flips its own state on tap - SwiftUI would then draw the
+/// new content one frame before the list resized the cell (the flicker
+/// frame) - but hands this to the list, which applies it inside the same
+/// animated layout pass that resizes the cell. If no list shows the card, the
+/// card's own fallback runs it; whichever comes second is a no-op.
+final class ToggleRequest {
+    private var done = false
+    private let apply: () -> Void
+
+    init(_ apply: @escaping () -> Void) { self.apply = apply }
+
+    var hasRun: Bool { done }
+
+    /// Applies the toggle unless it already ran. Returns whether it ran now.
+    @discardableResult
+    func run() -> Bool {
+        guard !done else { return false }
+        done = true
+        apply()
+        return true
+    }
+}
+// END ToggleAnchorMath
+
+// Kept compilable on its own for MinisTests/Standalone/MarkdownHeightEstimateTests.swift
+// (the test extracts this block together with TableColumnPlanner).
+// BEGIN MarkdownHeightEstimate
+/// [T-scroll-estimate-fidelity] Height estimate for a markdown text block that
+/// has not been rendered yet (no cached attributed string).
+///
+/// Rows still on an estimate are measured as they scroll into view, and a
+/// correction while the list moves is NOT compensated (MessageListLayout skips
+/// contentOffsetAdjustment during tracking / deceleration to keep momentum), so
+/// every point of error shows as content jumping mid-fling. Measured on device
+/// (2026-10-03, 348-row session): text blocks on the old heuristic corrected by
+/// +225 pt on average, up to +736 pt, always upward. Its line model counted
+/// every character as half the font size wide — right for Latin, but a CJK
+/// glyph is a full em — and used a narrower text width than the renderer.
+///
+/// This follows the renderer's own layout instead (MarkdownNSRenderer):
+/// - text width = container − 32, plus 12, the same as the measured path;
+/// - display width per character: CJK / full-width / emoji 1 em, space
+///   0.28 em, everything else 0.56 em; markers `**` `__` `` ` `` `~~` dropped;
+/// - line height from the real font metrics (Latin, and the CJK fallback for
+///   lines that contain wide glyphs), body line spacing 0.25 em;
+/// - spacing between blocks = max(top margin, previous bottom margin):
+///   paragraph 0/12, heading 1 em/1 em at 1.5/1.3/1.15/1/0.875/0.85 size,
+///   list 0.25 em/16 with 0.25 em between items and 24 pt indent per level,
+///   quote 13 pt indent per level, table 0.6 em/0.6 em;
+/// - tables: columns planned by the real TableColumnPlanner from natural cell
+///   widths, rows = tallest wrapped cell + 16, at least 36.
+/// Checked against 11 real replies measured on device: mean error 33% → 5%,
+/// worst 46% → 10%.
+struct MarkdownHeightEstimate {
+    let textWidth: CGFloat
+    let baseFontSize: CGFloat
+    let latinLineHeight: CGFloat
+    let wideLineHeight: CGFloat
+    var imageHeight: (String) -> CGFloat = { _ in 200 }
+
+    static func isWide(_ v: UInt32) -> Bool {
+        (0x1100...0x115F).contains(v) || (0x2E80...0xA4CF).contains(v) || (0xAC00...0xD7A3).contains(v)
+            || (0xF900...0xFAFF).contains(v) || (0xFE30...0xFE4F).contains(v) || (0xFF00...0xFF60).contains(v)
+            || (0xFFE0...0xFFE6).contains(v) || (0x1F300...0x1FAFF).contains(v) || (0x3000...0x303F).contains(v)
+    }
+
+    static func stripInlineMarkers(_ s: Substring) -> String {
+        var t = String(s)
+        for marker in ["**", "__", "`", "~~"] where t.contains(marker) {
+            t = t.replacingOccurrences(of: marker, with: "")
+        }
+        return t
+    }
+
+    /// Rendered width of `s` at `fontSize`, and whether it contains wide glyphs.
+    static func displayWidth(_ s: String, fontSize: CGFloat) -> (width: CGFloat, wide: Bool) {
+        var w: CGFloat = 0
+        var wide = false
+        for scalar in s.unicodeScalars {
+            if isWide(scalar.value) {
+                w += fontSize; wide = true
+            } else if scalar == " " {
+                w += fontSize * 0.28
+            } else {
+                w += fontSize * 0.56
+            }
+        }
+        return (w, wide)
+    }
+
+    private func linesHeight(_ text: Substring, fontSize: CGFloat, width: CGFloat) -> CGFloat {
+        let (w, wide) = Self.displayWidth(Self.stripInlineMarkers(text), fontSize: fontSize)
+        let n = max(1, (w / max(width, 20)).rounded(.up))
+        let lh = (wide ? wideLineHeight : latinLineHeight) * fontSize / baseFontSize
+        return n * lh + (n - 1) * baseFontSize * 0.25
+    }
+
+    private static func trimSpaces(_ s: Substring) -> Substring {
+        var t = s
+        while t.first == " " { t = t.dropFirst() }
+        while t.last == " " { t = t.dropLast() }
+        return t
+    }
+
+    /// `- item`, `* item`, `+ item`, `1. item`, `1) item`: (leading whitespace, item text).
+    static func listItem(_ line: Substring) -> (indent: Int, text: Substring)? {
+        var i = line.startIndex
+        var indent = 0
+        while i < line.endIndex, line[i] == " " || line[i] == "\t" { indent += 1; i = line.index(after: i) }
+        guard i < line.endIndex else { return nil }
+        if "-*+".contains(line[i]) {
+            i = line.index(after: i)
+        } else {
+            var digits = 0
+            while i < line.endIndex, line[i].isASCII, line[i].isNumber { digits += 1; i = line.index(after: i) }
+            guard digits > 0, i < line.endIndex, line[i] == "." || line[i] == ")" else { return nil }
+            i = line.index(after: i)
+        }
+        guard i < line.endIndex, line[i] == " " || line[i] == "\t" else { return nil }
+        while i < line.endIndex, line[i] == " " || line[i] == "\t" { i = line.index(after: i) }
+        return (indent, line[i...])
+    }
+
+    /// `# Title` … `###### Title`: (level, title text).
+    static func heading(_ t: Substring) -> (level: Int, text: Substring)? {
+        let hashes = t.prefix { $0 == "#" }.count
+        guard (1...6).contains(hashes) else { return nil }
+        let rest = t.dropFirst(hashes)
+        guard let first = rest.first, first == " " || first == "\t" else { return nil }
+        return (hashes, rest.drop { $0 == " " || $0 == "\t" })
+    }
+
+    private static func isSpecial(_ line: Substring) -> Bool {
+        let t = trimSpaces(line)
+        return t.isEmpty || t.hasPrefix("```") || t.hasPrefix("|") || heading(t) != nil || listItem(line) != nil
+            || t == "---" || t == "***" || t == "___" || t == "$$" || (t.hasPrefix("![") && t.contains("]("))
+    }
+
+    func height(of content: String) -> CGFloat {
+        guard !content.isEmpty else { return 0 }
+        let base = baseFontSize
+        let lineSpacing = base * 0.25
+        var total: CGFloat = 0
+        var previousBottom: CGFloat?
+        func block(_ h: CGFloat, top: CGFloat, bottom: CGFloat) {
+            if let previousBottom { total += max(top, previousBottom) }
+            total += h
+            previousBottom = bottom
+        }
+        let lines = content.split(separator: "\n", omittingEmptySubsequences: false)
+        var i = 0
+        while i < lines.count {
+            let line = lines[i]
+            let t = Self.trimSpaces(line)
+            if t.isEmpty { i += 1; continue }
+            if t.hasPrefix("```") {
+                var codeLines = 0
+                i += 1
+                while i < lines.count {
+                    if Self.trimSpaces(lines[i]).hasPrefix("```") { i += 1; break }
+                    codeLines += 1; i += 1
+                }
+                block(32 + CGFloat(max(codeLines, 1)) * 18 + 24, top: 6, bottom: 4)
+                continue
+            }
+            if t.hasPrefix("|") {
+                var rows: [Substring] = []
+                while i < lines.count, Self.trimSpaces(lines[i]).hasPrefix("|") {
+                    if !Self.isTableSeparator(lines[i]) { rows.append(lines[i]) }
+                    i += 1
+                }
+                block(tableHeight(rows), top: base * 0.6, bottom: base * 0.6)
+                continue
+            }
+            if t == "---" || t == "***" || t == "___" { block(16, top: 0, bottom: 0); i += 1; continue }
+            if t == "$$" {
+                i += 1
+                while i < lines.count, Self.trimSpaces(lines[i]) != "$$" { i += 1 }
+                i += 1
+                block(80, top: 0, bottom: 12)
+                continue
+            }
+            if t.hasPrefix("![") && t.contains("](") {
+                block(imageHeight(String(t)), top: 0, bottom: 12); i += 1; continue
+            }
+            if let (level, text) = Self.heading(t) {
+                let scale: CGFloat = [1: 1.5, 2: 1.3, 3: 1.15, 5: 0.875, 6: 0.85][level] ?? 1
+                block(linesHeight(text, fontSize: base * scale, width: textWidth), top: base, bottom: base)
+                i += 1
+                continue
+            }
+            if Self.listItem(line) != nil {
+                var h: CGFloat = 0
+                var firstItem = true
+                while i < lines.count {
+                    if let item = Self.listItem(lines[i]) {
+                        let depth = CGFloat(item.indent / 2 + 1)
+                        if !firstItem { h += base * 0.25 }
+                        h += linesHeight(item.text, fontSize: base, width: textWidth - 24 * depth)
+                        firstItem = false
+                    } else if lines[i].hasPrefix("  "), !Self.trimSpaces(lines[i]).isEmpty {
+                        h += lineSpacing + linesHeight(Self.trimSpaces(lines[i]), fontSize: base, width: textWidth - 24)
+                    } else {
+                        break
+                    }
+                    i += 1
+                }
+                block(h, top: base * 0.25, bottom: 16)
+                continue
+            }
+            var h: CGFloat = 0
+            var firstLine = true
+            while i < lines.count, !Self.isSpecial(lines[i]) {
+                var q = Self.trimSpaces(lines[i])
+                var depth: CGFloat = 0
+                while q.first == ">" { depth += 1; q = Self.trimSpaces(q.dropFirst()) }
+                let th = linesHeight(q, fontSize: base, width: textWidth - 13 * depth)
+                h += firstLine ? th : lineSpacing + th
+                firstLine = false
+                i += 1
+            }
+            if firstLine { i += 1; continue }
+            block(h, top: 0, bottom: 12)
+        }
+        return total + 12
+    }
+
+    /// `| --- | :---: |` — the header/body separator row.
+    static func isTableSeparator(_ line: Substring) -> Bool {
+        var t = Substring(line.trimmingCharacters(in: .whitespaces))
+        while t.first == "|" { t = t.dropFirst() }
+        t = Substring(t.trimmingCharacters(in: .whitespaces))
+        if t.first == ":" { t = t.dropFirst() }
+        return t.prefix { $0 == "-" }.count >= 2
+    }
+
+    private func tableHeight(_ rows: [Substring]) -> CGFloat {
+        let cells: [[String]] = rows.map { row in
+            var r = Substring(row.trimmingCharacters(in: .whitespaces))
+            while r.first == "|" { r = r.dropFirst() }
+            while r.last == "|" { r = r.dropLast() }
+            return r.split(separator: "|", omittingEmptySubsequences: false).map {
+                Self.stripInlineMarkers($0).trimmingCharacters(in: .whitespaces)
+            }
+        }
+        guard let columnCount = cells.map(\.count).max(), columnCount > 0 else { return 36 }
+        var natural = [CGFloat](repeating: 0, count: columnCount)
+        var unbreakable = [CGFloat](repeating: 0, count: columnCount)
+        for row in cells {
+            for (j, cell) in row.enumerated() {
+                natural[j] = max(natural[j], Self.displayWidth(cell, fontSize: baseFontSize).width + 16)
+                for word in Self.unbreakableRuns(cell) {
+                    unbreakable[j] = max(unbreakable[j], Self.displayWidth(word, fontSize: baseFontSize).width + 20)
+                }
+            }
+        }
+        let plan = TableColumnPlanner.plan(
+            columns: natural.indices.map { TableColumnPlanner.Column(natural: natural[$0], minUnbreakable: unbreakable[$0]) },
+            availableWidth: textWidth)
+        var h: CGFloat = 0
+        for row in cells {
+            var rowH: CGFloat = 36
+            for (j, cell) in row.enumerated() where j < plan.widths.count {
+                let (w, wide) = Self.displayWidth(cell, fontSize: baseFontSize)
+                let n = max(1, (w / max(plan.widths[j] - 16, 20)).rounded(.up))
+                rowH = max(rowH, n * (wide ? wideLineHeight : latinLineHeight) + 16)
+            }
+            h += rowH
+        }
+        return h
+    }
+
+    /// Runs a table cell cannot break inside (Latin words, paths, numbers).
+    static func unbreakableRuns(_ s: String) -> [String] {
+        var runs: [String] = []
+        var current = ""
+        for scalar in s.unicodeScalars {
+            let v = scalar.value
+            let inRun = (0x41...0x5A).contains(v) || (0x61...0x7A).contains(v) || (0x30...0x39).contains(v)
+                || "_./:-=@$".unicodeScalars.contains(scalar)
+            if inRun { current.unicodeScalars.append(scalar) } else if !current.isEmpty { runs.append(current); current = "" }
+        }
+        if !current.isEmpty { runs.append(current) }
+        return runs
+    }
+}
+// END MarkdownHeightEstimate
+
+// [T-scroll-sync-defer] Work that is not urgent but costs a frame or more on the
+// main thread (the home list re-diffing 2000+ rows after an iCloud batch, a chat
+// reload) used to land in the middle of a fling: on device every 50-90 ms
+// dropped frame while flicking coincided with an inbound sync apply or the
+// home list refresh it triggered. Callers route such work through here; it runs
+// at once while the chat list is still, and otherwise once the list has been
+// still for `quietInterval`. Same key coalesces (the latest closure wins).
+//
+// "Moving" is derived from the last user-driven scroll callback rather than a
+// begin/end flag, so a list torn down mid-fling can never leave it stuck on.
+// BEGIN ChatScrollActivity
+@MainActor
+enum ChatScrollActivity {
+    static let quietInterval: CFTimeInterval = 0.3
+    static var clock: () -> CFTimeInterval = { CACurrentMediaTime() }
+    private static var lastMovedAt: CFTimeInterval = -.infinity
+    private(set) static var pending: [String: () -> Void] = [:]
+    private static var drainScheduled = false
+
+    /// Called from the chat list's `scrollViewDidScroll` while the user drags or it decelerates.
+    static func noteMoving() { lastMovedAt = clock() }
+
+    static var isMoving: Bool { clock() - lastMovedAt < quietInterval }
+
+    static func runWhenStill(_ key: String, _ work: @escaping () -> Void) {
+        guard isMoving else { work(); return }
+        pending[key] = work
+        scheduleDrain()
+    }
+
+    private static func scheduleDrain() {
+        guard !drainScheduled else { return }
+        drainScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + quietInterval) {
+            MainActor.assumeIsolated { drain() }
+        }
+    }
+
+    /// Runs everything held back once the list is still; re-arms while it keeps moving.
+    static func drain() {
+        drainScheduled = false
+        guard !pending.isEmpty else { return }
+        if isMoving { scheduleDrain(); return }
+        let work = pending
+        pending = [:]
+        for key in work.keys.sorted() { work[key]?() }
+    }
+}
+// END ChatScrollActivity
+
+// BEGIN StreamGrowthPin
+/// [T-new-session-first-block-jump] How far a pinned list scrolls when a
+/// streaming row grows by `delta`: enough to keep the content's bottom on the
+/// pin line (the composer top, `pinLine` in content coordinates), never more
+/// than the growth. Content that still ends above the line does not scroll;
+/// content crossing it scrolls by the overshoot; content already at or past
+/// it scrolls by the whole growth, as before.
+enum StreamGrowthPin {
+    static func offsetAdjustment(delta: CGFloat, contentBottomAfter: CGFloat, pinLine: CGFloat) -> CGFloat {
+        guard delta > 0 else { return 0 }
+        return min(delta, max(0, contentBottomAfter - pinLine))
+    }
+}
+// END StreamGrowthPin

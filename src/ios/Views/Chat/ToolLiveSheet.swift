@@ -429,14 +429,21 @@ struct FloatingToolBar: View {
     }
 
     /// Index of the last agent block that is still running, if any.
-    private var runningAgentIdx: Int? {
-        blockFacts.lastIndex { $0.isAgent && $0.isActive }
+    private var runningAgentIdx: Int? { runningAgentIdx(in: blockFacts) }
+
+    /// [T-composer-typing-lag] `facts:` variants let one body pass share a
+    /// single snapshot. Each `blockFacts` walks every tool block of the session
+    /// and reads several `@Published` fields; the bar used to take 3–5 such
+    /// snapshots per render, and it re-renders with its parent on every
+    /// keystroke (iOS 16 trace: FloatingToolBar 6.8% of the main thread while
+    /// typing, `Published.subscript.getter` 5.1%).
+    private func runningAgentIdx(in facts: [BlockFacts]) -> Int? {
+        facts.lastIndex { $0.isAgent && $0.isActive }
     }
 
     /// The most recently finished non-agent tool whose completion is less
     /// than `holdSeconds` old — only meaningful while an agent still runs.
-    private var recentlyFinishedIdx: Int? {
-        let facts = blockFacts
+    private func recentlyFinishedIdx(in facts: [BlockFacts]) -> Int? {
         guard facts.contains(where: { $0.isAgent && $0.isActive }) else { return nil }
         return facts.indices.last { i in
             let b = facts[i]
@@ -445,7 +452,9 @@ struct FloatingToolBar: View {
         }
     }
 
-    private var displayedIdx: Int {
+    private var displayedIdx: Int { displayedIdx(in: blockFacts) }
+
+    private func displayedIdx(in facts: [BlockFacts]) -> Int {
         // [T-agent-manual-hold] A manual pick wins outright, but only for a
         // minute. Previously it won forever: once the user touched an arrow
         // the bar never auto-followed again for the life of the view, which
@@ -491,14 +500,13 @@ struct FloatingToolBar: View {
         // running-check was added to fix, one state further along.
         // [T-toolbar-published-read-uaf] Same snapshot as above — no
         // `@Published` reads inside the index math.
-        let facts = blockFacts
         if let followed = followedAgentId,
            let idx = facts.firstIndex(where: { $0.id == followed }),
            facts[idx].isActive,
            now.timeIntervalSince(followedAt) < Self.agentFocusExpiry {
             return idx
         }
-        if let held = recentlyFinishedIdx { return held }
+        if let held = recentlyFinishedIdx(in: facts) { return held }
         if let activeIdx = facts.lastIndex(where: { $0.isActive }) { return activeIdx }
         // [T-agent-follow-expiry] Nothing running: the NEWEST block wins.
         //
@@ -655,16 +663,18 @@ struct FloatingToolBar: View {
     }
 
     var body: some View {
+        let facts = blockFacts
         Group {
-            if runningAgentIdx != nil {
+            if runningAgentIdx(in: facts) != nil {
                 // 1 Hz re-evaluation while any agent runs. This tick is also
-                // what drives the follow decision — see below.
+                // what drives the follow decision — see below. Each tick takes
+                // a fresh snapshot: block states move between ticks.
                 TimelineView(.periodic(from: Date(), by: 1)) { ctx in
                     collapsedBar(now: ctx.date)
                         .onChange(of: ctx.date) { _ in tickFollow() }
                 }
             } else {
-                collapsedBar(now: Date())
+                collapsedBar(now: Date(), facts: facts)
             }
         }
         // [T-agent-follow-change] The follow decision is driven by the 1 Hz
@@ -781,9 +791,13 @@ extension FloatingToolBar {
     /// SwiftUI evaluation earlier, and the agent loop can clear the blocks in
     /// between. An out-of-range index renders nothing instead of trapping.
     fileprivate func collapsedBar(now: Date) -> some View {
+        collapsedBar(now: now, facts: blockFacts)
+    }
+
+    private func collapsedBar(now: Date, facts: [BlockFacts]) -> some View {
         var copy = self
         copy.now = now
-        let idx = copy.displayedIdx
+        let idx = copy.displayedIdx(in: facts)
         return Group {
             if copy.toolBlocks.indices.contains(idx) {
                 collapsedBarContent(block: copy.toolBlocks[idx], idx: idx)
@@ -810,10 +824,43 @@ extension FloatingToolBar {
                     browserPool: browserPool,
                     onTap: { openTool(block) }
                 )
+                // [T-tool-preview-longpress-close] Long-press offers to turn the
+                // preview off. Mounted here, not inside ToolPreviewThumbnail,
+                // because that view renders itself again for a sub agent's
+                // inner tool and the menus would nest.
+                .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 8))
+                .contextMenu {
+                    Button(role: .destructive) {
+                        Self.closeToolPreview()
+                    } label: {
+                        Label(AppLocalized("Close Preview Window"), systemImage: "eye.slash")
+                    }
+                }
                 .offset(x: 10)
             }
         }
         .animation(.easeInOut(duration: 0.15), value: idx)
+    }
+
+    /// Turns the preview off and says where to turn it back on. Static and
+    /// writing UserDefaults directly, so the menu action captures no view
+    /// (see [T-ios-crash-objectdestroy-composer-uaf]); every
+    /// `@AppStorage("toolPreviewEnabled")` reader refreshes from the store.
+    /// Menu toggle for the status bar's long-press. Read when the menu opens,
+    /// so the checkmark always matches the setting; turning it off goes
+    /// through `closeToolPreview()` for the same where-to-re-enable toast.
+    static var toolPreviewBinding: Binding<Bool> {
+        Binding(
+            get: { (UserDefaults.standard.object(forKey: "toolPreviewEnabled") as? Bool) ?? true },
+            set: { on in
+                if on { UserDefaults.standard.set(true, forKey: "toolPreviewEnabled") } else { closeToolPreview() }
+            })
+    }
+
+    static func closeToolPreview() {
+        UserDefaults.standard.set(false, forKey: "toolPreviewEnabled")
+        MinisToast.show(AppLocalized("Preview window closed. You can turn it back on in Settings > Appearance."),
+                        duration: 3.2, systemImage: "eye.slash")
     }
 }
 
@@ -1079,6 +1126,10 @@ struct ToolLiveSheet: View {
         }
         .onChange(of: activeSheet?.id) { _ in
             if let s = activeSheet { lastPresentedSheet = s }
+            // [T-agent-transcript-diag] Pairs with HelperTranscriptPage's
+            // appear/load lines: a field report of "tapped, screen dimmed,
+            // nothing appeared" needs to show which step never happened.
+            AppLogger(category: "ToolLiveSheet").info("[agent] nested sheet → \(activeSheet.map { String(describing: $0).prefix(40) } ?? "none")")
         }
     }
 
@@ -1245,10 +1296,16 @@ struct ToolLiveSheet: View {
                     // command to prefill; its top-right action is the child's
                     // live conversation, behind a chat-bubble glyph.
                     Button {
+                        // [T-subagent-link-survives-reload] Last resort: the live
+                        // job that this block started, by tool_use id.
                         let childId = block.helperChildSessionId
                             ?? (AIChatViewModel.parseDelegateResult(block.content)?["child_session_id"] as? String)
-                        AppLogger(category: "ToolLiveSheet").info("[agent] transcript button tapped child=\(childId?.prefix(8) ?? "nil")")
-                        guard let childId else { return }
+                            ?? block.toolUseId.flatMap { AgentJobRegistry.shared.childSessionId(forToolUseId: $0) }
+                        AppLogger(category: "ToolLiveSheet").info("[agent] transcript button tapped child=\(childId?.prefix(8) ?? "nil") linked=\(block.helperChildSessionId != nil) tool=\(block.toolUseId?.prefix(12) ?? "nil")")
+                        guard let childId else {
+                            AppLogger(category: "ToolLiveSheet").warning("[agent] transcript button: no child session for tool=\(block.toolUseId?.prefix(12) ?? "nil") — nothing to open")
+                            return
+                        }
                         // [T-agent-transcript-halfsheet] Stack the transcript ON
                         // TOP of this tool sheet, so closing it returns here.
                         //
@@ -1335,6 +1392,8 @@ struct ToolLiveSheet: View {
             return "read_image(\(truncateParam(path)))"
         case .memoryTool(let action):
             return "\(truncateParam(action))"
+        case .userAskTool:
+            return "user_ask"
         case .delegateTool(let title):
             return "delegate_task(\(truncateParam(title)))"
         case .info:
@@ -1357,6 +1416,7 @@ struct ToolLiveSheet: View {
         case .readImageTool: Image(systemName: "photo")
         case .memoryTool: Image(systemName: "brain.head.profile")
         case .delegateTool: Image(systemName: HelperAccent.icon)
+        case .userAskTool: Image(systemName: "questionmark.bubble")
         case .info: Image(systemName: "arrow.triangle.2.circlepath")
         case .text: Image(systemName: "text.alignleft")
         case .thinking: Image("ThinkingIcon")
@@ -1367,7 +1427,11 @@ struct ToolLiveSheet: View {
 
     @ViewBuilder
     private var liveContent: some View {
-        if isLive {
+        if case .userAskTool = block.kind {
+            // [T-user-ask-thumbnail] The same digest as the tile, never the
+            // raw stream placeholder or the result JSON.
+            UserAskSummaryView(block: block, compact: false)
+        } else if isLive {
             // Currently executing — show live content
             switch block.kind {
             case .browserTool: browserContent
@@ -1377,6 +1441,14 @@ struct ToolLiveSheet: View {
             case .fileEditTool:
                 fileDiffContent(isStreaming: true)
             case .fileReadTool: fileEditorContent(block.content)
+            case .readImageTool:
+                // [T-readimage-fail-visible] Same card as the completed view,
+                // so "reading…" and a failure reason sit in a framed card.
+                if let img = block.imageFilePath.flatMap({ UIImage(contentsOfFile: $0) }) {
+                    browserResultContent(image: img, text: block.content)
+                } else {
+                    readImageResultContent(block.content)
+                }
             case .memoryTool:
                 let content = memoryWriteContentFromArgs() ?? block.content
                 memoryEditorContent(content, action: memoryActionName(), isStreaming: true)
@@ -1403,7 +1475,7 @@ struct ToolLiveSheet: View {
                 if let img = block.imageFilePath.flatMap({ UIImage(contentsOfFile: $0) }) {
                     browserResultContent(image: img, text: block.content)
                 } else {
-                    textContent
+                    readImageResultContent(block.content)
                 }
             case .fileEditTool:
                 fileDiffContent()
@@ -1454,6 +1526,8 @@ struct ToolLiveSheet: View {
                 memoryEditorContent(content, action: memoryActionName(), resultText: block.content)
             } else if case .browserTool = block.kind, let text = item.snapshot.text, !text.isEmpty {
                 browserTextResultContent(text)
+            } else if case .readImageTool = block.kind {
+                readImageResultContent(item.snapshot.text.flatMap { $0.isEmpty ? nil : $0 } ?? block.content)
             } else if let text = item.snapshot.text, !text.isEmpty {
                 snapshotTextContent(text)
             } else {
@@ -2114,6 +2188,87 @@ struct ToolLiveSheet: View {
         }
     }
 
+    /// [T-readimage-fail-visible] read_image without an image to show: still
+    /// reading, or failed. Same framed card as `fileEditorContent` (title
+    /// bar, divider, monospaced body, rounded 0.5pt border, path footer) - it
+    /// used to fall through to the generic text view, a bare line of tinted
+    /// text with no container, and on a failure that line was the stale
+    /// "Reading image …" progress text rather than the reason.
+    private func readImageResultContent(_ text: String) -> some View {
+        let path: String = {
+            if case .readImageTool(let p) = block.kind { return p }
+            return ""
+        }()
+        let fileName = path.isEmpty ? "image" : (path as NSString).lastPathComponent
+        let failed: Bool = {
+            if case .failed = block.toolStatus { return true }
+            return false
+        }()
+        let body = text.isEmpty ? " " : text
+
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                VStack(spacing: 0) {
+                    // Title bar
+                    HStack(spacing: 6) {
+                        Image(systemName: failed ? "exclamationmark.triangle.fill" : "photo")
+                            .font(.system(size: 12))
+                            .foregroundStyle(failed ? Color.red : Color(UIColor.secondaryLabel))
+                        Text(fileName)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(Color(UIColor.label))
+                            .lineLimit(1)
+                        if failed {
+                            Text("Failed")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Color.red.opacity(0.9))
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.13, alpha: 1) : UIColor(white: 0.92, alpha: 1) }))
+
+                    Divider()
+
+                    Text(body)
+                        .font(.system(size: 13, design: .monospaced))
+                        .foregroundStyle(failed ? Color.red : Color(UIColor.label))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 14)
+                        .textSelection(.enabled)
+                }
+                .background(Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.10, alpha: 1) : UIColor(white: 0.94, alpha: 1) }))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.25, alpha: 1) : UIColor(white: 0.82, alpha: 1) }), lineWidth: 0.5))
+                .padding(.horizontal, 12)
+                .padding(.top, 12)
+
+                if !path.isEmpty {
+                    HStack(spacing: 6) {
+                        Image(systemName: "info.circle")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color(UIColor.secondaryLabel))
+                        Text(path)
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundStyle(Color(UIColor.label))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.15, alpha: 1) : UIColor(white: 0.95, alpha: 1) }))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.25, alpha: 1) : UIColor(white: 0.82, alpha: 1) }), lineWidth: 0.5))
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
+                }
+            }
+            .padding(.bottom, 16)
+        }
+    }
+
     private func fileEditorContent(_ fileContent: String, toolResult: String? = nil, isStreaming: Bool = false) -> some View {
         let fileName: String = {
             if case .fileWriteTool(let p) = block.kind { return (p as NSString).lastPathComponent }
@@ -2694,6 +2849,7 @@ struct ToolLiveSheet: View {
         case .readImageTool: return "Minis is reading Image"
         case .memoryTool: return "Minis is using Memory"
         case .delegateTool: return "Minis is using an Agent"
+        case .userAskTool: return "Minis is asking you"
         case .info: return "Minis"
         case .text: return "Minis"
         case .thinking: return "Minis"
@@ -2728,6 +2884,7 @@ struct ToolLiveSheet: View {
         case .readImageTool: return .purple
         case .memoryTool: return .pink
         case .delegateTool: return HelperAccent.color
+        case .userAskTool: return .accentColor
         case .info: return .secondary
         case .text: return .primary
         case .thinking: return .blue
@@ -2822,6 +2979,11 @@ private struct ToolPreviewThumbnail: View {
                 } else {
                     HelperThumbnailView(block: block)
                 }
+            } else if case .userAskTool = block.kind {
+                // [T-user-ask-thumbnail] Its own tile, ahead of the snapshot
+                // branches: the persisted snapshot is the result JSON, and the
+                // live content is the "Tool: user_ask" stream placeholder.
+                UserAskSummaryView(block: block, compact: true)
             } else if let snapshot, let snapshotImage = loadSnapshotImage(snapshot) {
                 Image(uiImage: snapshotImage)
                     .resizable()
@@ -3113,6 +3275,7 @@ private struct ToolPreviewThumbnail: View {
             let name = (p as NSString).lastPathComponent
             return (!p.isEmpty && name != "/" && name.contains(".")) ? name : AppLocalized("Read image")
         case .memoryTool(let a): return a
+        case .userAskTool: return AppLocalized("Question for you")
         default: return ""
         }
     }
@@ -3132,6 +3295,7 @@ private struct ToolPreviewThumbnail: View {
         case .readImageTool: return .purple
         case .memoryTool: return .pink
         case .delegateTool: return HelperAccent.color
+        case .userAskTool: return .accentColor
         case .info: return .secondary
         case .text: return .primary
         case .thinking: return .blue
@@ -3196,23 +3360,40 @@ private struct ToolStatusBar: View {
     var leadingInset: CGFloat = 0
 
     var body: some View {
+        let title = displayTitle
         HStack(spacing: 2) {
-            statusIcon
+            HStack(spacing: 2) {
+                statusIcon
 
-            // [T-step-timestamp v2 aa8b1128] Inline HH:mm:ss prefix removed
-            // — see ToolLiveSheet.sheetNavBar for the new "start +
-            // elapsed" display, surfaced only inside the tapped-open
-            // detail sheet so the always-visible status bar stays clean.
+                // [T-step-timestamp v2 aa8b1128] Inline HH:mm:ss prefix removed
+                // — see ToolLiveSheet.sheetNavBar for the new "start +
+                // elapsed" display, surfaced only inside the tapped-open
+                // detail sheet so the always-visible status bar stays clean.
 
-            Text(displayTitle)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(ChatColors.secondaryText)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .contentShape(Rectangle())
-                .onTapGesture { withAnimation { expanded = true } }
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(ChatColors.secondaryText)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .contentShape(Rectangle())
+                    .onTapGesture { withAnimation { expanded = true } }
 
-            Spacer(minLength: 1)
+                Spacer(minLength: 1)
+            }
+            // [T-tool-preview-longpress-close] Long-press toggles the preview
+            // window — the only in-place way to bring it back once closed.
+            // Only the status/title area carries the menu: the pager arrows
+            // own a long-press of their own (jump to the end), and a menu over
+            // them would fire on the same hold. The preview is an opaque card
+            // because the bar's glass does not survive the lift snapshot.
+            .contentShape(Rectangle())
+            .contextMenu {
+                Toggle(isOn: FloatingToolBar.toolPreviewBinding) {
+                    Label(AppLocalized("Tool Preview Window"), systemImage: "rectangle.inset.topleft.filled")
+                }
+            } preview: {
+                MessageContextMenuPreview(text: title)
+            }
 
             if toolBlocks.count > 1 {
                 HStack(spacing: 2) {

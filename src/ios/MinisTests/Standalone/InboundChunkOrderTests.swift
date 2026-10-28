@@ -46,6 +46,24 @@
 
 import Foundation
 
+/// The sources that used to be the single file Agent/Chat/ChatStore.swift -
+/// the actor plus the files it was split into - read as one text.
+func chatStoreSource() -> String {
+    let chat = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Agent/Chat")
+    let names = ["ChatStore", "ChatStore+Schema", "ChatStore+SessionCRUD", "ChatStore+SessionList",
+                 "ChatStore+Search", "ChatStore+SessionQueries", "ChatStore+Folders",
+                 "ChatStore+SessionDeletion", "ChatStore+StoredPreview", "ChatStore+Messages",
+                 "ChatStore+Media", "ChatStore+CompactMarkers", "ChatStore+Tombstones",
+                 "ChatStore+WebAppShortcuts", "ChatStore+Maintenance", "ChatStore+Helpers",
+                 "ChatStore+UsageStats", "ChatStoreModels", "ContentPart+ProviderConversion",
+                 "RawMessage+Conversion", "ChatStore+SyncDirty", "ChatStore+SyncRemoteSessions",
+                 "ChatStore+SyncRemoteRecords", "ChatStore+BackupRestore"]
+    return names.compactMap { try? String(contentsOf: chat.appendingPathComponent($0 + ".swift"), encoding: .utf8) }
+        .joined(separator: "\n")
+}
+
 var failures = 0
 func check(_ label: String, _ ok: Bool, _ detail: @autoclosure () -> String = "") {
     if ok { print("  ✅ \(label)") }
@@ -233,7 +251,7 @@ let iosRoot = here.deletingLastPathComponent().deletingLastPathComponent()
 func src(_ rel: String) -> String { (try? String(contentsOfFile: iosRoot.appendingPathComponent(rel).path, encoding: .utf8)) ?? "" }
 let core = src("Agent/Sync/V2/SyncCore.swift")
 let transport = src("Agent/Sync/V2/ICloudSharedZoneTransport.swift")
-let chatStore = src("Agent/Chat/ChatStore.swift")
+let chatStore = chatStoreSource()
 let body = core.components(separatedBy: "func processInbound(_ batch: SyncInboundBatch").dropFirst().first?
     .components(separatedBy: "// MARK: - Diagnostics").first ?? ""
 check("processInbound starts a MainActor task per call and stores it as the tail",

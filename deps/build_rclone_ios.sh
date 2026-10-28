@@ -13,7 +13,19 @@
 # Which backends get linked is decided by deps/rclone-mobile/backends/backends.go,
 # not here. rclone itself is a go.mod dependency (pinned version), never
 # vendored — upgrading is a one-line change to that file.
+#
+# The same archive carries the embedded Tailscale node (deps/rclone-mobile/tsnet):
+# one process cannot link two Go c-archives (two Go runtimes). GO_TAGS trims
+# Tailscale features at build time; the default:
+#   ts_omit_logtail    never upload logs to log.tailscale.com
+#   ts_omit_portmapper no UPnP / NAT-PMP / PCP to the LAN gateway, so iOS shows
+#                      no Local Network permission prompt (NAT traversal then
+#                      relies on STUN + DERP)
+# Do NOT add ts_omit_acme: tsnet does not compile without it.
+# Override with GO_TAGS="" (nothing omitted) or your own comma-separated list.
 set -euo pipefail
+
+GO_TAGS="${GO_TAGS-ts_omit_logtail,ts_omit_portmapper}"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SRC="$ROOT/deps/rclone-mobile"
@@ -30,9 +42,11 @@ build_slice() {
   echo "==> $tag"
   CC="$(xcrun --sdk "$sdk" -f clang) -isysroot $(xcrun --sdk "$sdk" --show-sdk-path) $minflag -arch arm64" \
   CGO_ENABLED=1 GOOS=ios GOARCH=arm64 \
-    go build -buildmode=c-archive -trimpath -ldflags="-s -w" \
+    go build -buildmode=c-archive -trimpath -ldflags="-s -w" ${GO_TAGS:+-tags "$GO_TAGS"} \
       -o "$BUILD/$tag/librclone.a" ./librclone
 }
+
+echo "==> $(go version) tags='${GO_TAGS}'"
 
 build_slice iphoneos          "-miphoneos-version-min=16.0"        device
 build_slice iphonesimulator   "-mios-simulator-version-min=16.0"   simulator

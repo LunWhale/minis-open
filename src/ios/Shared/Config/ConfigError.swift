@@ -32,3 +32,21 @@ enum ConfigError: Error, CustomStringConvertible {
         }
     }
 }
+
+/// [T-envvar-disable] Non-fatal notes raised while a confirmed write is being
+/// applied - e.g. a `$$NAME` reference to a disabled environment variable,
+/// which resolves to an empty value instead of failing. The write batch
+/// clears this before applying and returns what was collected as `warnings`
+/// next to `applied`, so the agent can tell the user.
+@MainActor
+enum ConfigWriteWarnings {
+    private static var pending: [String] = []
+
+    static func add(_ message: String) { pending.append(message) }
+
+    /// Everything collected since the last drain.
+    static func drain() -> [String] {
+        defer { pending = [] }
+        return pending
+    }
+}

@@ -35,12 +35,17 @@ enum ProgrammaticPromptOrigin: Equatable {
     case shortcut
     /// An `AgentJobRegistry` job (scheduled trigger, helper completion, …).
     case job(jobId: String)
+    /// [T-user-ask-deferred] The user's answer to a deferred user_ask card,
+    /// sent as their next message. The user is there: with the app in the
+    /// foreground the run that answers it can ask again normally.
+    case userAskAnswer
 
     var logLabel: String {
         switch self {
         case .cli: return "cli"
         case .shortcut: return "shortcut"
         case .job(let id): return "job:\(id.prefix(8))"
+        case .userAskAnswer: return "user_ask_answer"
         }
     }
 }
@@ -74,11 +79,22 @@ extension AIChatViewModel {
     ///   - silent: suppress the send/enqueue haptic and, for a `.sent` turn,
     ///     the completion haptic. A `.queued` prompt drains inside the user's
     ///     own loop, whose completion haptic is theirs and is kept.
+    ///   - presetToolCall: [T-scheduled-preset-tool] a scheduled fire's preset
+    ///     first step. Kept on the vm until the request that answers this
+    ///     fire's envelope, which it then replaces (see `takePresetToolStream`).
+    ///   - bypassContextPrompt: [T-user-ask-deferred-delivery] start the turn
+    ///     even when the context is near capacity, instead of parking the text
+    ///     behind the "Context Near Capacity" alert. A parked programmatic
+    ///     prompt is dropped when that alert is cancelled (or never seen and
+    ///     cleared by the next loadSession). The agent loop's in-loop guard
+    ///     compacts on its own, so nothing is lost by skipping the alert.
     @MainActor
     @discardableResult
     func submitProgrammaticPrompt(_ text: String,
                                   origin: ProgrammaticPromptOrigin,
-                                  silent: Bool = true) -> ProgrammaticSubmitOutcome {
+                                  silent: Bool = true,
+                                  presetToolCall: ScheduledPresetToolCallRequest? = nil,
+                                  bypassContextPrompt: Bool = false) -> ProgrammaticSubmitOutcome {
         let tag = "📨[Programmatic] origin=\(origin.logLabel) vm=\(vmInstanceId) sid=\(sessionId?.prefix(8) ?? "nil")"
 
         guard remoteDeviceId == nil else {
@@ -124,6 +140,22 @@ extension AIChatViewModel {
         // SessionsOffloadBridge.stageAttachments / SendPromptIntent), and the
         // doc comment above promises they are included.
 
+        // Registered before the hand-off: once send()/enqueuePrompt() accept
+        // the prompt, the turn that carries it may be requested at any later
+        // main-actor hop. Matching is by the envelope's job id, so it does not
+        // matter which path (send, drain, finish-branch injection) runs it.
+        // A rejection below restores what was there before (an earlier fire of
+        // the same job may still be queued with its own preset).
+        let displacedPreset = presetToolCall.flatMap { pendingPresetToolCalls[$0.jobId] }
+        func undoPresetRegistration() {
+            guard let preset = presetToolCall else { return }
+            pendingPresetToolCalls[preset.jobId] = displacedPreset
+        }
+        if let preset = presetToolCall {
+            pendingPresetToolCalls[preset.jobId] = preset
+            logger.info("\(tag) preset \(preset.call.toolName) armed for job \(preset.jobId.prefix(8))")
+        }
+
         if isProcessing {
             // Busy: hand to the queue.
             let before = promptQueue.count
@@ -135,6 +167,7 @@ extension AIChatViewModel {
             enqueuePrompt(silent: silent, deferUntilIdle: gentle, overrideText: text)
             guard promptQueue.count == before + 1 else {
                 logger.warning("\(tag) REJECTED — enqueuePrompt did not accept the prompt (queue \(before) → \(self.promptQueue.count))")
+                undoPresetRegistration()
                 return .rejected(reason: "enqueue_declined")
             }
             if silent, let queuedId = promptQueue.last?.id {
@@ -151,15 +184,115 @@ extension AIChatViewModel {
         // it spawns its Task, so the flip is the acceptance signal — every
         // other exit from send() is a silent return.
         programmaticSilentTurn = silent
+        programmaticTurnOrigin = origin  // [T-user-ask] no one to ask in this run
+        // [T-loop-reminder-scheduled-exempt] A scheduled fire starting a turn
+        // on an idle session: its poll is an expected repeat, not a loop. (A
+        // queued fire is exempted where it is taken off the queue instead.)
+        if Self.scheduledCallback(inQueuedText: text) != nil {
+            toolLoopDetector.exemptNextCallForScheduledFire()
+        }
+        if bypassContextPrompt { skipCompactCheck = true }
         send(overrideText: text)
+        // send() consumes the flag at its context check; an earlier return
+        // must not leave it armed for the user's next message.
+        if bypassContextPrompt { skipCompactCheck = false }
         guard isProcessing else {
             programmaticSilentTurn = false
+            programmaticTurnOrigin = nil
             let reason = showContextExhaustedPrompt ? "context_exhausted" : "send_declined"
             logger.warning("\(tag) REJECTED — send() did not start a loop (\(reason))")
+            undoPresetRegistration()
             return .rejected(reason: reason)
         }
         logger.info("\(tag) SENT — new loop started silent=\(silent)")
         return .sent
+    }
+}
+
+// MARK: - Preset first step of a scheduled fire  [T-scheduled-preset-tool]
+
+extension AIChatViewModel {
+
+    /// The local response that replaces a model request when the turn about to
+    /// be requested is a scheduled fire with a preset tool call: the preset's
+    /// tool_use, then `stop_reason: tool_use`. nil otherwise — the caller then
+    /// asks the provider as usual.
+    ///
+    /// Fed to `processStreamEvents` like a provider stream, so the tool card,
+    /// the committed assistant tool_use, the real execution and the
+    /// tool_result are exactly what a model-issued call produces.
+    ///
+    /// A preset runs only when its own envelope is in the trailing user
+    /// messages (see `ScheduledPresetToolCall.jobIdsToRun`), and is consumed on
+    /// use. A preset whose tool this turn does not offer is dropped, and the
+    /// turn runs as a plain scheduled prompt: a tool_use for an undeclared tool
+    /// is rejected by some providers.
+    /// [T-preset-cleared-on-stop] Drop presets whose scheduled fire the user
+    /// just stopped.
+    ///
+    /// A preset is consumed only when its turn is requested. A fire stopped
+    /// before that (waiting for a concurrency slot, or before its first
+    /// request) left the preset armed while its envelope stayed in history as
+    /// a trailing user message — so the user's NEXT typed turn matched it and
+    /// ran the stopped task's shell command instead of answering. Fires still
+    /// waiting in `promptQueue` keep theirs: Stop drains the queue afterwards,
+    /// and their envelope promises the model the step's output.
+    @MainActor
+    func dropPresetsOfStoppedTurn() {
+        guard !pendingPresetToolCalls.isEmpty else { return }
+        let stillQueued = Set(promptQueue.compactMap { item -> String? in
+            guard let callback = AgentCallback.parse(item.text.trimmingCharacters(in: .whitespacesAndNewlines)),
+                  callback.kind == .scheduled else { return nil }
+            return callback.jobId
+        })
+        let stopped = pendingPresetToolCalls.keys.filter { !stillQueued.contains($0) }
+        for jobId in stopped { pendingPresetToolCalls.removeValue(forKey: jobId) }
+        if !stopped.isEmpty {
+            logger.info("[PresetTool] Stop dropped \(stopped.count) armed preset(s) of the stopped turn (\(stillQueued.count) queued fire(s) keep theirs)")
+        }
+    }
+
+    @MainActor
+    func takePresetToolStream(tools: [AgentToolDefinition]) -> AsyncThrowingStream<AgentStreamEvent, Error>? {
+        guard !pendingPresetToolCalls.isEmpty else { return nil }
+        var trailing: [String] = []
+        for message in agentHistory.reversed() {
+            guard message.role == .user else { break }
+            for part in message.parts.reversed() {
+                if case .text(let t) = part { trailing.append(t) }
+            }
+        }
+        let jobIds = ScheduledPresetToolCall.jobIdsToRun(
+            trailingUserTexts: trailing.reversed(),
+            pending: Set(pendingPresetToolCalls.keys)
+        ) { text in
+            guard let callback = AgentCallback.parse(text.trimmingCharacters(in: .whitespacesAndNewlines)),
+                  callback.kind == .scheduled else { return nil }
+            return callback.jobId
+        }
+        guard !jobIds.isEmpty else { return nil }
+
+        var calls: [(id: String, name: String, args: [String: Any])] = []
+        for jobId in jobIds {
+            guard let request = pendingPresetToolCalls.removeValue(forKey: jobId) else { continue }
+            let name = request.call.toolName
+            guard tools.contains(where: { $0.name == name }) else {
+                logger.warning("[PresetTool] job \(jobId.prefix(8)): \(name) is not offered this turn — skipped, the model decides")
+                continue
+            }
+            let id = ScheduledPresetToolCall.makeToolUseId()
+            calls.append((id, name, request.call.toolArguments(title: request.title)))
+            logger.info("[PresetTool] job \(jobId.prefix(8)): running \(name) id=\(id) in place of a model request sid=\(self.sessionId?.prefix(8) ?? "nil")")
+        }
+        guard !calls.isEmpty else { return nil }
+        return AsyncThrowingStream { continuation in
+            for call in calls {
+                continuation.yield(.contentBlockStart(.toolUse(id: call.id, name: call.name)))
+                continuation.yield(.toolCallComplete(id: call.id, name: call.name, args: call.args, metadata: nil))
+            }
+            continuation.yield(.done(stopReason: .toolUse))
+            continuation.finish()
+        }
     }
 }
 
@@ -233,3 +366,301 @@ struct ProgrammaticTurnState: Equatable, Sendable {
     /// Finished = nothing left to run for this prompt AND the loop is idle.
     var isFinished: Bool { !processing && !stillQueued }
 }
+
+// MARK: - Which queued prompts a delivery point takes  [T-scheduled-preempt]
+//
+// A scheduled fire that lands while its session is busy used to wait for the
+// whole running turn to converge, and every prompt queued meanwhile was then
+// folded into ONE user message — three fires of a 1-minute loop arrived as a
+// single turn after a 4-minute task (device run 2026-09-27). Now:
+//
+//  * a scheduled fire enters at the next TOOL GAP (this batch's tool_results
+//    are committed and the model wants to continue), as its own user turn
+//    behind a bridge, with a reminder that it was inserted and that the task
+//    in progress must be finished afterwards;
+//  * at most one job per gap; several fires of the same job that piled up are
+//    coalesced into the newest one, and the reminder says how many;
+//  * a user's own follow-up keeps its existing interrupt, but no longer drags
+//    queued scheduled fires along;
+//  * at the end of a turn (or when the session is idle) each scheduled job's
+//    fire is still its own turn instead of being merged with the others.
+//
+// Sub-agent callbacks (finished / progress) are NOT scheduled fires: they keep
+// waiting for the end of the turn ([T-p2-gentle-job-injection]).
+
+/// Where the running loop is when it looks at `promptQueue`.
+enum QueueDeliveryPoint: Equatable {
+    /// Between two tool steps: the batch's tool_results are committed and the
+    /// model asked to continue (stop reason tool_use).
+    case toolGap
+    /// The turn converged (a reply without tool calls), or the session is idle.
+    case turnEnd
+}
+
+/// What one delivery takes out of `promptQueue`.
+struct QueueTake: Equatable {
+    /// Delivered, in queue order, together as ONE user turn.
+    let deliver: [UUID]
+    /// Taken out WITHOUT being delivered: older fires of the same scheduled
+    /// job, superseded by the newest one in `deliver`.
+    let coalesced: [UUID]
+    /// Set when this take is one scheduled job's fire.
+    let scheduledJobId: String?
+}
+
+/// The pure rule behind every delivery point, so it is unit-testable.
+enum QueueDeliveryPlanner {
+    struct Item: Equatable {
+        let id: UUID
+        /// The user's own follow-up (or a CLI / Shortcut prompt): interrupts
+        /// the running plan at the next tool boundary.
+        let interruptsAtToolGap: Bool
+        /// The job id when the prompt is a scheduled fire's envelope.
+        let scheduledJobId: String?
+    }
+
+    static func take(_ items: [Item], at point: QueueDeliveryPoint) -> QueueTake? {
+        guard !items.isEmpty else { return nil }
+        func scheduledTake(_ jobId: String) -> QueueTake {
+            let fires = items.filter { $0.scheduledJobId == jobId }
+            return QueueTake(deliver: fires.suffix(1).map(\.id),
+                             coalesced: fires.dropLast().map(\.id),
+                             scheduledJobId: jobId)
+        }
+        switch point {
+        case .toolGap:
+            // The user's follow-up first, exactly as before — but only theirs.
+            let typed = items.filter(\.interruptsAtToolGap)
+            if !typed.isEmpty {
+                return QueueTake(deliver: typed.map(\.id), coalesced: [], scheduledJobId: nil)
+            }
+            // Then the scheduled job that has waited longest. Other jobs wait
+            // for the next gap; sub-agent callbacks wait for the turn to end.
+            if let jobId = items.first(where: { $0.scheduledJobId != nil })?.scheduledJobId {
+                return scheduledTake(jobId)
+            }
+            return nil
+        case .turnEnd:
+            if let jobId = items[0].scheduledJobId { return scheduledTake(jobId) }
+            // Everything else still arrives together, as it always has; the
+            // scheduled fires behind it get their own turns afterwards.
+            let rest = items.filter { $0.scheduledJobId == nil }
+            return QueueTake(deliver: rest.map(\.id), coalesced: [], scheduledJobId: nil)
+        }
+    }
+}
+
+/// The model-facing text added after an inserted scheduled fire's envelope.
+/// Wrapped in <system-reminder>, so the chat (which strips reminders from user
+/// rows) keeps showing just the fire's card.
+enum ScheduledInsertText {
+    /// For a fire inserted between two tool steps of a running task.
+    static func midTaskReminder(title: String, hasPreset: Bool, coalescedCount: Int) -> String {
+        var s = "<system-reminder>Scheduled task \"\(title)\" fired and was inserted here — not your last tool result, not a user request."
+        if hasPreset {
+            s += " Preset command already ran; read the result below, don't re-run it."
+        }
+        if coalescedCount > 0 {
+            s += " It also fired \(coalescedCount) more time\(coalescedCount == 1 ? "" : "s") while busy; only this latest is shown."
+        }
+        // [T-bridge-to-reminder] Also carries what the old assistant bridge
+        // row said, now that no bridge precedes the fire.
+        s += " Handle briefly, then resume your unfinished prior task.</system-reminder>"
+        return s
+    }
+
+    /// For a fire delivered at the end of a turn (or to an idle session) after
+    /// earlier fires of the same job piled up. nil when nothing was coalesced.
+    static func coalescedNote(title: String, coalescedCount: Int) -> String? {
+        guard coalescedCount > 0 else { return nil }
+        return "<system-reminder>Scheduled task \"\(title)\" also fired \(coalescedCount) more time\(coalescedCount == 1 ? "" : "s") while busy; only the latest is shown above.</system-reminder>"
+    }
+}
+
+extension AIChatViewModel {
+
+    /// [T-queued-callback-reminder] Candidates for `QueuedCallbackReminder`
+    /// from the live queue.
+    @MainActor
+    func queuedCallbackReminderCandidates() -> [QueuedCallbackReminder.Candidate] {
+        promptQueue.map { prompt in
+            let callback = AgentCallback.parse(prompt.text.trimmingCharacters(in: .whitespacesAndNewlines))
+            return QueuedCallbackReminder.Candidate(
+                promptId: prompt.id,
+                callbackKind: callback?.kind.rawValue,
+                jobId: callback?.jobId ?? "",
+                title: callback?.title ?? "",
+                status: callback?.status ?? "",
+                deferUntilIdle: prompt.deferUntilIdle,
+                reminderSent: prompt.reminderSent)
+        }
+    }
+
+    /// [T-queued-callback-reminder] Marks the listed queued callbacks as
+    /// reminded. Called only once the request carrying the reminder has been
+    /// dispatched, so a request that fails before that re-lists the same jobs
+    /// (same text) on its retry. A prompt already taken out of the queue
+    /// meanwhile is simply not found. In memory only.
+    @MainActor
+    func markQueuedCallbacksReminded(_ promptIds: [UUID]) {
+        guard !promptIds.isEmpty else { return }
+        let ids = Set(promptIds)
+        for i in promptQueue.indices where ids.contains(promptQueue[i].id) {
+            promptQueue[i].reminderSent = true
+        }
+    }
+
+    /// [T-queued-callback-reminder] `history` (an outbound request copy) with
+    /// `reminder` appended to the tail of its last message, or nil when that
+    /// message cannot carry it.
+    ///
+    /// Same placement as the empty-response nudges
+    /// (`historyWithEmptyToolResultReminder` /
+    /// `historyWithEmptyCallbackReminder`): inside the last tool result's
+    /// content when the tail is a tool_result turn — so the tool_result block
+    /// structure, and what `mergeConsecutiveSameRole` later merges, stay
+    /// exactly as they were — otherwise onto the last text part of a user
+    /// message. Never written to `agentHistory` or `messages`.
+    static func historyAppendingRequestReminder(_ reminder: String,
+                                                to history: [AgentMessage]) -> [AgentMessage]? {
+        guard let lastIdx = history.indices.last, history[lastIdx].role == .user else { return nil }
+        var parts = history[lastIdx].parts
+        let suffix = "\n\n" + reminder
+        if let partIdx = parts.indices.last(where: {
+            if case .toolResult = parts[$0] { return true }; return false
+        }), case let .toolResult(id, name, content, isError, imageData, imageMimeType, pageURL, imageLinuxPath, isReadback) = parts[partIdx] {
+            parts[partIdx] = .toolResult(
+                id: id, name: name, content: content + suffix, isError: isError,
+                imageData: imageData, imageMimeType: imageMimeType,
+                pageURL: pageURL, imageLinuxPath: imageLinuxPath,
+                isOffloadReadback: isReadback)
+        } else if let partIdx = parts.indices.last(where: {
+            if case .text = parts[$0] { return true }; return false
+        }), case let .text(existing) = parts[partIdx] {
+            parts[partIdx] = .text(existing + suffix)
+        } else {
+            return nil
+        }
+        var out = history
+        out[lastIdx] = AgentMessage(
+            role: history[lastIdx].role,
+            parts: parts,
+            isInterrupted: history[lastIdx].isInterrupted,
+            reasoningContent: history[lastIdx].reasoningContent,
+            reasoningEcho: history[lastIdx].reasoningEcho,
+            dbMessageId: history[lastIdx].dbMessageId)
+        return out
+    }
+
+    /// The scheduled fire a queued prompt carries, if it is one.
+    static func scheduledCallback(inQueuedText text: String) -> AgentCallback? {
+        guard let callback = AgentCallback.parse(text.trimmingCharacters(in: .whitespacesAndNewlines)),
+              callback.kind == .scheduled else { return nil }
+        return callback
+    }
+
+    /// `QueueDeliveryPlanner.take` over the live queue.
+    @MainActor
+    func planQueueTake(at point: QueueDeliveryPoint) -> QueueTake? {
+        let items = promptQueue.map { prompt in
+            QueueDeliveryPlanner.Item(id: prompt.id,
+                                      interruptsAtToolGap: !prompt.deferUntilIdle,
+                                      scheduledJobId: Self.scheduledCallback(inQueuedText: prompt.text)?.jobId)
+        }
+        return QueueDeliveryPlanner.take(items, at: point)
+    }
+
+    /// Takes `take` out of the queue: returns the prompts to deliver (queue
+    /// order) and drops the coalesced fires together with their queued bubbles.
+    @MainActor
+    func removeQueueTake(_ take: QueueTake) -> [QueuedPrompt] {
+        let delivered = promptQueue.filter { take.deliver.contains($0.id) }
+        let taken = Set(take.deliver + take.coalesced)
+        promptQueue.removeAll { taken.contains($0.id) }
+        if !take.coalesced.isEmpty {
+            let dropped = Set(take.coalesced)
+            messages.removeAll { msg in msg.isQueued && msg.queuedPromptId.map { dropped.contains($0) } == true }
+            silentQueuedPromptIds.subtract(dropped)
+        }
+        logger.info("📨[QueueTake] deliver=\(take.deliver.count) coalesced=\(take.coalesced.count) scheduled=\(take.scheduledJobId?.prefix(8) ?? "-") left=\(self.promptQueue.count)")
+        return delivered
+    }
+
+    /// The reminder text that goes after a delivered scheduled fire's envelope,
+    /// or nil (not a scheduled take, or nothing to say at a turn end).
+    @MainActor
+    func scheduledReminder(for take: QueueTake, delivered: [QueuedPrompt],
+                           at point: QueueDeliveryPoint) -> String? {
+        guard let jobId = take.scheduledJobId,
+              let callback = delivered.last.flatMap({ Self.scheduledCallback(inQueuedText: $0.text) }) else { return nil }
+        switch point {
+        case .toolGap:
+            return ScheduledInsertText.midTaskReminder(title: callback.title,
+                                                       hasPreset: pendingPresetToolCalls[jobId] != nil,
+                                                       coalescedCount: take.coalesced.count)
+        case .turnEnd:
+            return ScheduledInsertText.coalescedNote(title: callback.title, coalescedCount: take.coalesced.count)
+        }
+    }
+}
+
+// BEGIN QueuedCallbackReminder
+/// [T-queued-callback-reminder] Tells the parent model, on the NEXT request of
+/// its running loop, that a sub agent it delegated has finished and the
+/// result is sitting in `promptQueue`.
+///
+/// Delivery itself is unchanged: a finished callback is queued with
+/// `deferUntilIdle`, the tool gap never takes it, and it only becomes a real
+/// message at the turn end. Until then the parent cannot see it at all and
+/// keeps working blind on a long plan. This adds awareness only — the model
+/// decides whether to wrap up or carry on.
+///
+/// Rules (pure, so they are unit-tested as written):
+/// - only `kind="finished"` callbacks that a background job queued
+///   (`deferUntilIdle`) count — not progress reports, not scheduled fires,
+///   not the user's own queued follow-ups;
+/// - each queued callback is listed once (`reminderSent`); a later request
+///   carries a reminder only when NEW finished callbacks have arrived, and
+///   lists only those;
+/// - nothing pending → no reminder.
+enum QueuedCallbackReminder {
+    struct Candidate: Equatable {
+        let promptId: UUID
+        /// `AgentCallback.Kind.rawValue` of the queued text, nil when it is
+        /// not a callback envelope.
+        let callbackKind: String?
+        let jobId: String
+        let title: String
+        let status: String
+        let deferUntilIdle: Bool
+        let reminderSent: Bool
+    }
+
+    /// The callbacks a reminder should list now, in queue order.
+    static func pending(_ candidates: [Candidate]) -> [Candidate] {
+        candidates.filter {
+            $0.callbackKind == "finished" && $0.deferUntilIdle && !$0.reminderSent && !$0.jobId.isEmpty
+        }
+    }
+
+    /// The reminder text for `pending`, or nil when there is nothing to say.
+    static func text(for pending: [Candidate]) -> String? {
+        guard !pending.isEmpty else { return nil }
+        let list = pending.map { c -> String in
+            let title = c.title.isEmpty ? "Sub agent" : c.title
+            return "\(title) (job \(c.jobId), \(c.status))"
+        }.joined(separator: "; ")
+        return """
+        <system-reminder>
+        Background update: sub agent(s) you delegated have finished, and the result is queued for this conversation: \(list)
+
+        It has NOT been delivered to you yet. It arrives as a new message only after your current turn ends, i.e. when you reply without calling more tools. Your call:
+        - If the result could change what you do next, or your remaining work is short or non-essential, wrap up now and end the turn with a brief summary. The result will then arrive.
+        - If your current work is independent of it and must finish first, keep going. The result stays queued and won't be lost.
+
+        Don't poll for it, re-delegate, or mention this reminder to the user.
+        </system-reminder>
+        """
+    }
+}
+// END QueuedCallbackReminder

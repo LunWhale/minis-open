@@ -61,7 +61,11 @@ enum UploadPolicy {
                         // records for the V3 types.
                         "SubAgentV3"]
             case .envVars:
-                return ["EnvVar", "EnvVarV2"]
+                // [T-envvar-disable] The per-variable record and its state
+                // belong to the same switch. EnvVarItem was missing, so
+                // turning environments sync off still uploaded every
+                // variable (same gap as [T-icloud-uploadpolicy-v3-gap]).
+                return ["EnvVar", "EnvVarV2", "EnvVarItem", "EnvVarStateItem"]
             case .memory:
                 return ["MemoryGlobalV2", "MemoryDailyV2"]
             }

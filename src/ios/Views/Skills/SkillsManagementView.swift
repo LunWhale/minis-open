@@ -30,7 +30,10 @@ struct SkillsManagementView: View {
     @State private var showImportSheet = false
     @State private var showSkillsBrowser = false
     @State private var searchQuery = ""
-    @State private var forceSyncAllToast: String?
+    /// Top toast shared by "Force iCloud Sync All" and "Copy Source URL".
+    @State private var toastMessage: String?
+    /// Bumped per toast so an older toast's timer cannot clear a newer one.
+    @State private var toastToken = 0
     /// Subscribed mirror of `SyncV2Bootstrap.isEnabled` so the
     /// Force-iCloud-Sync menu entry shows / hides reactively when
     /// the user flips the toggle in Settings.
@@ -95,6 +98,9 @@ struct SkillsManagementView: View {
                         .labelsHidden()
                     }
                 }
+                .modifier(SkillSourceURLContextMenu(url: skill.importSource.copyableURL) {
+                    showToast(AppLocalized("Source URL copied"))
+                })
             }
             .onDelete { offsets in
                 let ids = offsets.map { filteredSkills[$0].id }
@@ -167,7 +173,7 @@ struct SkillsManagementView: View {
             MinisSkillsBrowserView()
         }
         .overlay(alignment: .top) {
-            if let msg = forceSyncAllToast {
+            if let msg = toastMessage {
                 Text(msg)
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.white)
@@ -178,15 +184,23 @@ struct SkillsManagementView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
-        .animation(.spring(response: 0.3), value: forceSyncAllToast)
+        .animation(.spring(response: 0.3), value: toastMessage)
     }
 
     private func forceSyncAllSkills() {
         let count = store.skills.count
         for s in store.skills { store.forceMarkDirty(s.id) }
         SyncCore.shared.scheduleSend(delay: 0.5)
-        forceSyncAllToast = AppLocalized("Queued \(count) skills for sync")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { forceSyncAllToast = nil }
+        showToast(AppLocalized("Queued \(count) skills for sync"), seconds: 3)
+    }
+
+    private func showToast(_ message: String, seconds: Double = 2) {
+        toastToken += 1
+        let token = toastToken
+        toastMessage = message
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) {
+            if toastToken == token { toastMessage = nil }
+        }
     }
 
     @ViewBuilder
@@ -208,6 +222,34 @@ struct SkillsManagementView: View {
             Image(systemName: "bubble.left.and.text.bubble.right")
                 .font(.caption2)
                 .foregroundStyle(.purple)
+        }
+    }
+}
+
+// MARK: - Copy Source URL
+
+/// [T-skill-copy-source-url] Long-press "Copy Source URL" for a skill that was
+/// installed from a URL. With no URL the view is returned untouched — no empty
+/// context menu, so tap / swipe-to-delete / toggle behave exactly as before.
+struct SkillSourceURLContextMenu: ViewModifier {
+    let url: String?
+    /// Menu title; the in-chat MCP detail reuses this for "Copy URL".
+    var title: String = AppLocalized("Copy Source URL")
+    let onCopied: () -> Void
+
+    func body(content: Content) -> some View {
+        if let url {
+            content.contextMenu {
+                Button {
+                    UIPasteboard.general.string = url
+                    UINotificationFeedbackGenerator().notificationOccurred(.success)
+                    onCopied()
+                } label: {
+                    Label(title, systemImage: "link")
+                }
+            }
+        } else {
+            content
         }
     }
 }
@@ -422,6 +464,7 @@ private struct SkillDetailView: View {
     @State private var isEditingName = false
     @State private var showRescanDone = false
     @State private var showForceSyncDone = false
+    @State private var showSourceURLCopied = false
     @State private var showDeleteConfirm = false
     @Environment(\.dismiss) private var dismiss
     /// Mirrors `SyncV2Bootstrap.isEnabled` so the per-skill Force iCloud
@@ -518,10 +561,16 @@ private struct SkillDetailView: View {
                     LabeledContent("Source") {
                         switch skill.importSource {
                         case .url(let url):
-                            Text(url)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
+                            if showSourceURLCopied {
+                                Text(AppLocalized("Copied"))
+                                    .font(.caption)
+                                    .foregroundStyle(.green)
+                            } else {
+                                Text(url)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
                         case .file:
                             Text(AppLocalized("File import")).foregroundStyle(.secondary)
                         case .bundled:
@@ -530,6 +579,15 @@ private struct SkillDetailView: View {
                             Text(AppLocalized("Session created")).foregroundStyle(.secondary)
                         }
                     }
+                    // [T-skill-copy-source-url] Long-press the Source row; the
+                    // URL itself is truncated to one line, so copying is the
+                    // only way to get all of it.
+                    .modifier(SkillSourceURLContextMenu(url: skill.importSource.copyableURL) {
+                        withAnimation { showSourceURLCopied = true }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                            withAnimation { showSourceURLCopied = false }
+                        }
+                    })
                     LabeledContent(AppLocalized("Usage")) {
                         let freq = store.usageFrequency(for: skill.id)
                         Text(usageFrequencyLabel(freq))

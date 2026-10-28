@@ -18,12 +18,33 @@
 // `fabCircleSurface` — an instance method that reads no instance state.
 //
 // These are SOURCE-LEVEL checks. The property that matters ("this closure does
-// not capture self") is a compile-time fact about ContentView.swift, and
+// not capture self") is a compile-time fact about the ContentView sources, and
 // ContentView cannot be instantiated in a standalone script — it pulls in the
 // whole app graph. So the suite asserts the shape of the code that guarantees
 // it, which is also what would catch a future regression.
 
 import Foundation
+
+/// The home screen sources - Views/ContentView/ plus Views/Settings/SettingsSheet.swift
+/// and AppearanceSettingsView.swift, formerly the single file ContentView.swift -
+/// read as one text with the files in path order.
+func contentViewSource() -> String {
+    var dir = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+    for _ in 0..<7 {
+        let ios = dir.appendingPathComponent("src/ios")
+        let module = ios.appendingPathComponent("Views/ContentView")
+        var files = (FileManager.default.enumerator(at: module, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? [])
+            .filter { $0.pathExtension == "swift" }
+        if !files.isEmpty {
+            files += ["Views/Settings/SettingsSheet.swift", "Views/Settings/AppearanceSettingsView.swift"]
+                .map { ios.appendingPathComponent($0) }
+            return files.sorted { $0.path < $1.path }
+                .compactMap { try? String(contentsOf: $0, encoding: .utf8) }.joined(separator: "\n")
+        }
+        dir = dir.deletingLastPathComponent()
+    }
+    return ""
+}
 
 var failures = 0
 func check(_ label: String, _ actual: Bool, _ expected: Bool = true) {
@@ -42,9 +63,9 @@ func source(_ rel: String) -> String {
     return ""
 }
 
-let src = source("Views/ContentView.swift")
+let src = contentViewSource()
 guard !src.isEmpty else {
-    print("❌ could not locate ContentView.swift"); exit(1)
+    print("❌ could not locate Views/ContentView"); exit(1)
 }
 let lines = src.components(separatedBy: "\n")
 

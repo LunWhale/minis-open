@@ -22,11 +22,19 @@ enum ScheduledJobRunner {
     // MARK: - Arm
 
     /// Arm (or re-arm) the job's trigger. Cancels any previous timer task.
-    static func arm(_ job: AgentJob) {
+    /// `firstFireAt` replaces the first fire of a loop / cron job — only
+    /// `skipNext` passes it, to re-arm past the run being skipped.
+    /// `runNowSlot` ([T-sched-run-now]) is set only by `runNow`, which has
+    /// already claimed the fire: the pending run planned for that slot fires
+    /// at once through this same timer loop, and the schedule then continues
+    /// exactly as after a timer fire.
+    static func arm(_ job: AgentJob, firstFireAt: Date? = nil, runNowSlot: Date? = nil) {
+        let preclaimed = runNowSlot != nil
         job.task?.cancel()
         job.task = nil
         guard job.isEnabled, job.state == .pending else {
             logger.info("[Sched] not arming \(job.logLabel) enabled=\(job.isEnabled)")
+            if preclaimed { job.fireInFlight = false }
             return
         }
         switch job.trigger {
@@ -35,24 +43,34 @@ enum ScheduledJobRunner {
             job.task = Task { @MainActor in await fire(job) ; finishIfExhausted(job) }
 
         case .once(let after):
-            let at = Date().addingTimeInterval(after)
+            let at = preclaimed ? Date() : Date().addingTimeInterval(after)
             job.nextFireAt = at
             scheduleInsurance(job, at: at)
             job.task = Task { @MainActor in
-                guard await sleepUntil(at) else { return }
-                await fire(job)
+                guard await sleepUntil(at) else {
+                    if preclaimed { job.fireInFlight = false }
+                    return
+                }
+                await fire(job, claimed: preclaimed)
                 AgentJobRegistry.shared.finish(job.id, state: .done, result: nil, keepIfChildRunning: true)
             }
 
         case .loop(let interval, _):
-            let first = Date().addingTimeInterval(interval)
+            let first = preclaimed ? Date() : (firstFireAt ?? Date().addingTimeInterval(interval))
             job.nextFireAt = first
             scheduleInsurance(job, at: first)
             job.task = Task { @MainActor in
                 var next = first
+                var claimed = preclaimed
                 while !Task.isCancelled {
-                    guard await sleepUntil(next) else { return }
-                    await fire(job)
+                    guard await sleepUntil(next) else {
+                        if claimed { job.fireInFlight = false }
+                        return
+                    }
+                    await fire(job, claimed: claimed)
+                    claimed = false
+                    // Re-armed while firing (skipNext): the new task owns the schedule.
+                    if Task.isCancelled { return }
                     if let r = job.remaining, r <= 0 {
                         AgentJobRegistry.shared.finish(job.id, state: .done, result: nil, keepIfChildRunning: true)
                         return
@@ -64,7 +82,8 @@ enum ScheduledJobRunner {
             }
 
         case .cron(let hour, let minute, let days, let start, let end):
-            guard let first = nextCronDate(hour: hour, minute: minute, days: days, start: start, end: end, from: Date()) else {
+            guard let first = preclaimed ? Date() : (firstFireAt
+                    ?? nextCronDate(hour: hour, minute: minute, days: days, start: start, end: end, from: Date())) else {
                 logger.info("[Sched] cron has no future fire (window ended) — finishing \(job.id.prefix(8))")
                 AgentJobRegistry.shared.finish(job.id, state: .done, result: nil)
                 return
@@ -73,15 +92,26 @@ enum ScheduledJobRunner {
             scheduleInsurance(job, at: first)
             job.task = Task { @MainActor in
                 var next = first
+                // The slot this fire consumes: the fire time itself, except
+                // for "Run now", which fires a later slot early.
+                var slot = runNowSlot ?? first
+                var claimed = preclaimed
                 while !Task.isCancelled {
-                    guard await sleepUntil(next) else { return }
-                    await fire(job)
+                    guard await sleepUntil(next) else {
+                        if claimed { job.fireInFlight = false }
+                        return
+                    }
+                    job.firingSlot = slot
+                    await fire(job, claimed: claimed)
+                    claimed = false
+                    if Task.isCancelled { return }
                     guard let n = nextCronDate(hour: hour, minute: minute, days: days, start: start, end: end,
-                                               from: Date().addingTimeInterval(60)) else {
+                                               from: ScheduledFireClaim.cronSearchStart(now: Date(), consumedSlot: slot)) else {
                         AgentJobRegistry.shared.finish(job.id, state: .done, result: nil, keepIfChildRunning: true)
                         return
                     }
                     next = n
+                    slot = n
                     job.nextFireAt = n
                     scheduleInsurance(job, at: n)
                 }
@@ -100,20 +130,176 @@ enum ScheduledJobRunner {
             }
         }
         logger.info("[Sched] ARMED \(job.logLabel) next=\(job.nextFireAt.map { Self.iso($0) } ?? "event")")
+        // [T-scheduled-active-session] The creator session is set just before
+        // arming, so this is the first point the job can count as keeping its
+        // conversation active.
+        AgentJobRegistry.shared.jobsDidChange()
+    }
+
+    /// [T-sched-pill-menu] "Skip next run" from the chat's timer pill: drop
+    /// the job's next fire and re-arm at the one after it. A loop counts the
+    /// skipped run against `--count` (the schedule still ends when planned);
+    /// a job with no later run — once, on-completion, the last of a loop, a
+    /// cron whose window closes — is cancelled, exactly as Stop cancels it.
+    static func skipNext(_ job: AgentJob) {
+        // `.pending` is where a follow-up loop / cron sits between fires (and
+        // while one runs); `arm` refuses anything else.
+        guard job.isEnabled, job.state == .pending else { return }
+        let following: (Date) -> Date? = switch job.trigger {
+        case .loop(let interval, _):
+            { $0.addingTimeInterval(interval) }
+        case .cron(let hour, let minute, let days, let start, let end):
+            { nextCronDate(hour: hour, minute: minute, days: days, start: start, end: end,
+                           from: $0.addingTimeInterval(60)) }
+        case .once, .onCompletion, .immediate:
+            { _ in nil }
+        }
+        switch ScheduledBannerModel.skipPlan(next: job.nextFireAt, remaining: job.remaining, following: following) {
+        case .cancel:
+            logger.info("[Sched] SKIP \(job.logLabel): no later run — cancelling")
+            AgentJobRegistry.shared.cancel(jobId: job.id, reason: "user skipped its last run")
+        case .rearm(let at, let remaining):
+            logger.info("[Sched] SKIP \(job.logLabel): next run \(iso(at)) remaining=\(remaining.map(String.init) ?? "-")")
+            job.remaining = remaining
+            job.skippedCount += 1
+            arm(job, firstFireAt: at)
+        }
+    }
+
+    // MARK: - Run now  [T-sched-run-now]
+
+    /// The single pending -> firing transition. The armed timer (at the top of
+    /// `fire`) and "Run now" both take it; the whole runner is main-actor, so
+    /// this check-and-set cannot interleave with another one.
+    static func claimFire(_ job: AgentJob) -> Bool {
+        ScheduledFireClaim.claim(&job.fireInFlight)
+    }
+
+    /// The facts "Run now" is decided on, read live from the job.
+    static func runNowFacts(_ job: AgentJob) -> ScheduledFireClaim.Facts {
+        let kind: ScheduledFireClaim.Kind = switch job.trigger {
+        case .once: .once
+        case .loop: .loop
+        case .cron: .cron
+        case .onCompletion: .onCompletion
+        case .immediate: .immediate
+        }
+        return ScheduledFireClaim.Facts(
+            isEnabled: job.isEnabled,
+            isPending: job.state == .pending,
+            fireInFlight: job.fireInFlight,
+            isRunningOrQueued: ScheduledTaskDetailStore.isProcessingNow(job) || isQueuedNow(job),
+            hasTimedNextFire: job.nextFireAt != nil,
+            kind: kind)
+    }
+
+    /// Whether the pill may offer "Run now" for `job` at this moment.
+    static func canRunNow(_ job: AgentJob) -> Bool {
+        ScheduledFireClaim.canRunNow(runNowFacts(job))
+    }
+
+    /// "Run now" from the chat's timer pill: fire the run the pill is counting
+    /// down to, immediately, through the armed timer's own loop (no separate
+    /// execution path). The decision is re-made here from the live job, not
+    /// from what the menu showed, and the claim is taken before anything else:
+    /// a timer that fires in the meantime, a second tap, or a run that started
+    /// while the menu was open all make this a silent no-op.
+    /// `expectedRun` is the run the menu was showing (`runsDone` when it
+    /// opened): if that run has since fired or been skipped, the tap is for a
+    /// run that no longer waits, and it does nothing rather than firing the
+    /// one after it.
+    /// Returns whether the run was started.
+    @discardableResult
+    static func runNow(_ job: AgentJob, expectedRun: Int? = nil) -> Bool {
+        guard ScheduledFireClaim.isSameRun(expected: expectedRun, current: runsDone(job)),
+              canRunNow(job), let slot = job.nextFireAt, claimFire(job) else {
+            logger.info("[Sched] RUN NOW \(job.logLabel) refused — run already started, queued, or nothing to run")
+            return false
+        }
+        logger.info("[Sched] RUN NOW \(job.logLabel) slot=\(iso(slot))")
+        arm(job, runNowSlot: slot)
+        return true
+    }
+
+    /// Runs already fired or skipped - the pill's `runsDone`, which names the
+    /// run it counts down to.
+    static func runsDone(_ job: AgentJob) -> Int { job.firedCount + job.skippedCount }
+
+    /// A fire of `job` waiting in its session's prompt queue (the session was
+    /// busy when it fired): it has started as far as the user is concerned.
+    static func isQueuedNow(_ job: AgentJob) -> Bool {
+        var sessions: [String] = []
+        if case .followUp(let sid) = job.target { sessions.append(sid) }
+        if let sid = job.runSessionId { sessions.append(sid) }
+        return sessions.contains { sid in
+            ViewModelCache.shared.get(for: sid)?.promptQueue.contains { queued in
+                AgentCallback.parse(queued.text).map { $0.kind == .scheduled && $0.jobId == job.id } ?? false
+            } ?? false
+        }
     }
 
     /// `run --id`: fire regardless of the trigger, off-schedule. The armed
-    /// timer (if any) keeps its own cadence.
+    /// timer (if any) keeps its own cadence. [T-sched-run-now] It takes the
+    /// same claim, so it reports `fired: false` while another fire of the job
+    /// is still in progress instead of firing it twice at once.
     static func fireNow(_ job: AgentJob) async -> [String: Any] {
+        // [T-limits-per-parent] A child-of-current job whose parent has no free
+        // sub agent slot would hold the CLI call until one frees, possibly for
+        // minutes. Fire it in the background instead; it starts as soon as the
+        // parent has a slot (`waitForChildSlot`).
+        if case .childOfCurrent(let parent, _) = job.target,
+           !AgentJobRegistry.shared.canStartChildJob(parent: parent) {
+            Task { @MainActor in await fire(job) }
+            return ["fired": false, "deferred": true, "session_id": NSNull()]
+        }
         let sid = await fire(job)
         return ["fired": sid != nil, "session_id": sid ?? NSNull()]
+    }
+
+    /// [T-limits-per-parent] Poll interval while a scheduled child waits for a
+    /// sub agent slot of its parent.
+    static let childSlotPollSeconds: UInt64 = 2
+
+    /// [T-limits-per-parent] Wait until `parent` has a free sub agent slot.
+    ///
+    /// A scheduled child-of-current run is a sub agent of `parent` and counts
+    /// against the same per-parent allowance as a delegation. It used to start
+    /// without checking, so a timer could push a parent past its cap and make
+    /// every delegation of that conversation queue behind it. Now it waits.
+    /// False when the wait was abandoned: the job's task was cancelled, or the
+    /// job was stopped / finished meanwhile.
+    private static func waitForChildSlot(parent: String, job: AgentJob) async -> Bool {
+        let registry = AgentJobRegistry.shared
+        var waited = false
+        while !registry.canStartChildJob(parent: parent) {
+            if !waited {
+                logger.info("[Sched] FIRE \(job.logLabel) deferred — parent \(parent.prefix(8)) has \(AgentJobRegistry.maxChildJobsPerParent) sub agents running")
+                waited = true
+            }
+            do { try await Task.sleep(nanoseconds: childSlotPollSeconds * 1_000_000_000) } catch { return false }
+            guard !Task.isCancelled, job.state == .pending || job.state == .running else { return false }
+        }
+        if waited { logger.info("[Sched] FIRE \(job.logLabel) — parent \(parent.prefix(8)) has a free sub agent slot, starting") }
+        return true
     }
 
     // MARK: - Fire
 
     /// Land the prompt on the target. Returns the session the prompt went to.
+    ///
+    /// [T-sched-run-now] Starts with the claim (`claimFire`), unless the
+    /// caller already holds it (`claimed`, "Run now"); a fire whose claim is
+    /// refused does nothing - another fire of this job is in progress. The
+    /// claim is released when this returns.
     @discardableResult
-    private static func fire(_ job: AgentJob, upstreamJobId: String? = nil) async -> String? {
+    private static func fire(_ job: AgentJob, upstreamJobId: String? = nil, claimed: Bool = false) async -> String? {
+        if !claimed {
+            guard claimFire(job) else {
+                logger.info("[Sched] FIRE \(job.logLabel) skipped — another fire of this job is in progress")
+                return nil
+            }
+        }
+        defer { job.fireInFlight = false }
         let registry = AgentJobRegistry.shared
         var prompt = job.prompt ?? ""
         if let up = upstreamJobId, let upstream = registry.job(id: up) {
@@ -146,7 +332,8 @@ enum ScheduledJobRunner {
             let (vm, _) = ViewModelCache.shared.getOrCreate(for: session.id)
             await vm.loadSession()
             vm.sessionSource = sourceTag
-            let outcome = vm.submitProgrammaticPrompt(text, origin: .job(jobId: job.id), silent: true)
+            let outcome = vm.submitProgrammaticPrompt(text, origin: .job(jobId: job.id), silent: true,
+                                                     presetToolCall: presetFor(job))
             logger.info("[Sched] FIRE \(job.logLabel) → new session \(session.id.prefix(8)) outcome=\(String(describing: outcome))")
             if case .rejected = outcome { registry.recordFire(job.id, sessionId: session.id, ok: false) }
             else { registry.recordFire(job.id, sessionId: session.id, ok: true) }
@@ -161,7 +348,8 @@ enum ScheduledJobRunner {
             let (vm, fresh) = ViewModelCache.shared.getOrCreate(for: sid)
             if fresh || vm.messages.isEmpty { await vm.loadSession() }
             applyThinkingLevel(job, sessionId: sid, entry: vm.resolveCurrentEntry())
-            let outcome = vm.submitProgrammaticPrompt(text, origin: .job(jobId: job.id), silent: true)
+            let outcome = vm.submitProgrammaticPrompt(text, origin: .job(jobId: job.id), silent: true,
+                                                     presetToolCall: presetFor(job))
             logger.info("[Sched] FIRE \(job.logLabel) → follow-up \(sid.prefix(8)) outcome=\(String(describing: outcome))")
             if case .rejected = outcome { registry.recordFire(job.id, sessionId: sid, ok: false) }
             else { registry.recordFire(job.id, sessionId: sid, ok: true) }
@@ -188,6 +376,16 @@ enum ScheduledJobRunner {
                 registry.recordFire(job.id, sessionId: nil, ok: false)
                 return nil
             }
+            // [T-limits-per-parent] Same per-parent cap as a delegation: wait for
+            // a free slot, then hold it (reservation) across the awaits below
+            // until the job is running.
+            guard await waitForChildSlot(parent: parentSid, job: job) else {
+                logger.info("[Sched] fire \(job.id.prefix(8)): abandoned while waiting for a sub agent slot")
+                return nil
+            }
+            let slotReservation = "sched:\(job.id)"
+            registry.reserveChildStart(key: slotReservation, parent: parentSid)
+            defer { registry.releaseChildStart(key: slotReservation) }
             let (parentVM, parentFresh) = ViewModelCache.shared.getOrCreate(for: parentSid)
             if parentFresh { await parentVM.loadSession() }
             guard let resolution = SubAgentModelResolver.resolve(subAgent: nil, parent: parentVM) else {
@@ -204,7 +402,9 @@ enum ScheduledJobRunner {
             ProviderConfigStore.shared.setBinding(
                 SessionModelBinding(sessionId: session.id, primarySource: resolution.source), for: session.id)
             applyThinkingLevel(job, sessionId: session.id, entry: resolution.entry)
-            let (child, _) = ViewModelCache.shared.getOrCreate(for: session.id)
+            // [T-limits-per-parent] Child pool, like a delegated sub agent: a
+            // scheduled child used to land in the user's conversation pool.
+            let (child, _) = ViewModelCache.shared.getOrCreate(for: session.id, kind: .child)
             await child.loadSession()
             child.sessionSource = sourceTag
             child.helperConfig = HelperConfig(parentSessionId: parentSid, parentToolUseId: "",
@@ -218,7 +418,8 @@ enum ScheduledJobRunner {
             // the job carries its identity so the completion callback and
             // the transcript page still say what it ran on.
             job.modelIdentity = HelperModelIdentity.make(resolution: resolution)
-            let outcome = child.submitProgrammaticPrompt(text, origin: .job(jobId: job.id), silent: true)
+            let outcome = child.submitProgrammaticPrompt(text, origin: .job(jobId: job.id), silent: true,
+                                                     presetToolCall: presetFor(job))
             logger.info("[Sched] FIRE \(job.logLabel) → child \(session.id.prefix(8)) of \(parentSid.prefix(8)) outcome=\(String(describing: outcome))")
             guard outcome == .sent else {
                 registry.recordFire(job.id, sessionId: session.id, ok: false)
@@ -228,6 +429,7 @@ enum ScheduledJobRunner {
             // `then: .followUpParent`; the insurance notification covers a
             // kill in between (design §8.6).
             registry.markRunning(job.id, sessionId: session.id)
+            registry.releaseChildStart(key: slotReservation)   // counted as running now
             JobInsuranceNotification.schedule(
                 jobId: job.id,
                 at: Date().addingTimeInterval(TimeInterval(AIChatViewModel.helperMaxMinutes * 60)),
@@ -236,6 +438,13 @@ enum ScheduledJobRunner {
                 userInfo: ["sessionId": parentSid, "childSessionId": session.id, "helperJobId": job.id])
             return session.id
         }
+    }
+
+    /// [T-scheduled-preset-tool] The job's preset tool call, paired with the
+    /// title its card shows. nil for jobs without `--command` / `--tool`.
+    private static func presetFor(_ job: AgentJob) -> ScheduledPresetToolCallRequest? {
+        guard let preset = job.presetToolCall else { return nil }
+        return ScheduledPresetToolCallRequest(jobId: job.id, call: preset, title: job.label ?? job.title)
     }
 
     private static func finishIfExhausted(_ job: AgentJob) {
@@ -258,6 +467,21 @@ enum ScheduledJobRunner {
     /// that fact into an XML attribute it may not attend to would be a
     /// behaviour change disguised as a display change. The attributes exist
     /// only so the card can show fire/remaining without re-parsing prose.
+    /// [T-scheduled-banner] The job as a scheduled-task callback, so the chat
+    /// banner opens the SAME task page a fired card opens
+    /// (`ScheduledTaskDetailView`, via `.openAgentCallback`) — for a job that
+    /// may not have fired yet and so has no card. The page reads the live job
+    /// by id; these fields are only its fallback.
+    static func detailCallback(for job: AgentJob) -> AgentCallback {
+        AgentCallback(kind: .scheduled, jobId: job.id, childSessionId: nil,
+                      title: job.label ?? job.title, status: "running",
+                      tier: nil, elapsed: nil, tool: nil, activity: nil, turn: nil,
+                      summary: nil, body: job.prompt ?? "",
+                      fireIndex: job.firedCount, remaining: job.remaining,
+                      triggerLabel: job.trigger.logLabel,
+                      nextFireAt: job.nextFireAt.map { iso($0) })
+    }
+
     static func scheduledEnvelope(_ job: AgentJob, prompt: String) -> String {
         var fireIndex: Int?
         var remaining: Int?
@@ -289,7 +513,8 @@ enum ScheduledJobRunner {
                 return Date().addingTimeInterval(interval)
             case .cron(let h, let m, let days, let start, let end):
                 return nextCronDate(hour: h, minute: m, days: days, start: start, end: end,
-                                    from: Date().addingTimeInterval(60))
+                                    from: ScheduledFireClaim.cronSearchStart(now: Date(),
+                                                                             consumedSlot: job.firingSlot ?? Date()))
             case .once, .immediate, .onCompletion:
                 return nil
             }
@@ -305,7 +530,9 @@ enum ScheduledJobRunner {
             status: "running",
             tier: nil, elapsed: nil, tool: nil, activity: nil, turn: nil,
             summary: nil,
-            body: roundPrefix(job) + prompt,
+            // [T-scheduled-preset-tool] The note line exists only for a job
+            // with a preset, so every other job's body stays byte-identical.
+            body: roundPrefix(job) + (job.presetToolCall?.envelopeNote ?? "") + prompt,
             fireIndex: fireIndex,
             remaining: remaining,
             triggerLabel: job.trigger.logLabel,
@@ -413,15 +640,27 @@ enum ScheduledJobRunner {
         guard !t.isEmpty else { return nil }
         let unit = t.last!
         let numPart = "0123456789.".contains(unit) ? t : String(t.dropLast())
-        guard let n = Double(numPart), n >= 0 else { return nil }
+        // [T-scheduled-duration-finite] Double() also accepts "inf", "nan" and
+        // "1e20": converting such a value to Int (a timeout) traps and kills
+        // the app, and an infinite interval reaches Date / notification
+        // triggers. Reject non-finite input and anything past ten years.
+        guard let n = Double(numPart), n.isFinite, n >= 0 else { return nil }
+        let seconds: Double
         switch unit {
-        case "s": return n
-        case "m": return n * 60
-        case "h": return n * 3600
-        case "d": return n * 86400
-        default: return "0123456789.".contains(unit) ? n : nil
+        case "s": seconds = n
+        case "m": seconds = n * 60
+        case "h": seconds = n * 3600
+        case "d": seconds = n * 86400
+        default:
+            guard "0123456789.".contains(unit) else { return nil }
+            seconds = n
         }
+        guard seconds.isFinite, seconds <= maxDurationSeconds else { return nil }
+        return seconds
     }
+
+    /// Longest duration `parseDuration` accepts (ten years).
+    nonisolated static let maxDurationSeconds: TimeInterval = 10 * 365 * 86400
 
     nonisolated static func iso(_ d: Date) -> String {
         let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime]; return f.string(from: d)
@@ -495,3 +734,63 @@ extension AgentJobTarget {
         }
     }
 }
+
+// BEGIN ScheduledFireClaim
+/// [T-sched-run-now] Pure rules behind the pill's "Run now" and the one claim
+/// every fire of a scheduled job takes. Foundation-only:
+/// MinisTests/Standalone/ScheduledRunNowTests.swift compiles this block.
+enum ScheduledFireClaim {
+    enum Kind: Equatable { case once, loop, cron, onCompletion, immediate }
+
+    /// What "Run now" is decided on, read live from the job.
+    struct Facts: Equatable {
+        var isEnabled: Bool
+        /// Still scheduled (not finished / cancelled).
+        var isPending: Bool
+        /// A fire has been claimed and has not returned.
+        var fireInFlight: Bool
+        /// A run of this job is in progress in its chat, or waiting in the
+        /// chat's prompt queue.
+        var isRunningOrQueued: Bool
+        /// The job is counting down to a known time.
+        var hasTimedNextFire: Bool
+        var kind: Kind
+    }
+
+    /// The pending -> firing claim: true exactly once until it is released
+    /// (the flag is cleared when the fire returns).
+    static func claim(_ inFlight: inout Bool) -> Bool {
+        guard !inFlight else { return false }
+        inFlight = true
+        return true
+    }
+
+    /// "Run now" exists only while the pill counts down to a timed run that
+    /// has not started: a one-shot, a loop or a cron. Not for an
+    /// on-completion job (it waits on another job's result) or an immediate
+    /// one (it is already firing).
+    static func canRunNow(_ f: Facts) -> Bool {
+        guard f.isEnabled, f.isPending, !f.fireInFlight, !f.isRunningOrQueued, f.hasTimedNextFire else {
+            return false
+        }
+        switch f.kind {
+        case .once, .loop, .cron: return true
+        case .onCompletion, .immediate: return false
+        }
+    }
+
+    /// The tap is for the run the menu showed: none fired or skipped since.
+    /// nil (no expectation, e.g. a caller without a menu) always matches.
+    static func isSameRun(expected: Int?, current: Int) -> Bool {
+        expected.map { $0 == current } ?? true
+    }
+
+    /// Where to search for a cron job's next run after a fire. A timer fire
+    /// happens at its slot, so this is a minute after now, as it always was;
+    /// "Run now" fires a slot early, and searching from now would plan that
+    /// same slot again.
+    static func cronSearchStart(now: Date, consumedSlot: Date) -> Date {
+        max(now, consumedSlot).addingTimeInterval(60)
+    }
+}
+// END ScheduledFireClaim

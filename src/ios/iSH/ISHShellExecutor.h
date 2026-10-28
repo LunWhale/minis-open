@@ -146,6 +146,23 @@ typedef void (^ISHShellCompletionCallback)(ISHShellExecutionResult *result);
 /// after every command ends. A value that only climbs is this leak recurring.
 + (NSString *)leakGuardStatus;
 
+/// [T-shell-utf8-partial-lead] Decode the bytes a guest process wrote, as the
+/// stdout/stderr reader does. `pending` holds bytes read but not yet decoded;
+/// the decodable prefix is removed from it and returned as text, and an
+/// incomplete multi-byte sequence at the end stays in `pending` for the next
+/// read (unless `isFinal`, at EOF, where everything is flushed).
+///
+/// UTF-8 is decoded per character, never by switching the whole chunk's
+/// encoding: up to 3 orphan continuation bytes at the start (output that
+/// begins mid-character, e.g. `tail -c` / `head -c` / `dd` / `cut -b` on
+/// UTF-8 text) are dropped, and any other invalid byte becomes U+FFFD. Only a
+/// chunk that is clearly not UTF-8 (more than a quarter of its bytes invalid,
+/// i.e. binary such as `cat` of an executable) is decoded as Latin-1, which is
+/// how all non-UTF-8 output was shown before.
+///
+/// Pure: no iSH state, safe to call from tests.
++ (NSString *)decodeShellOutputFromPending:(NSMutableData *)pending isFinal:(BOOL)isFinal;
+
 @end
 
 NS_ASSUME_NONNULL_END

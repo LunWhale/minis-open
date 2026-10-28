@@ -87,7 +87,8 @@ final class OpenRouterOAuthManager: NSObject, ObservableObject {
         logger.info("Exchanging code for API key...")
         let apiKey = try await exchangeCode(result.code, verifier: verifier)
         #if DEBUG
-        logger.info("API key received — prefix: \(apiKey.prefix(16))...")
+        // [T-log-redaction] Length only - never a key prefix.
+        logger.info("API key received — \(LogRedaction.secret(apiKey))")
         #else
         logger.info("API key received")
         #endif

@@ -9,6 +9,12 @@ final class SessionForkManager {
     static let shared = SessionForkManager()
     private init() {}
 
+    /// [ISS-038] Duplicate titles chosen but not yet written as a session. Two
+    /// quick "Duplicate" taps run as two tasks on the main actor; each one
+    /// picks its title and reserves it with no suspension point in between,
+    /// so the second one sees the first one's title as taken.
+    private var reservedDuplicateTitles: Set<String> = []
+
     // MARK: - Fork Remote Session
 
     /// Fork a remote session into a new local session with deep-copied messages.
@@ -64,8 +70,22 @@ final class SessionForkManager {
             return nil
         }
 
-        let dupTitle = (session.title ?? "Untitled") + " (Copy)"
+        // [ISS-038] "Foo (Copy)", then "Foo (Copy 2)", "Foo (Copy 3)"…, never
+        // "Foo (Copy) (Copy)"; the word is localized ("副本"), and copies made
+        // under another language are recognized. Only titles are read (the
+        // cached session list), never messages. See SessionDuplicateTitle.
+        let existingTitles = await store.listSessions().compactMap(\.title)
+        let dupTitle = SessionDuplicateTitle.make(
+            sourceTitle: session.title,
+            existingTitles: existingTitles + reservedDuplicateTitles,
+            suffixWord: Self.copySuffixWord(),
+            knownSuffixWords: Self.allCopySuffixWords,
+            untitledTitle: AppLocalized("Untitled"))
+        reservedDuplicateTitles.insert(dupTitle)
         let newSession = await store.createSession(modelId: session.modelId, title: dupTitle)
+        // createSession invalidates the session-list cache, so the title is
+        // visible to the next duplicate from here on.
+        reservedDuplicateTitles.remove(dupTitle)
 
         if let category = session.category {
             await store.updateSessionTitle(newSession.id, title: dupTitle, category: category)
@@ -214,3 +234,107 @@ final class SessionForkManager {
     }
 }
 
+// MARK: - Duplicate title (ISS-038)
+
+extension SessionForkManager {
+    /// The copy word in the current (in-app) language: "Copy", "副本".
+    /// Its own key: the plain "Copy" key is the verb (复制) used elsewhere.
+    static func copySuffixWord() -> String {
+        AppLocalized("Copy (session duplicate suffix)",
+                     comment: "Suffix word of a duplicated session's title: \"Foo (Copy)\", \"Foo (Copy 2)\". The word only.")
+    }
+
+    /// The copy word in EVERY language the app ships, so a copy made under one
+    /// language is still recognized after the user switches language
+    /// ("Foo (Copy)" copied in Chinese gives "Foo (副本 2)", not
+    /// "Foo (Copy) (副本)"). Read once from each .lproj.
+    static let allCopySuffixWords: [String] = {
+        var words: [String] = ["Copy"]
+        for code in Bundle.main.localizations {
+            guard let path = Bundle.main.path(forResource: code, ofType: "lproj"),
+                  let bundle = Bundle(path: path) else { continue }
+            let word = String(localized: "Copy (session duplicate suffix)", bundle: bundle)
+            if word != "Copy (session duplicate suffix)" { words.append(word) }
+        }
+        return words
+    }()
+}
+
+// BEGIN SessionDuplicateTitle
+/// [ISS-038] Title of a duplicated session. Pure (Foundation only) so the
+/// standalone tests compile it as shipped.
+///
+/// - Format: "<base> (<word>)" for the first copy, "<base> (<word> N)" for
+///   N >= 2, with ASCII parentheses and a space before them.
+/// - Base: the source title minus ONE trailing copy suffix, so copying
+///   "Foo (Copy 2)" never gives "Foo (Copy 2) (Copy)". A trailing suffix is
+///   "(" or "（", a known word in any shipped language (case-insensitive), an
+///   optional integer >= 2 without a leading zero, then ")" or "）", at the
+///   very end after trimming. Anything else is part of the title:
+///   "Foo (draft)", "Foo (Copy) notes", "Foo (Copy 2x)", "Foo (Copy 0)",
+///   "Foo (Copy 1)" (never produced, so read as the user's own text). A title
+///   that is nothing but a suffix ("(Copy)") keeps itself as the base.
+/// - Number: the SMALLEST free number among existing titles with the same
+///   base, in any language: deleting "Foo (Copy 2)" and copying again refills
+///   2, so numbers stay small and the list keeps no unexplained gap.
+/// - nil / blank source title: `untitledTitle` is the base.
+/// Linear in the number of existing titles (a set lookup per number).
+enum SessionDuplicateTitle {
+    static func make(sourceTitle: String?, existingTitles: [String], suffixWord: String,
+                     knownSuffixWords: [String], untitledTitle: String) -> String {
+        let words = recognizedWords(suffixWord: suffixWord, known: knownSuffixWords)
+        let trimmed = (sourceTitle ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let base = trimmed.isEmpty ? untitledTitle : (parse(trimmed, words: words)?.base ?? trimmed)
+        var taken = Set<Int>()
+        for title in existingTitles {
+            guard let p = parse(title, words: words), p.base == base else { continue }
+            taken.insert(p.number)
+        }
+        var number = 1
+        while taken.contains(number) { number += 1 }
+        return format(base: base, word: suffixWord, number: number)
+    }
+
+    static func format(base: String, word: String, number: Int) -> String {
+        number <= 1 ? "\(base) (\(word))" : "\(base) (\(word) \(number))"
+    }
+
+    static func recognizedWords(suffixWord: String, known: [String]) -> [String] {
+        var seen = Set<String>()
+        var out: [String] = []
+        for w in [suffixWord, "Copy"] + known {
+            let t = w.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !t.isEmpty, seen.insert(t.lowercased()).inserted else { continue }
+            out.append(t)
+        }
+        return out
+    }
+
+    /// (base, number) when `title` ends with a copy suffix; number 1 for a
+    /// suffix without a number. nil otherwise.
+    static func parse(_ title: String, words: [String]) -> (base: String, number: Int)? {
+        let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let last = t.last, last == ")" || last == "）" else { return nil }
+        guard let open = t.lastIndex(where: { $0 == "(" || $0 == "（" }) else { return nil }
+        let inner = t[t.index(after: open)..<t.index(before: t.endIndex)]
+            .trimmingCharacters(in: .whitespaces)
+        let base = t[..<open].trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !base.isEmpty else { return nil }
+        for word in words {
+            if inner.compare(word, options: [.caseInsensitive]) == .orderedSame {
+                return (base, 1)
+            }
+            guard inner.count > word.count,
+                  inner.prefix(word.count).compare(word, options: [.caseInsensitive]) == .orderedSame else { continue }
+            let rest = inner.dropFirst(word.count)
+            guard let space = rest.first, space == " " || space == "\u{3000}" else { continue }
+            let digits = rest.dropFirst().trimmingCharacters(in: .whitespaces)
+            guard !digits.isEmpty, digits.count <= 9, !digits.hasPrefix("0"),
+                  digits.allSatisfy({ $0 >= "0" && $0 <= "9" }),
+                  let n = Int(digits), n >= 2 else { continue }
+            return (base, n)
+        }
+        return nil
+    }
+}
+// END SessionDuplicateTitle

@@ -60,11 +60,17 @@ struct MemoryManagementView: View {
         .navigationTitle("Memory")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            if #available(iOS 17.0, *), iCloudSyncEnabled {
+            // The iOS 17 check lives in `showsForceSync`, not here: an
+            // `if #available` inside a ToolbarContentBuilder needs
+            // buildLimitedAvailability, which the Xcode 27.1 SDK marks iOS
+            // 17.5+, so it no longer compiles for the 16.0 target.
+            if showsForceSync {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         Button {
-                            Task { await forceSyncMemory() }
+                            if #available(iOS 17.0, *) {
+                                Task { await forceSyncMemory() }
+                            }
                         } label: {
                             Label(AppLocalized("Force iCloud Sync"),
                                   systemImage: "arrow.triangle.2.circlepath.icloud")
@@ -95,6 +101,12 @@ struct MemoryManagementView: View {
         .onReceive(NotificationCenter.default.publisher(for: .memoryFilesDidChange)) { _ in
             loadFiles()
         }
+    }
+
+    /// Force sync needs iOS 17 (`forceSyncMemory`); on iOS 16 the menu stays hidden.
+    private var showsForceSync: Bool {
+        guard #available(iOS 17.0, *) else { return false }
+        return iCloudSyncEnabled
     }
 
     @available(iOS 17.0, *)

@@ -132,10 +132,22 @@ check("allowance is Coordinator state", bar.contains("private(set) var hasProtec
 check("reset when a new generation is claimed", bar.contains("hasUnconsumedTransientHint = true\n            hasProtectedFirstFocus = false"))
 check("first focus spends it and yields", bar.contains("guard hasProtectedFirstFocus else {\n                    hasProtectedFirstFocus = true"))
 check("second focus retires the line", bar.contains("hintLog.info(\"[rotate] second focus — retiring usage line") && bar.contains("hasUnconsumedTransientHint = false\n                transientHint = nil\n                transientHintApplied = false\n                hasProtectedFirstFocus = false"))
-check("a pending debounce cannot resurrect a retired line", bar.contains("contextHintDebounce?.cancel()\n                contextHintDebounce = nil\n                hasUnconsumedTransientHint = false"))
+check("a pending debounce cannot resurrect a retired line", bar.contains("contextHintDebounce?.cancel()\n                contextHintDebounce = nil\n                stopHintCarousel()\n                transientPageIndex = 0\n                hasUnconsumedTransientHint = false"))
 check("typing consumption also clears the allowance", bar.contains("placeholderPoolIndex = 0\n            transientHintApplied = false\n            hasProtectedFirstFocus = false"))
-check("retire path restores the label before any early return", bar.contains("label.text = placeholderPool[placeholderPoolIndex]"))
-check("VoiceOver / Reduce Motion handling untouched", bar.contains("guard !UIAccessibility.isVoiceOverRunning else { return }") && bar.contains("guard !UIAccessibility.isReduceMotionEnabled else {"))
+check("retire path restores the label before any early return",
+      bar.contains("if placeholderPoolIndex >= rotationPoolCount { placeholderPoolIndex = 0 }\n                    applyPoolEntry(placeholderPoolIndex, to: label, in: textView, animated: false)"))
+check("VoiceOver pins the label; Reduce Motion swaps instantly",
+      bar.contains("guard !UIAccessibility.isVoiceOverRunning else { return }")
+      && bar.contains("if animated, !UIAccessibility.isReduceMotionEnabled {"))
+// [T-composer-hint-in-rotation] the context / quota lines are focus-rotation entries
+check("usage pages join the focus rotation pool after the text entries",
+      bar.contains("private var rotationPoolCount: Int { placeholderPool.count + usagePoolPages.count }")
+      && bar.contains("guard let hint = parent.contextUsageHint else { return [] }")
+      && bar.contains("var next = Int.random(in: 0..<count)\n            while next == placeholderPoolIndex { next = Int.random(in: 0..<count) }"))
+check("a usage entry is drawn like the usage line and kept across re-renders",
+      bar.contains("let attributed = fittedPage(page, in: textView, fallbackFont: label.font)")
+      && bar.contains("if let page = usagePage(atPoolIndex: placeholderPoolIndex) {")
+      && bar.contains("if let font = textView.font { label.font = font }\n                    label.accessibilityLabel = nil\n                    label.text = text"))
 
 print(failures == 0 ? "\n🎉 all checks passed" : "\n💥 \(failures) failure(s)")
 exit(failures == 0 ? 0 : 1)

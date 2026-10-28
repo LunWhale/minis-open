@@ -57,10 +57,80 @@ enum VoiceOutputPreferences {
             } else {
                 d.removeObject(forKey: offXKey)
                 d.removeObject(forKey: offYKey)
+                d.removeObject(forKey: windowHKey)
             }
         }
     }
+
+    private static let windowHKey = "voiceCapsule.anchorOffset.windowH"
+
+    /// [GH#399] Height of the window `capsuleAnchorOffset` was saved in. nil for
+    /// offsets written before this key existed. Lets restore tell "this offset
+    /// was bad where it was saved" (discard) from "the window changed since"
+    /// (clamp, keep the user's position).
+    static var capsuleAnchorWindowHeight: CGFloat? {
+        get {
+            let d = UserDefaults.standard
+            guard d.object(forKey: windowHKey) != nil else { return nil }
+            return CGFloat(d.double(forKey: windowHKey))
+        }
+        set {
+            if let h = newValue { UserDefaults.standard.set(Double(h), forKey: windowHKey) }
+            else { UserDefaults.standard.removeObject(forKey: windowHKey) }
+        }
+    }
+
+    /// [T-readaloud-volume] The one read-aloud volume, applied to BOTH playback
+    /// paths: the System voice's live utterances and this player's
+    /// AVAudioPlayer (cloud models, and System voices rendered to WAV). See
+    /// ReadAloudVolume.
+    static var readAloudVolume: Float {
+        get { ReadAloudVolume.read(UserDefaults.standard) }
+        set { ReadAloudVolume.write(newValue, to: UserDefaults.standard) }
+    }
 }
+
+// BEGIN ReadAloudVolume
+/// [T-readaloud-volume] Read-aloud volume, 0...1, default 1.0 (= the behaviour
+/// before the slider existed).
+///
+/// It is a GAIN on this app's own speech signal, which the system then scales by
+/// the single media volume every app shares - so 1.0 is the loudest read-aloud
+/// can be, and the slider can only make it quieter, never louder than other
+/// media. (Other apps' audio is already ducked while reading aloud: the
+/// replyTTS session profile carries `.duckOthers`.)
+///
+/// Stored under the existing "speechVolume" key, which the System voice already
+/// read and the Settings > Enhanced Background > Speech > Volume slider (and the
+/// `speech.volume` config path) already wrote - one value, so a user's earlier
+/// choice carries over and the two controls never disagree or multiply.
+/// Read through NSNumber: `as? Float` on a value stored as a Double (e.g. by a
+/// config write) fails and silently fell back to 1.0.
+enum ReadAloudVolume {
+    static let key = "speechVolume"
+    static let defaultValue: Float = 1.0
+
+    /// 0...1; NaN / infinity fall back to the default.
+    static func clamp(_ v: Float) -> Float {
+        guard v.isFinite else { return defaultValue }
+        return min(1, max(0, v))
+    }
+
+    static func read(_ defaults: UserDefaults) -> Float {
+        guard let n = defaults.object(forKey: key) as? NSNumber else { return defaultValue }
+        return clamp(n.floatValue)
+    }
+
+    static func write(_ v: Float, to defaults: UserDefaults) {
+        defaults.set(clamp(v), forKey: key)
+    }
+
+    /// Whole percent for the slider's label / accessibility value.
+    static func percent(_ v: Float) -> Int {
+        Int((clamp(v) * 100).rounded())
+    }
+}
+// END ReadAloudVolume
 
 // MARK: - VoiceOutputPlayer
 //
@@ -330,6 +400,12 @@ final class VoiceOutputPlayer: NSObject, ObservableObject {
         player?.rate = rate
     }
 
+    /// [T-readaloud-volume] Apply the read-aloud volume to the CURRENTLY-playing
+    /// audio immediately; new units read it from VoiceOutputPreferences.
+    func setVolume(_ volume: Float) {
+        player?.volume = ReadAloudVolume.clamp(volume)
+    }
+
     /// Pause the currently-playing cloud audio (queue keeps filling in background).
     /// Sets `isPaused` even when there's no live `player` yet — an external
     /// recording can silence/stop our AVAudioPlayer BEFORE the pause signal
@@ -340,16 +416,37 @@ final class VoiceOutputPlayer: NSObject, ObservableObject {
     func pause() {
         if let p = player, p.isPlaying { p.pause() }
         isPaused = true
+        loggedPauseHold = false
     }
 
     /// Resume paused cloud audio. Resumes the live player if one is paused, and
     /// ALWAYS kicks the pump so a queue that drained its player while paused
     /// (external recording stopped our AVAudioPlayer) starts its next unit.
     func resume() {
+        // A resume is a user or coordinator decision to play again, so any
+        // external-audio latch is stale from here on. Clearing it also re-arms
+        // the coordinator: its pause path is idempotent on that latch and would
+        // otherwise ignore the next real interruption.
+        AudioSessionCoordinator.shared.clearExternalPauseLatch(reason: "resume")
         guard isPaused else { return }
         isPaused = false
+        loggedPauseHold = false
         if let p = player { p.play() } else { pumpPlayback() }
     }
+
+    /// [T-tts-external-pause-stuck] Explicit read-aloud (long-press "read reply",
+    /// "read all", "read selection") must start playing even if an earlier
+    /// external-audio pause was never lifted. Call before enqueueing.
+    func clearPauseForExplicitReadAloud() {
+        let hadLatch = AudioSessionCoordinator.shared.clearExternalPauseLatch(reason: "explicit read-aloud")
+        guard isPaused || hadLatch else { return }
+        VoiceLog.log("TTS explicit read-aloud — clearing latched pause (isPaused=\(isPaused) externalLatch=\(hadLatch))")
+        resume()
+    }
+
+    /// Logs once per pause that ready audio is being held, so a "spins but never
+    /// speaks" report shows the cause in the log.
+    private var loggedPauseHold = false
 
     /// The cloud TTS queue has drained — end the reply-TTS intent. The coordinator
     /// then re-applies the next-highest intent's profile (e.g. capture, keep-alive)
@@ -563,7 +660,13 @@ final class VoiceOutputPlayer: NSObject, ObservableObject {
         // is no live `player` — otherwise a unit whose synthesis completes
         // mid-recording would start playing under the recorder. `resume()`
         // re-enters here when the pause lifts.
-        guard !isPaused else { return }
+        guard !isPaused else {
+            if !loggedPauseHold, let front = queue.first, front.audio != nil {
+                loggedPauseHold = true
+                VoiceLog.log("TTS hold #\(front.seq): playback paused (queue=\(queue.count))")
+            }
+            return
+        }
         guard player == nil else { return }            // already playing
         guard let front = queue.first else {           // queue drained
             if isPlaying { isPlaying = false }
@@ -588,12 +691,15 @@ final class VoiceOutputPlayer: NSObject, ObservableObject {
             // so changing speed takes effect on the CURRENTLY-playing audio.
             p.enableRate = true
             p.rate = VoiceOutputPreferences.speedMultiplier
+            // [T-readaloud-volume] The read-aloud volume; setVolume() changes it
+            // on the playing unit in real time.
+            p.volume = VoiceOutputPreferences.readAloudVolume
             p.prepareToPlay()
             p.play()
             player = p
             isPlaying = true
-            VoiceLog.log(String(format: "TTS ▶︎ play #%d owner=%@ dur=%.2fs rate=%.2f queueAhead=%d bufferedAfter=%.2fs",
-                front.seq, String(front.ownerSessionId.prefix(8)), p.duration, p.rate, queue.count, bufferedAudioSeconds))
+            VoiceLog.log(String(format: "TTS ▶︎ play #%d owner=%@ dur=%.2fs rate=%.2f volume=%.2f queueAhead=%d bufferedAfter=%.2fs",
+                front.seq, String(front.ownerSessionId.prefix(8)), p.duration, p.rate, p.volume, queue.count, bufferedAudioSeconds))
         } catch {
             logger.error("TTS play failed #\(front.seq): \(error.localizedDescription)")
             playingSeq = -1

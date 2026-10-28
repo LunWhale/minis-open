@@ -70,13 +70,71 @@ enum AppBundle {
 ///   - key: the localization key, i.e. the English source string.
 ///   - comment: translator context, kept so `genstrings`-style extraction and
 ///     the String Catalog continue to see it.
+@_disfavoredOverload
 func AppLocalized(_ key: String.LocalizationValue, comment: StaticString? = nil) -> String {
+    // Interpolated keys ("\(n) chats") and LocalizationValue variables land
+    // here; plain literals take the cached StaticString overload below.
     String(localized: key, bundle: AppBundle.current, comment: comment)
+}
+
+/// [T-composer-typing-lag] Plain-literal keys — the vast majority of call
+/// sites — resolve here and are memoized per bundle. On iOS 16 each
+/// `String(localized:)` re-resolves the bundle and re-reads the strings table
+/// (NSBundle initWithPath / preferredLocalizations / localizedStringForKey…),
+/// ~25% of the main thread in a Time Profiler trace while a reply streamed,
+/// mostly from ToolCapsuleView / AIChatView bodies re-running per token.
+///
+/// The `LocalizationValue` overload is `@_disfavoredOverload`, so a literal
+/// without interpolation picks this one at compile time and the key is known
+/// exactly. (A first attempt recovered the key from a `LocalizationValue` by
+/// reflection; its layout differs on iOS 16, so the cache never hit there.)
+func AppLocalized(_ key: StaticString, comment: StaticString? = nil) -> String {
+    let bundle = AppBundle.current
+    let plain = key.description
+    if let hit = LocalizedStringCache.lookup(plain, bundle: bundle) { return hit }
+    let value = String(localized: String.LocalizationValue(plain), bundle: bundle, comment: comment)
+    LocalizedStringCache.store(value, for: plain, bundle: bundle)
+    return value
+}
+
+/// [T-composer-typing-lag] Process-wide memo for `AppLocalized`, keyed by the
+/// localization key and scoped to the bundle it was resolved from, so an
+/// in-app language switch (a different `.lproj` bundle) starts a fresh table.
+enum LocalizedStringCache {
+    private static let lock = NSLock()
+    private static var table: [String: String] = [:]
+    private static var tableBundle: ObjectIdentifier?
+    /// Bounds memory if a caller ever feeds unbounded distinct keys.
+    static let capacity = 4096
+
+    static func lookup(_ key: String, bundle: Bundle) -> String? {
+        lock.lock(); defer { lock.unlock() }
+        guard tableBundle == ObjectIdentifier(bundle) else { return nil }
+        return table[key]
+    }
+
+    static func store(_ value: String, for key: String, bundle: Bundle) {
+        lock.lock(); defer { lock.unlock() }
+        let id = ObjectIdentifier(bundle)
+        if tableBundle != id || table.count >= capacity {
+            table.removeAll(keepingCapacity: true)
+            tableBundle = id
+        }
+        table[key] = value
+    }
 }
 
 /// `LocalizedStringResource` overload, for call sites that already hold a
 /// resource (App Intents build these) rather than a literal key.
-func AppLocalized(_ resource: LocalizedStringResource) -> String {
+///
+/// [T-composer-typing-lag] Labeled on purpose. Unlabeled, a string literal can
+/// convert to `LocalizedStringResource` too, and overload resolution picked
+/// THIS overload for every `AppLocalized("…")` written without `comment:` —
+/// most call sites. That bypassed the StaticString cache (the iOS 16 trace
+/// still showed AppLocalized at 18% of the main thread while merely typing)
+/// and the in-app language bundle alike. With the label, literals can only
+/// reach the StaticString (plain) or LocalizationValue (interpolated) forms.
+func AppLocalized(resource: LocalizedStringResource) -> String {
     // A LocalizedStringResource carries its own bundle reference, so it cannot
     // be re-pointed the way a literal key can. Resolve it as-is rather than
     // pretending the override applies.

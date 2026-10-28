@@ -15,6 +15,23 @@
 
 import Foundation
 
+/// The sources that used to be the single file Agent/Chat/AIChatViewModel.swift -
+/// the class body plus the AIChatViewModel+<Concern>.swift files it was split
+/// into (the older extension files are NOT included) - read as one text.
+func chatViewModelSource() -> String {
+    let chat = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Agent/Chat")
+    let names = ["AIChatViewModel", "AIChatViewModel+Lifecycle", "AIChatViewModel+ContextUsage",
+                 "AIChatViewModel+StreamingUI", "AIChatViewModel+Speech", "AIChatViewModel+AutoPlayAudio",
+                 "AIChatViewModel+SystemPrompt", "AIChatViewModel+Send", "AIChatViewModel+Rerun",
+                 "AIChatViewModel+EditMessage", "AIChatViewModel+Cancel", "AIChatViewModel+PromptQueue",
+                 "AIChatViewModel+DebugDumps", "AIChatViewModel+TurnCompletion", "AIChatViewModel+AgentLoop",
+                 "AIChatViewModel+ThinkingLevel", "LLMProviderError"]
+    return names.compactMap { try? String(contentsOf: chat.appendingPathComponent($0 + ".swift"), encoding: .utf8) }
+        .joined(separator: "\n")
+}
+
 var failures = 0
 func check(_ label: String, _ actual: Bool, _ expected: Bool = true) {
     if actual == expected { print("  ✅ \(label)") }
@@ -209,24 +226,42 @@ func source(_ rel: String) -> String {
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
     return (try? String(contentsOf: here.appendingPathComponent(rel), encoding: .utf8)) ?? ""
 }
+
+/// The markdown renderer module (Views/Chat/Markdown/, formerly the single file
+/// SelectableMarkdownView.swift), read as one text with its files in path order.
+func markdownModuleSource() -> String {
+    let dir = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Views/Chat/Markdown")
+    let files = (FileManager.default.enumerator(at: dir, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? [])
+        .filter { $0.pathExtension == "swift" }
+        .sorted { $0.path < $1.path }
+    return files.compactMap { try? String(contentsOf: $0, encoding: .utf8) }.joined(separator: "\n")
+}
+
 let life = source("Agent/Chat/ChatLifecycleSupport.swift")
-let vm = source("Agent/Chat/AIChatViewModel.swift")
-let md = source("Views/Chat/SelectableMarkdownView.swift")
+let vm = chatViewModelSource()
+let md = markdownModuleSource()
 let helper = source("Agent/Jobs/HelperRunner.swift")
 let sheet = source("Views/Chat/HelperSheet.swift")
 if life.isEmpty {
     print("  ⏭  sources not readable from this sandbox")
 } else {
-    check("caps are 6 and 10",
-          life.contains("softCap: Int = 6") && life.contains("childSoftCap: Int = 10"))
+    // [T-limits-per-parent] Main cap = session slots (6) + 4 idle = 10, so six
+    // running conversations never evict the one being viewed.
+    check("caps are slots+4 (=10) and 10",
+          life.contains("static var softCap: Int { ConcurrencyLimits.sessionSlots + normalIdleHeadroom }")
+          && life.contains("static let normalIdleHeadroom = 4")
+          && life.contains("static let shippingSessionSlots = 6")
+          && life.contains("static let childSoftCap: Int = 10"))
     check("eviction releases, not cancels", life.contains("vm.releaseForEviction()"))
     check("no cancel remains on the capacity path",
           life.contains("private func evict(_ sessionId: String, vm: AIChatViewModel, reason: String) {\n        vm.cancel()"), false)
     check("session DELETE still cancels (deliberate)", life.contains("removed.cancel()"))
     check("761be79da active-child guard retained",
           life.contains("if AgentJobRegistry.shared.hasActiveChildren(parent: sessionId) { return false }"))
-    check("pools swept separately", life.contains("evictPool(.normal, cap: Self.softCap)")
-                                  && life.contains("evictPool(.child, cap: Self.childSoftCap)"))
+    check("pools swept separately", life.contains("evictPool(.normal, cap: Self.softCap, keeping: keeping)")
+                                  && life.contains("evictPool(.child, cap: Self.childSoftCap, keeping: keeping)"))
     check("memory warning also drains renderers", life.contains("SelectableMarkdownView.dropAllRenderers()"))
     check("releaseForEviction exists and frees render state",
           vm.contains("func releaseForEviction()") && vm.contains("releaseRenderState()"))
@@ -239,7 +274,7 @@ if life.isEmpty {
           helper.contains("getOrCreate(for: childId, kind: .child)"))
     // FIND-01
     check("pool tag is sticky (guarded on both nil checks)",
-          life.contains("if kind == .child, poolKinds[sessionId] == nil, cache[sessionId] == nil {"))
+          life.contains("if poolKinds[sessionId] == nil, cache[sessionId] == nil,\n           kind == .child || Self.isChildJobSession(sessionId) {"))
     check("unconditional re-tag is gone",
           life.contains("if kind == .child { poolKinds[sessionId] = .child }"), false)
     // FIND-02

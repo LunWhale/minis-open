@@ -1,5 +1,115 @@
+import Foundation
 import Network
 import CFNetwork
+
+// BEGIN ContainerDnsSettings
+/// [T-container-network-dns GH#396] What the Shell Container's /etc/resolv.conf
+/// should contain: the system's DNS (`auto`, the default) or a fixed list the
+/// user entered (`custom`).
+///
+/// Why both: some networks (LAN-only resolvers, Tailscale, private DNS) hand out
+/// servers that cannot resolve public names, so `apk add` / `pip` / `git` time
+/// out — those users need their own servers. But forcing public DNS for
+/// everyone breaks proxy apps in Fake-IP / TUN mode (Clash, Surge, sing-box),
+/// whose system DNS must stay in charge. So `auto` stays exactly as before and
+/// `custom` is opt-in: in `custom` the file is built only from the user's
+/// validated addresses and is no longer replaced when the network changes.
+///
+/// Pure (Foundation + inet_pton/inet_ntop) and exposed to Objective-C, so the
+/// kernel's `configureDns` asks it first and MinisTests/Standalone/
+/// ISHContainerNetworkDnsTests.swift compiles this block by itself.
+@objc(MinisContainerDns)
+final class ContainerDnsSettings: NSObject {
+    enum Mode: String, CaseIterable {
+        case auto, custom
+    }
+
+    /// UserDefaults keys; also the `minis-config` paths.
+    static let modeKey = "network.dnsMode"
+    static let serversKey = "network.dnsCustomServers"
+
+    struct Parsed: Equatable {
+        /// Valid addresses in canonical form, first occurrence order, no duplicates.
+        var servers: [String]
+        /// Tokens that are not an IPv4 or IPv6 address, as typed.
+        var invalid: [String]
+    }
+
+    /// Split `text` on newlines, commas, semicolons and whitespace, and check
+    /// every token. IPv6 zone ids (`fe80::1%en0`), brackets and ports are not
+    /// addresses a resolver can use from inside the container, so they are
+    /// invalid rather than silently stripped.
+    static func parse(_ text: String) -> Parsed {
+        let separators = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ",;"))
+        var out = Parsed(servers: [], invalid: [])
+        for token in text.components(separatedBy: separators) where !token.isEmpty {
+            if let address = canonicalAddress(token) {
+                if !out.servers.contains(address) { out.servers.append(address) }
+            } else if !out.invalid.contains(token) {
+                out.invalid.append(token)
+            }
+        }
+        return out
+    }
+
+    /// The address in canonical form (`2001:4860:4860::8888`, `10.0.0.1`), or
+    /// nil if `token` is not a literal IPv4 or IPv6 address.
+    static func canonicalAddress(_ token: String) -> String? {
+        // Darwin's inet_pton ACCEPTS a zone id and folds the interface index
+        // into the address (`fe80::1%en0` → `fe80:7::1`, a different, bogus
+        // address), so reject `%` before parsing.
+        guard !token.contains("%") else { return nil }
+        var v4 = in_addr()
+        if inet_pton(AF_INET, token, &v4) == 1 {
+            var buf = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+            guard inet_ntop(AF_INET, &v4, &buf, socklen_t(buf.count)) != nil else { return nil }
+            return String(cString: buf)
+        }
+        var v6 = in6_addr()
+        if inet_pton(AF_INET6, token, &v6) == 1 {
+            var buf = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
+            guard inet_ntop(AF_INET6, &v6, &buf, socklen_t(buf.count)) != nil else { return nil }
+            return String(cString: buf)
+        }
+        return nil
+    }
+
+    /// resolv.conf for a custom list: one `nameserver` line per address, in the
+    /// user's order. No `search` line — custom mode is exactly what was entered.
+    static func resolvConf(servers: [String]) -> String {
+        var out = "# Custom DNS set in Minis (Rootfs > Container Network).\n"
+            + "# Kept across network changes; set DNS Mode to Auto to follow the system.\n"
+        for server in servers { out += "nameserver \(server)\n" }
+        return out
+    }
+
+    static func mode(_ defaults: UserDefaults = .standard) -> Mode {
+        Mode(rawValue: defaults.string(forKey: modeKey) ?? "") ?? .auto
+    }
+
+    /// The saved list, re-validated on read: a value written by an older build
+    /// or by hand can never put a malformed line into resolv.conf.
+    static func storedServers(_ defaults: UserDefaults = .standard) -> [String] {
+        parse(defaults.string(forKey: serversKey) ?? "").servers
+    }
+
+    /// The resolv.conf to write in custom mode, or nil when the system's DNS
+    /// should be used: mode `auto`, or `custom` with no valid server saved
+    /// (an empty resolv.conf would break every lookup, so custom-without-servers
+    /// falls back to auto instead).
+    static func customResolvConf(_ defaults: UserDefaults = .standard) -> String? {
+        guard mode(defaults) == .custom else { return nil }
+        let servers = storedServers(defaults)
+        guard !servers.isEmpty else { return nil }
+        return resolvConf(servers: servers)
+    }
+
+    /// Objective-C entry for `-[ISHKernel configureDns]`.
+    @objc static func customResolvConfForKernel() -> String? {
+        customResolvConf()
+    }
+}
+// END ContainerDnsSettings
 
 /// Monitors network path changes and updates iSH's /etc/resolv.conf
 /// so DNS resolution stays current when switching between WiFi/cellular/etc.

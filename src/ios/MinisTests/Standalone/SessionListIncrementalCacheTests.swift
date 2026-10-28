@@ -18,6 +18,24 @@
 
 import Foundation
 
+/// The sources that used to be the single file Agent/Chat/ChatStore.swift -
+/// the actor plus the files it was split into - read as one text.
+func chatStoreSource() -> String {
+    let chat = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Agent/Chat")
+    let names = ["ChatStore", "ChatStore+Schema", "ChatStore+SessionCRUD", "ChatStore+SessionList",
+                 "ChatStore+Search", "ChatStore+SessionQueries", "ChatStore+Folders",
+                 "ChatStore+SessionDeletion", "ChatStore+StoredPreview", "ChatStore+Messages",
+                 "ChatStore+Media", "ChatStore+CompactMarkers", "ChatStore+Tombstones",
+                 "ChatStore+WebAppShortcuts", "ChatStore+Maintenance", "ChatStore+Helpers",
+                 "ChatStore+UsageStats", "ChatStoreModels", "ContentPart+ProviderConversion",
+                 "RawMessage+Conversion", "ChatStore+SyncDirty", "ChatStore+SyncRemoteSessions",
+                 "ChatStore+SyncRemoteRecords", "ChatStore+BackupRestore"]
+    return names.compactMap { try? String(contentsOf: chat.appendingPathComponent($0 + ".swift"), encoding: .utf8) }
+        .joined(separator: "\n")
+}
+
 var failures = 0
 func check(_ l: String, _ a: Bool, _ e: Bool = true) {
     if a == e { print("  ✅ \(l)") } else { print("  ❌ \(l) — expected \(e), got \(a)"); failures += 1 }
@@ -213,8 +231,8 @@ check("that is >1000× less work", Double(legacyCost) / Double(incrementalCost) 
 // MARK: - 8. Call-site classification is enforced in the real source
 
 print("\n▶️  every ChatStore call site is classified")
-let storePath = "../../Agent/Chat/ChatStore.swift"
-guard let src = try? String(contentsOfFile: storePath, encoding: .utf8) else {
+let storePath = "Agent/Chat/ChatStore*.swift (split)"
+guard let src = Optional(chatStoreSource()), !src.isEmpty else {
     print("  ❌ could not read \(storePath)")
     failures += 1
     exit(1)

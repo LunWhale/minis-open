@@ -180,12 +180,13 @@ check("makeCopilotProvider assigns perRequestHeaders",
 let openai = sourceOf("Providers/OpenAI/OpenAIProvider.swift")
 check("OpenAIProvider declares the hook",
       openai.contains("var perRequestHeaders:"))
-// The three request paths Copilot can travel: the agent loop (streamRaw) and
-// the two builders. A dropped call site here is the exact regression that made
-// these headers dead code in the first place.
+// The request paths the hook must reach: the agent loop (streamRaw), the two
+// conversation builders, and - since [T-opencode-every-entry] - passthrough,
+// image generation and image edit. A dropped call site here is the exact
+// regression that made these headers dead code in the first place.
 let callSites = openai.components(separatedBy: "perRequestHeaders?(").count - 1
-check("the hook is applied at all three request sites (found \(callSites))",
-      callSites == 3)
+check("the hook is applied at all six request sites (found \(callSites))",
+      callSites == 6)
 
 // MARK: - 7. Backup covers the Copilot token
 

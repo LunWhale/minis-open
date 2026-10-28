@@ -103,6 +103,8 @@ struct HelperTranscriptPage: View {
     /// [T-helpersheet-deferred-release] Pending render-state release, so a
     /// reopen can cancel it. See `.onDisappear`.
     @State private var releaseTask: Task<Void, Never>?
+    /// [T-limits-per-parent] This sheet holds an on-screen claim on the child.
+    @State private var onScreenClaimed = false
 
     private let clock = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -202,12 +204,20 @@ struct HelperTranscriptPage: View {
             }
         }
         .task {
+            // [T-agent-transcript-diag] appear → load → shown, one line each.
+            let log = AppLogger(category: "HelperSheet")
+            log.info("[agent] transcript task start child=\(target.id.prefix(8))")
             // [T-vmcache-pools] Child pool — this sheet is the one place a
             // child conversation is displayed, and viewing it must not spend
             // the user's normal-session budget.
             let (vm, fresh) = ViewModelCache.shared.getOrCreate(for: target.id, kind: .child)
+            // [T-limits-per-parent] Pin it while shown: not evicted by the child
+            // pool sweep, and its render caches are built (a sub agent nobody
+            // watches skips them). Claimed before loading so the load renders.
+            if !onScreenClaimed { ViewModelCache.shared.setOnScreen(target.id, true); onScreenClaimed = true }
             if fresh || vm.messages.isEmpty { await vm.loadSession() }
             childVM = vm
+            log.info("[agent] transcript loaded child=\(target.id.prefix(8)) fresh=\(fresh) msgs=\(vm.messages.count) running=\(vm.isProcessing)")
             isRunning = vm.isProcessing
             if let job = AgentJobRegistry.shared.list().first(where: { $0.runSessionId == target.id }),
                let s = job.startedAt {
@@ -216,6 +226,8 @@ struct HelperTranscriptPage: View {
             identity = await HelperModelIdentity.recover(childSessionId: target.id)
         }
         .onDisappear {
+            AppLogger(category: "HelperSheet").info("[agent] transcript disappear child=\(target.id.prefix(8))")
+            if onScreenClaimed { ViewModelCache.shared.setOnScreen(target.id, false); onScreenClaimed = false }
             // [T-vmcache-release] A child that is no longer on screen keeps its
             // messages (the job may still be running and writing to them) but
             // drops its RENDER state — parsed markdown, laid-out attributed

@@ -120,6 +120,13 @@ enum ChatStoreSyncHydrators {
             merger: { record in await mergeEnvVarItem(record: record) },
             deletionApplier: { id in await applyEnvVarItemDeletion(id: id) }
         )
+        // [T-envvar-disable] Enabled / disabled state, its own record type.
+        h.register(
+            recordType: "EnvVarStateItem",
+            builder: { id in await buildEnvVarState(id: id) },
+            merger: { record in await mergeEnvVarState(record: record) },
+            deletionApplier: { id in await applyEnvVarStateDeletion(id: id) }
+        )
         h.register(
             recordType: "SyncDeviceV2",
             builder: { id in await buildDevice(id: id) },
@@ -481,32 +488,31 @@ enum ChatStoreSyncHydrators {
     // MARK: - Skill
 
     private static func buildSkill(id: String) async -> PortableRecord? {
+        // [T-skill-zip-off-main] The main actor hands over only what lives
+        // there: the skill's row and where its files are. Reading SKILL.md
+        // and packing the ZIP used to happen inside this closure too, which
+        // froze the UI for seconds whenever a batch carried a large skill.
         let snapshot = await MainActor.run { () -> SkillSnapshot? in
             guard let s = SkillStore.shared.skills.first(where: { $0.id == id }) else { return nil }
-            let zipData = SkillStore.shared.buildSkillZipData(id)
-            let body = SkillStore.shared.readSkillContent(id) ?? ""
             return SkillSnapshot(
                 id: s.id, name: s.name, description: s.description,
                 version: s.version, importSource: s.importSource.dbValue,
                 isEnabled: s.isEnabled, installedAt: s.installedAt,
-                updatedAt: s.updatedAt, bodyText: body, zipData: zipData
+                updatedAt: s.updatedAt,
+                skillDir: SkillStore.shared.skillDirectoryURL(for: s.id)
             )
         }
         guard let snap = snapshot else { return nil }
-        // Persist zip to a temp URL so we can reference it as a PortableAsset.
-        var bundleAssetURL: URL? = nil
-        if let zip = snap.zipData {
-            let url = FileManager.default.temporaryDirectory
-                .appendingPathComponent("skill-v2-\(id).zip")
-            try? zip.write(to: url)
-            bundleAssetURL = url
-        }
+        let bodyText = SkillStore.readSkillContent(in: snap.skillDir) ?? ""
+        // The ZIP as a file we can reference as a PortableAsset: built off
+        // the main thread, and reused while the skill's files are unchanged.
+        let bundleAssetURL = await SkillStore.skillZipFile(skillId: id, skillDir: snap.skillDir)
         let synced = SyncedSkill(
             id: snap.id, name: snap.name, description: snap.description,
             version: snap.version, importSource: snap.importSource,
             isEnabled: snap.isEnabled ? 1 : 0,
             installedAt: snap.installedAt, updatedAt: snap.updatedAt,
-            bodyText: snap.bodyText, bundleZipURL: bundleAssetURL
+            bodyText: bodyText, bundleZipURL: bundleAssetURL
         )
         var portable = SyncableTypeRegistry.shared.metadata(for: "SkillV2")?.buildPortable(synced)
         if var p = portable, let zipURL = bundleAssetURL,
@@ -857,6 +863,45 @@ enum ChatStoreSyncHydrators {
         logger.info("[SyncCore] applied EnvVarItem deletion id=\(id.prefix(8))")
     }
 
+    // MARK: - EnvVarStateItem [T-envvar-disable]
+
+    private static func buildEnvVarState(id: String) async -> PortableRecord? {
+        guard let rec = await MainActor.run(body: { EnvVarStore.shared.stateRecord(id: id) }) else {
+            return nil
+        }
+        let synced = SyncedEnvVarState(id: id, key: rec.key, enabled: rec.enabled ? 1 : 0,
+                                       updatedAt: rec.updatedAt)
+        return SyncableTypeRegistry.shared.metadata(for: "EnvVarStateItem")?.buildPortable(synced)
+    }
+
+    /// LWW on the state's own clock (EnvVarStateBook.applyRemote): a record
+    /// missing `enabled` or its clock changes nothing, an older or equal one
+    /// is ignored. The variable may not have arrived yet; the state is kept
+    /// for its id.
+    private static func mergeEnvVarState(record: PortableRecord) async {
+        guard let id = stringField(record, "entryId") else {
+            logger.warning("[SyncCore] mergeEnvVarState: missing entryId field")
+            return
+        }
+        let key = stringField(record, "key") ?? ""
+        let enabled = intField(record, "enabled").map { $0 != 0 }
+        let updatedAt = dateField(record, "updatedAt")
+        // A variable deleted here moments ago must not get a state back.
+        if await ChatStore.shared.isRecentlyDeletedRecord(type: "EnvVarItem", id: id,
+                                                          remoteUpdatedAt: updatedAt ?? record.updatedAt) {
+            logger.info("[SyncCore] mergeEnvVarState SKIP (variable recently deleted locally): id=\(id.prefix(8))")
+            return
+        }
+        let applied = await MainActor.run {
+            EnvVarStore.shared.applyRemoteState(id: id, key: key, enabled: enabled, updatedAt: updatedAt)
+        }
+        logger.info("[SyncCore] EnvVarStateItem id=\(id.prefix(8)) key=\(key) applied=\(applied)")
+    }
+
+    private static func applyEnvVarStateDeletion(id: String) async {
+        await MainActor.run { EnvVarStore.shared.applyRemoteStateDeletion(id: id) }
+    }
+
     // MARK: - SyncDevice
 
     private static func mergeDevice(record: PortableRecord) async {
@@ -887,8 +932,7 @@ enum ChatStoreSyncHydrators {
         let isEnabled: Bool
         let installedAt: Date
         let updatedAt: Date
-        let bodyText: String
-        let zipData: Data?
+        let skillDir: URL
     }
 
     /// Minimal MIME helper for SessionFile builds. Keep tiny — full helper
@@ -1606,7 +1650,11 @@ enum ChatStoreSyncHydrators {
             updatedAt: (dateField(record, "updatedAt") ?? Date()).timeIntervalSince1970,
             extrasJson: optionalStringField(record, "extrasJson"),
             inboundAddedMembers: inboundAdded,
-            inboundRemovedMembers: inboundRemoved
+            inboundRemovedMembers: inboundRemoved,
+            // [T-group-order-log] All the record says about itself. A synced
+            // group record carries no "which device wrote me" field, so the
+            // source device cannot be named here.
+            inboundMeta: "record=ProviderModelGroupV3 schema=\(record.schemaVersion) inboundTombstones=added:\(inboundAdded.count)/removed:\(inboundRemoved.count)"
         )
         if applied {
             // [T-icloud-modelgroup-orphan-members] Orphan diagnostic
@@ -1778,7 +1826,7 @@ enum ChatStoreSyncHydrators {
             // [T-subagent-thinking-override] Absent from an older peer's record
             // → nil → "not set", which is the pre-feature behaviour.
             thinkingLevelOverride: optionalStringField(record, "thinkingLevelOverride")
-                .flatMap { ThinkingLevel(rawValue: $0) },
+                .flatMap { ThinkingLevel.parse($0) },
             isBuiltIn: (intField(record, "isBuiltIn") ?? 0) != 0,
             sortOrder: intField(record, "sortOrder") ?? 0,
             updatedAt: dateField(record, "updatedAt") ?? Date()

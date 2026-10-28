@@ -20,6 +20,23 @@
 // Run: swift ContextOverflowRejectionEdgeTests.swift
 import Foundation
 
+/// The sources that used to be the single file Agent/Chat/AIChatViewModel.swift -
+/// the class body plus the AIChatViewModel+<Concern>.swift files it was split
+/// into (the older extension files are NOT included) - read as one text.
+func chatViewModelSource() -> String {
+    let chat = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Agent/Chat")
+    let names = ["AIChatViewModel", "AIChatViewModel+Lifecycle", "AIChatViewModel+ContextUsage",
+                 "AIChatViewModel+StreamingUI", "AIChatViewModel+Speech", "AIChatViewModel+AutoPlayAudio",
+                 "AIChatViewModel+SystemPrompt", "AIChatViewModel+Send", "AIChatViewModel+Rerun",
+                 "AIChatViewModel+EditMessage", "AIChatViewModel+Cancel", "AIChatViewModel+PromptQueue",
+                 "AIChatViewModel+DebugDumps", "AIChatViewModel+TurnCompletion", "AIChatViewModel+AgentLoop",
+                 "AIChatViewModel+ThinkingLevel", "LLMProviderError"]
+    return names.compactMap { try? String(contentsOf: chat.appendingPathComponent($0 + ".swift"), encoding: .utf8) }
+        .joined(separator: "\n")
+}
+
 var failures = 0
 func check(_ label: String, _ cond: Bool) {
     print(cond ? "  ✅ \(label)" : "  ❌ \(label) — expected true, got false")
@@ -38,7 +55,7 @@ func source(_ rel: String) -> String {
 // MARK: - Port (verbatim; [0] checks it against Agent/Chat/ContextPolicy.swift)
 
 enum Port {
-    static let calibrationRange: ClosedRange<Double> = 0.8...3.0
+    static let calibrationRange: ClosedRange<Double> = 0.8...8.0
 
     static let overflowMarkers = [
         "maximum context length", "context length exceeded", "context_length_exceeded",
@@ -135,7 +152,7 @@ func markersText(_ text: String) -> String? {
 }
 
 let prod = source("Agent/Chat/ContextPolicy.swift")
-let vm = source("Agent/Chat/AIChatViewModel.swift")
+let vm = chatViewModelSource()
 let compaction = source("Agent/Chat/AIChatViewModel+Compaction.swift")
 
 // MARK: - [0]
@@ -151,7 +168,7 @@ do {
     }
     check("overflowMarkers is verbatim", markersText(prod) != nil && markersText(prod) == markersText(portBody))
     check("calibration ceiling unchanged",
-          prod.contains("static let calibrationRange: ClosedRange<Double> = 0.8...3.0"))
+          prod.contains("static let calibrationRange: ClosedRange<Double> = 0.8...8.0"))
 }
 
 // MARK: - [1] classification

@@ -149,6 +149,9 @@ extension AIChatViewModel {
                 sessionId: sid,
                 command: command,
                 timeout: effectiveTimeout,
+                // [T-shell-stop-owner] Filed under the shared workspace (`sid`)
+                // but owned by THIS session, so its Stop kills only its own.
+                ownerId: sessionId,
                 // ISHShellExecutor dispatches every line on the main queue
                 // already (ISHShellExecutor.m:780/812), so we're guaranteed to
                 // run on the main thread here. Calling the MainActor-isolated

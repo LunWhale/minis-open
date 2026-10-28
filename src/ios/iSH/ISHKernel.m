@@ -7,6 +7,16 @@
 
 #import "ISHKernel.h"
 #import "CurrentRoot.h"
+#import "../Diagnostics/CrashSignalHandler.h"   // minis_crash_signal_record
+#import "../Diagnostics/CrashSignalPolicy.h"    // minis_signal_finish
+#import "Minis-Swift.h"   // MinisContainerDns (ContainerDnsSettings, NetworkMonitor.swift)
+
+// [T-ios-aojit] AOT runtime entry points (deps/ish asbestos/guest-arm64/jit.h,
+// which is not part of the copied headers). libish is built with -Djit=true
+// -Djit_emit=false, so these always exist.
+int jit_control(const char *cmd, size_t len);
+size_t jit_describe(char *buf, size_t size);
+static NSString *const AOJITEnabledDefaultsKey = @"aojitEnabled";
 // [GH#175] For sizeof(sockaddr_un.sun_path) — the Darwin HOST limit that
 // iSH's unchecked sprintf in fs/sock.c writes into. Safe to include here:
 // this file does not pull in ish/fs/sock.h, so there is no clash with iSH's
@@ -27,6 +37,7 @@
 #include "ish/kernel/mm.h"
 #include <os/proc.h>
 #include <pthread.h>
+#include <sys/mman.h>
 #include <stdatomic.h>
 #include <stdlib.h>     // realpath
 #include <errno.h>
@@ -378,15 +389,95 @@ extern __thread volatile uint64_t jit_saved_pc;
 // Assembly trampoline: returns INT_JIT_CRASH via fiber_exit (defined in entry.S)
 extern void jit_crash_trampoline(void);
 
-// cpu_state field offsets (must match cpu-offsets.h)
-#define CRASH_CPU_pc 272
-#define CRASH_CPU_segfault_addr 832
-#define CRASH_CPU_segfault_was_write 840
-#define CRASH_LOCAL_jit_exit_sp 920
+// Diagnostics handle_interrupt reads after a recovered fault (defined in calls.c).
+extern __thread volatile uint64_t jit_last_host_fault;
+extern __thread volatile uint64_t jit_last_x7;
+extern __thread volatile uint64_t jit_last_x10;
+extern __thread volatile int jit_crash_count;
+
+// Native (AOT/JIT) code keeps pinned guest registers only in host registers;
+// copy them back before the block re-runs. Lives in libish_emu (jit.c) and is
+// a no-op while no native code is loaded. Weak, so a libish built without
+// -Djit still links.
+extern bool jit_crash_sync(void *ucontext) __attribute__((weak_import));
+
+// [T-jit-recovery-offsets] Field offsets come from the cpu-offsets.h that meson
+// generated for the SAME libish build this app links (build_ish.sh copies it
+// next to the other ish headers). They used to be hand-copied literals
+//   pc 272, segfault_addr 832, segfault_was_write 840, jit_exit_sp 920
+// while the iOS build's structs say 272 / 840 / 848 / 952. deps/ish/main.c
+// fixed the same drift for the CLI on 2026-08-22 (f7b0a737); this copy was
+// missed. The damaging one is jit_exit_sp: recovery restored SP from the
+// wrong slot, `fiber_exit + 4` (`ldr lr, [sp, #0x60]`) faulted on it, and
+// with SP pointing nowhere XNU could not push the second signal frame, so it
+// killed the whole process with SIGILL ("trashed its stack"). That is
+// EXC_CRASH (SIGILL) attributed to the idle main thread, with a guest thread
+// parked at fiber_exit+4 <- handle_miss_* (1.15 build 4, 2026-09-29 17:20 and
+// 17:22, both during `ldid`).
+#include "ish/cpu-offsets.h"
+#define CRASH_CPU_pc                  CPU_pc
+#define CRASH_CPU_segfault_addr       CPU_segfault_addr
+#define CRASH_CPU_segfault_was_write  CPU_segfault_was_write
+#define CRASH_LOCAL_jit_exit_sp       LOCAL_jit_exit_sp
 
 /// Handles SIGSEGV/SIGBUS from JIT code (stale TLB pointers from concurrent CoW).
 /// Uses ucontext PC manipulation to redirect to jit_crash_trampoline.
+/// [T-crash-signal-refault] The handlers that were installed for these signals
+/// before ours (the app's CrashSignalHandler), so a signal from a thread that is
+/// not an iSH thread still reaches the app's crash record instead of being
+/// swallowed by the override.
+static struct sigaction g_prev_crash_actions[NSIG];
+
+// [T-crash-quickaction-tlv] Canaries around this file's statics in __bss.
+// Crash 2026-10-05 19:21 (1.15, iOS 27.0.1, voice input + several streaming
+// replies): THREE unrelated words in the app's __DATA had reverted to zero -
+// QuickActionWorkflow.shared's once token and its type-metadata cache (both
+// set at launch by ContentView.body; the crash stack re-ran their
+// initialisation two hours later), and the TLV descriptor thunk of `in_jit`
+// (x8 = 0 at a `blr x8` with x0 = the descriptor). All three sit within
+// ~50 KB of where this file's static 128 KB signal altstack used to be
+// (__thread_vars just below it, Swift __bss just above). The pattern is set
+// at install and checked by a timer, so the next occurrence is logged with a
+// timestamp instead of surfacing hours later as an unrelated crash.
+#define BSS_CANARY_PATTERN 0x4d494e4953424453ULL   /* "MINISBDS" */
+static void jit_crash_handler(int sig, siginfo_t *info, void *ctx);
+static volatile uint64_t g_bss_canary_before[2];
+static volatile uint64_t g_bss_canary_after[2];
+
+/// Hand a crash signal from a thread iSH does not own to the handler that was
+/// installed before ours (the app's crash record), then end it so the system
+/// records the REAL exception (a synchronous fault re-faults under SIG_DFL).
+/// Touches no thread-local storage.
+static void jit_forward_non_ish_signal(int sig, siginfo_t *info, void *ctx) {
+    // [T-crash-signal-refault] Not an iSH thread (UI, Swift tasks,
+    // networking). Hand the signal to the handler that was installed
+    // before ours - the app's crash record (minimal context + stack) -
+    // then end it so the system sees the REAL exception: a synchronous
+    // fault returns with SIG_DFL and re-faults into EXC_BAD_ACCESS /
+    // EXC_BREAKPOINT with its address; only a sent signal is re-raised.
+    // The old SIG_DFL + raise() reported every fault as EXC_CRASH with
+    // codes 0 and far 0, and skipped the app's record entirely.
+    if (sig > 0 && sig < NSIG) {
+        struct sigaction *prev = &g_prev_crash_actions[sig];
+        if ((prev->sa_flags & SA_SIGINFO) && prev->sa_sigaction != NULL
+            && prev->sa_sigaction != jit_crash_handler) {
+            minis_crash_signal_record(sig, info, ctx, "ish-chained");
+        }
+    }
+    minis_signal_finish(sig, info, ctx);
+}
+
 static void jit_crash_handler(int sig, siginfo_t *info, void *ctx) {
+    // [T-crash-quickaction-tlv] The main thread is never an iSH thread: forward
+    // before touching any `__thread` variable. Reading `in_jit` /
+    // `ish_thread_marker` calls the TLV descriptor's thunk; in the 2026-10-05
+    // crash that thunk had been zeroed, so the handler itself jumped to 0x0
+    // and the report showed only "PC 0 / CODESIGNING Invalid Page" instead of
+    // the real fault in the main thread.
+    if (pthread_main_np()) {
+        jit_forward_non_ish_signal(sig, info, ctx);
+        return;
+    }
 #ifdef __aarch64__
     if ((sig == SIGSEGV || sig == SIGBUS) && in_jit) {
         ucontext_t *uc = (ucontext_t *)ctx;
@@ -394,34 +485,59 @@ static void jit_crash_handler(int sig, siginfo_t *info, void *ctx) {
         // _cpu is in x1 — pointer to cpu_state within fiber_frame
         uint64_t cpu_ptr = uc->uc_mcontext->__ss.__x[1];
 
-        // Reconstruct guest segfault_addr from registers
-        uint64_t x7 = uc->uc_mcontext->__ss.__x[7];
-        uint64_t x10 = uc->uc_mcontext->__ss.__x[10];
-        uint64_t guest_addr = (x7 - x10) & 0xffffffffffffULL;
-
-        // Determine read/write from host ESR
-        uint64_t esr = uc->uc_mcontext->__es.__esr;
-        int was_write = (esr & 0x40) != 0;
-
-        // Write crash info directly to cpu_state
-        *(uint64_t *)(cpu_ptr + CRASH_CPU_segfault_addr) = guest_addr;
-        *(int *)(cpu_ptr + CRASH_CPU_segfault_was_write) = was_write;
-        *(uint64_t *)(cpu_ptr + CRASH_CPU_pc) = (uint64_t)jit_saved_pc;
-
-        // Restore SP to the value saved by fiber_enter
+        // [T-jit-recovery-offsets] Never resume on a stack pointer that is not
+        // this thread's: a bad one faults again with nowhere to put the signal
+        // frame, and XNU then kills the WHOLE app (SIGILL). fiber_enter saved
+        // exit_sp above the frames we are unwinding, so it must be 16-byte
+        // aligned and lie in (current sp, top of this thread's stack]. If not,
+        // fall through and park only this guest thread (below).
         uint64_t exit_sp = *(uint64_t *)(cpu_ptr + CRASH_LOCAL_jit_exit_sp);
-        uc->uc_mcontext->__ss.__sp = exit_sp;
+        uint64_t cur_sp = uc->uc_mcontext->__ss.__sp;
+        uint64_t stack_top = (uint64_t)pthread_get_stackaddr_np(pthread_self());
+        bool sp_ok = exit_sp != 0 && (exit_sp & 0xf) == 0
+            && exit_sp > cur_sp && exit_sp <= stack_top;
+        if (sp_ok) {
+            if (jit_crash_sync) jit_crash_sync(uc);
 
-        // Redirect execution to crash trampoline
-        uc->uc_mcontext->__ss.__pc = (uint64_t)jit_crash_trampoline;
+            // Reconstruct guest segfault_addr from registers
+            uint64_t x7 = uc->uc_mcontext->__ss.__x[7];
+            uint64_t x10 = uc->uc_mcontext->__ss.__x[10];
+            uint64_t guest_addr = (x7 - x10) & 0xffffffffffffULL;
 
-        // Unblock signal so it can fire again
-        sigset_t unblock;
-        sigemptyset(&unblock);
-        sigaddset(&unblock, sig);
-        sigprocmask(SIG_UNBLOCK, &unblock, NULL);
+            jit_last_host_fault = (uint64_t)info->si_addr;
+            jit_last_x7 = x7;
+            jit_last_x10 = x10;
+            jit_crash_count++;
 
-        return;
+            // Determine read/write from host ESR
+            uint64_t esr = uc->uc_mcontext->__es.__esr;
+            bool was_write = (esr & 0x40) != 0;
+
+            // Write crash info directly to cpu_state. segfault_was_write is a
+            // `bool`: store 1 byte (the gadgets use strb), not an int.
+            *(uint64_t *)(cpu_ptr + CRASH_CPU_segfault_addr) = guest_addr;
+            *(bool *)(cpu_ptr + CRASH_CPU_segfault_was_write) = was_write;
+            *(uint64_t *)(cpu_ptr + CRASH_CPU_pc) = (uint64_t)jit_saved_pc;
+
+            // Restore SP to the value saved by fiber_enter
+            uc->uc_mcontext->__ss.__sp = exit_sp;
+
+            // Redirect execution to crash trampoline
+            uc->uc_mcontext->__ss.__pc = (uint64_t)jit_crash_trampoline;
+
+            // Unblock signal so it can fire again
+            sigset_t unblock;
+            sigemptyset(&unblock);
+            sigaddset(&unblock, sig);
+            sigprocmask(SIG_UNBLOCK, &unblock, NULL);
+
+            return;
+        }
+        char msg[160];
+        int mlen = snprintf(msg, sizeof(msg),
+            "\n=== iSH JIT recovery refused: exit_sp 0x%llx outside (sp 0x%llx, top 0x%llx] ===\n",
+            (unsigned long long)exit_sp, (unsigned long long)cur_sp, (unsigned long long)stack_top);
+        write(STDERR_FILENO, msg, mlen);
     }
 #endif
     // Check if this is an iSH guest thread by testing the thread-local `in_jit` variable.
@@ -436,11 +552,7 @@ static void jit_crash_handler(int sig, siginfo_t *info, void *ctx) {
     // in_jit==0 (between JIT runs) from non-iSH threads (never set).
     extern __thread int ish_thread_marker;
     if (!ish_thread_marker) {
-        // Not an iSH thread — restore default handler and re-raise
-        struct sigaction sa_default = {0};
-        sa_default.sa_handler = SIG_DFL;
-        sigaction(sig, &sa_default, NULL);
-        raise(sig);
+        jit_forward_non_ish_signal(sig, info, ctx);
         return;
     }
 
@@ -554,18 +666,373 @@ static void embedded_die_handler(const char *msg) {
     __builtin_unreachable();
 }
 
+// BEGIN JitAltstack
+/// [T-crash-quickaction-tlv] A signal altstack in its own mapping with a
+/// PROT_NONE guard page on each side. It used to be a 128 KB static array in
+/// the app's __bss, between the TLV descriptors and Swift's once tokens /
+/// metadata caches; anything running past either end of it (a handler or an
+/// adopting runtime using more than it was given) silently overwrote those
+/// words. Now an overrun faults at the guard page with its own address.
+/// NULL when the mapping fails: no altstack, signals run on the thread stack.
+static void *jit_altstack_alloc(size_t size) {
+    size_t page = (size_t)getpagesize();
+    size = (size + page - 1) & ~(page - 1);
+    size_t total = size + 2 * page;
+    char *base = mmap(NULL, total, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+    if (base == MAP_FAILED) return NULL;
+    if (mprotect(base, page, PROT_NONE) != 0 || mprotect(base + page + size, page, PROT_NONE) != 0) {
+        munmap(base, total);
+        return NULL;
+    }
+    return base + page;
+}
+// END JitAltstack
+
+// BEGIN DataOnceWatch
+/// [T-crash-bss-once-watch] 1.15 build 12 (iOS 27.0, 2026-10-07 14:26) died in
+/// ContentView.body reading QuickActionWorkflow.shared.$state: the once token
+/// said "initialised" but the static's storage word read 0, so the getter
+/// loaded from nil + 0x28. Same family as the 2026-10-05 crash (a once token,
+/// a metadata cache and a TLV thunk back to 0), but this word sat in __common,
+/// 10 MB away from the two canaries above, which therefore never fired. The
+/// writer is still unknown.
+///
+/// A completed dispatch_once / swift_once token settles to ~0 (libdispatch
+/// first stores a generation and marks it ~0 on a later call once quiesced)
+/// and then holds ~0 for the life of the process; there are hundreds of them
+/// spread through the image's static data. Watch all of them: one that reads 0
+/// again proves its page was wiped. The report names the zeroed words as image offsets (add the __TEXT
+/// vmaddr, 0x100000000 for the app binary, to look them up with nm), whether
+/// each page is now entirely zero, and its VM region now and at the first
+/// scan - a page replaced by a new mapping (munmap + mmap) is backed by a
+/// different VM object, one zeroed in place (memset) by the same one.
+#include <dlfcn.h>
+#include <mach-o/getsect.h>
+#include <mach-o/loader.h>
+#include <time.h>
+
+typedef void (*data_once_watch_log_fn)(const char *line);
+
+#define DATA_ONCE_DONE UINT64_MAX
+#define DATA_ONCE_MAX_REGIONS 64
+#define DATA_ONCE_MAX_REPORTS 3
+#define DATA_ONCE_MAX_PAGES_PER_REPORT 8
+
+struct data_once_region {
+    uint64_t start, size;
+    uint32_t tag, share, object, prot;
+};
+
+struct data_once_watch {
+    const struct mach_header_64 *image;
+    uint64_t lo, hi;             // span of the watched sections in memory
+    uint64_t *slots;             // addresses that held ~0 at the last scan
+    size_t count, cap;
+    uint64_t *preset;            // addresses that already held ~0 at image load
+    size_t preset_count, preset_cap;
+    struct data_once_region regions[DATA_ONCE_MAX_REGIONS];   // at the first scan
+    size_t region_count;
+    unsigned reports;
+};
+
+static const char *const k_data_once_sections[] = {"__data", "__bss", "__common"};
+
+static bool data_once_region_at(uint64_t addr, struct data_once_region *out) {
+    vm_address_t a = (vm_address_t)addr;
+    vm_size_t size = 0;
+    natural_t depth = 0;
+    struct vm_region_submap_info_64 info;
+    mach_msg_type_number_t n = VM_REGION_SUBMAP_INFO_COUNT_64;
+    if (vm_region_recurse_64(mach_task_self(), &a, &size, &depth,
+                             (vm_region_recurse_info_t)&info, &n) != KERN_SUCCESS)
+        return false;
+    *out = (struct data_once_region){a, size, info.user_tag, info.share_mode,
+                                     info.object_id, (uint32_t)info.protection};
+    return true;
+}
+
+static bool data_once_append(uint64_t **list, size_t *count, size_t *cap, uint64_t addr) {
+    if (*count == *cap) {
+        size_t grown_cap = *cap ? *cap * 2 : 1024;
+        uint64_t *grown = realloc(*list, grown_cap * sizeof(uint64_t));
+        if (grown == NULL) return false;
+        *list = grown;
+        *cap = grown_cap;
+    }
+    (*list)[(*count)++] = addr;
+    return true;
+}
+
+/// True when `addr` held ~0 at image load. The list is ascending (sections
+/// are walked in address order), so a binary search.
+static bool data_once_is_preset(const struct data_once_watch *w, uint64_t addr) {
+    size_t lo = 0, hi = w->preset_count;
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        if (w->preset[mid] == addr) return true;
+        if (w->preset[mid] < addr) lo = mid + 1; else hi = mid;
+    }
+    return false;
+}
+
+/// Points the watch at the image containing `anchor`, records the span of its
+/// static data, and remembers every __data word that is ~0 before any code
+/// has run: those are initialisers such as iSH's `static int cached = -1`
+/// pairs (one merged 8-byte word reads ~0), which later legitimately become
+/// 0. Once tokens start at 0, so none of them is excluded. Call at image load.
+/// False when the image has none of the sections.
+static bool data_once_init(struct data_once_watch *w, const void *anchor) {
+    Dl_info info;
+    if (dladdr(anchor, &info) == 0 || info.dli_fbase == NULL) return false;
+    w->image = (const struct mach_header_64 *)info.dli_fbase;
+    w->lo = UINT64_MAX;
+    w->hi = 0;
+    for (size_t s = 0; s < sizeof(k_data_once_sections) / sizeof(k_data_once_sections[0]); s++) {
+        unsigned long size = 0;
+        uint8_t *sect = getsectiondata(w->image, "__DATA", k_data_once_sections[s], &size);
+        if (sect == NULL || size == 0) continue;
+        if ((uint64_t)sect < w->lo) w->lo = (uint64_t)sect;
+        if ((uint64_t)sect + size > w->hi) w->hi = (uint64_t)sect + size;
+    }
+    unsigned long size = 0;
+    uint8_t *data = getsectiondata(w->image, "__DATA", "__data", &size);
+    if (data != NULL) {
+        uint64_t start = ((uint64_t)data + 7) & ~7ULL, end = (uint64_t)data + size;
+        for (uint64_t a = start; a + sizeof(uint64_t) <= end; a += sizeof(uint64_t))
+            if (*(volatile uint64_t *)a == DATA_ONCE_DONE
+                && !data_once_append(&w->preset, &w->preset_count, &w->preset_cap, a))
+                break;
+    }
+    return w->hi > w->lo;
+}
+
+/// Rebuilds the slot list from the words that hold ~0 now, and on the first
+/// call records the VM regions over the span. Pages that are not resident are
+/// skipped: reading one would fault a fresh zero page in for nothing (a page a
+/// token was written to is resident, or compressed and then simply missed).
+static void data_once_scan(struct data_once_watch *w) {
+    w->count = 0;
+    uint64_t page = (uint64_t)vm_page_size;
+    for (size_t s = 0; s < sizeof(k_data_once_sections) / sizeof(k_data_once_sections[0]); s++) {
+        unsigned long size = 0;
+        uint8_t *sect = getsectiondata(w->image, "__DATA", k_data_once_sections[s], &size);
+        if (sect == NULL || size < sizeof(uint64_t)) continue;
+        uint64_t start = ((uint64_t)sect + 7) & ~7ULL, end = (uint64_t)sect + size;
+        for (uint64_t p = start & ~(page - 1); p < end; p += page) {
+            char resident = 0;
+            if (mincore((void *)p, (size_t)page, &resident) != 0 || !(resident & MINCORE_INCORE))
+                continue;
+            uint64_t a = p < start ? start : p, e = p + page < end ? p + page : end;
+            for (; a + sizeof(uint64_t) <= e; a += sizeof(uint64_t))
+                if (*(volatile uint64_t *)a == DATA_ONCE_DONE && !data_once_is_preset(w, a)
+                    && !data_once_append(&w->slots, &w->count, &w->cap, a))
+                    return;
+        }
+    }
+    if (w->region_count == 0) {
+        for (uint64_t a = w->lo; a < w->hi && w->region_count < DATA_ONCE_MAX_REGIONS;) {
+            struct data_once_region r;
+            if (!data_once_region_at(a, &r) || r.size == 0) break;
+            w->regions[w->region_count++] = r;
+            a = r.start + r.size;
+        }
+    }
+}
+
+static const struct data_once_region *data_once_baseline(const struct data_once_watch *w, uint64_t addr) {
+    for (size_t i = 0; i < w->region_count; i++)
+        if (addr >= w->regions[i].start && addr < w->regions[i].start + w->regions[i].size)
+            return &w->regions[i];
+    return NULL;
+}
+
+static void data_once_describe(const struct data_once_watch *w, const struct data_once_region *r,
+                               char *buf, size_t n) {
+    if (r == NULL) {
+        snprintf(buf, n, "unknown");
+        return;
+    }
+    uint64_t base = (uint64_t)w->image;
+    snprintf(buf, n, "[+0x%llx +0x%llx) prot=%u tag=%u share=%u obj=0x%x",
+             (unsigned long long)(r->start - base), (unsigned long long)(r->start + r->size - base),
+             r->prot, r->tag, r->share, r->object);
+}
+
+static bool data_once_page_is_zero(uint64_t page_start, uint64_t page) {
+    for (uint64_t a = page_start; a < page_start + page; a += sizeof(uint64_t))
+        if (*(volatile uint64_t *)a != 0) return false;
+    return true;
+}
+
+/// Counts the watched words that read 0 now and logs them (at most
+/// DATA_ONCE_MAX_REPORTS times per process, so a wipe is reported without
+/// flooding the log). A word that moved from ~0 to another non-zero value is
+/// not counted: that is a variable that happened to hold -1, not a wipe.
+static size_t data_once_check(struct data_once_watch *w, double uptime, data_once_watch_log_fn log) {
+    size_t zeroed = 0, first = 0, last = 0;
+    for (size_t i = 0; i < w->count; i++) {
+        if (*(volatile uint64_t *)w->slots[i] != 0) continue;
+        if (zeroed++ == 0) first = i;
+        last = i;
+    }
+    if (zeroed == 0 || w->reports >= DATA_ONCE_MAX_REPORTS) return zeroed;
+    w->reports++;
+    uint64_t base = (uint64_t)w->image, page = (uint64_t)vm_page_size;
+    char line[640];
+    snprintf(line, sizeof(line),
+             "[BssCanary] ⚠️ %zu of %zu completed once tokens read 0 again at %.0fs since launch "
+             "(image offsets +0x%llx..+0x%llx) - the app's static data was wiped; expect unrelated crashes "
+             "(nil statics, re-run initialisers, zero TLV thunks)",
+             zeroed, w->count, uptime,
+             (unsigned long long)(w->slots[first] - base), (unsigned long long)(w->slots[last] - base));
+    log(line);
+    uint64_t prev_page = 0;
+    unsigned pages = 0;
+    for (size_t i = first; i <= last && pages < DATA_ONCE_MAX_PAGES_PER_REPORT; i++) {
+        uint64_t pg = w->slots[i] & ~(page - 1);
+        if (*(volatile uint64_t *)w->slots[i] != 0 || pg == prev_page) continue;
+        prev_page = pg;
+        pages++;
+        size_t on_page = 0, zero_on_page = 0;
+        for (size_t j = 0; j < w->count; j++) {
+            if ((w->slots[j] & ~(page - 1)) != pg) continue;
+            on_page++;
+            if (*(volatile uint64_t *)w->slots[j] == 0) zero_on_page++;
+        }
+        struct data_once_region now;
+        bool have_now = data_once_region_at(pg, &now) && now.start <= pg;
+        const struct data_once_region *then = data_once_baseline(w, pg);
+        // Compare the backing object, not the bounds: any later mapping change
+        // inside the original region splits it, which moves the bounds of
+        // untouched pages too.
+        bool replaced = have_now && then != NULL
+            && (now.object != then->object || now.tag != then->tag);
+        char now_s[160], then_s[160];
+        data_once_describe(w, have_now ? &now : NULL, now_s, sizeof(now_s));
+        data_once_describe(w, then, then_s, sizeof(then_s));
+        snprintf(line, sizeof(line),
+                 "[BssCanary]   page +0x%llx: %zu/%zu tokens zeroed, page all zero=%s, region replaced=%s; "
+                 "now %s; at first scan %s",
+                 (unsigned long long)(pg - base), zero_on_page, on_page,
+                 data_once_page_is_zero(pg, page) ? "yes" : "no",
+                 then == NULL || !have_now ? "unknown" : (replaced ? "yes" : "no"), now_s, then_s);
+        log(line);
+    }
+    return zeroed;
+}
+
+/// Checks every 5 s; every minute (and first at 20 s, after launch-time
+/// initialisers ran) checks and then rescans, so tokens completed later are
+/// watched too. All on one timer source, so ticks never overlap.
+static void data_once_watch_start(const void *anchor, data_once_watch_log_fn log) {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        static struct data_once_watch watch;
+        if (!data_once_init(&watch, anchor)) return;
+        uint64_t t0 = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+        __block unsigned ticks = 0;
+        static dispatch_source_t timer;
+        timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0,
+                                       dispatch_get_global_queue(QOS_CLASS_UTILITY, 0));
+        dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, 20 * NSEC_PER_SEC),
+                                  5 * NSEC_PER_SEC, NSEC_PER_SEC);
+        dispatch_source_set_event_handler(timer, ^{
+            double uptime = (double)(clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - t0) / 1e9;
+            if (ticks > 0) data_once_check(&watch, uptime, log);
+            if (ticks % 12 == 0) {
+                uint64_t s0 = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+                data_once_scan(&watch);
+                if (ticks == 0) {
+                    char line[200];
+                    snprintf(line, sizeof(line),
+                             "[BssCanary] watching %zu once tokens over %.1f MB of static data "
+                             "(%zu ~0 initialisers skipped, %zu regions, scan %.1f ms)",
+                             watch.count, (double)(watch.hi - watch.lo) / 1048576.0,
+                             watch.preset_count, watch.region_count,
+                             (double)(clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - s0) / 1e6);
+                    log(line);
+                }
+            }
+            ticks++;
+        });
+        dispatch_resume(timer);
+    });
+}
+// END DataOnceWatch
+
+static void data_once_watch_nslog(const char *line) {
+    NSLog(@"ISHKernel: %s", line);
+}
+
+/// Runs at image load, before any of iSH starts: the 2026-10-07 crash gave no
+/// sign of whether a guest had run, so the watch must not depend on it.
+__attribute__((constructor))
+static void data_once_watch_install(void) {
+    data_once_watch_start((const void *)&data_once_watch_install, data_once_watch_nslog);
+}
+
+/// [T-crash-quickaction-tlv] Logs once if a canary set at install has
+/// changed - the app's own static data was overwritten. Cheap: four loads.
+static void bss_canary_check(void) {
+    static bool reported;
+    if (reported) return;
+    uint64_t b0 = g_bss_canary_before[0], b1 = g_bss_canary_before[1];
+    uint64_t a0 = g_bss_canary_after[0], a1 = g_bss_canary_after[1];
+    if (b0 == BSS_CANARY_PATTERN && b1 == BSS_CANARY_PATTERN
+        && a0 == BSS_CANARY_PATTERN && a1 == BSS_CANARY_PATTERN) return;
+    reported = true;
+    NSLog(@"ISHKernel: [BssCanary] ⚠️ app __bss canary overwritten (before=%016llx,%016llx after=%016llx,%016llx) - "
+          "static data near ISHKernel.m was clobbered; expect unrelated crashes (re-run once tokens, zero TLV thunks)",
+          (unsigned long long)b0, (unsigned long long)b1, (unsigned long long)a0, (unsigned long long)a1);
+}
+
+static void bss_canary_start(void) {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        g_bss_canary_before[0] = g_bss_canary_before[1] = BSS_CANARY_PATTERN;
+        g_bss_canary_after[0] = g_bss_canary_after[1] = BSS_CANARY_PATTERN;
+        static dispatch_source_t timer;
+        timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0,
+                                       dispatch_get_global_queue(QOS_CLASS_UTILITY, 0));
+        dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC),
+                                  5 * NSEC_PER_SEC, NSEC_PER_SEC);
+        dispatch_source_set_event_handler(timer, ^{ bss_canary_check(); });
+        dispatch_resume(timer);
+    });
+}
+
 static void install_jit_crash_handler(void) {
-    static char altstack[SIGSTKSZ];
-    stack_t ss = {.ss_sp = altstack, .ss_size = SIGSTKSZ};
-    sigaltstack(&ss, NULL);
+    // [T-crash-quickaction-tlv] Each thread that installs gets its OWN guarded
+    // altstack (a static one was shared by every installing thread). Keep an
+    // altstack this thread already has from an earlier boot.
+    stack_t old;
+    if (sigaltstack(NULL, &old) != 0 || (old.ss_flags & SS_DISABLE) || old.ss_sp == NULL) {
+        void *altstack = jit_altstack_alloc(SIGSTKSZ);
+        if (altstack != NULL) {
+            stack_t ss = {.ss_sp = altstack, .ss_size = SIGSTKSZ};
+            sigaltstack(&ss, NULL);
+        } else {
+            NSLog(@"ISHKernel: guarded signal altstack mmap failed - crash signals run on the thread stack");
+        }
+    }
+    bss_canary_start();
 
     struct sigaction sa = {0};
     sa.sa_sigaction = jit_crash_handler;
     sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
-    sigaction(SIGSEGV, &sa, NULL);
-    sigaction(SIGBUS, &sa, NULL);
-    sigaction(SIGILL, &sa, NULL);
-    sigaction(SIGTRAP, &sa, NULL);
+    // [T-crash-signal-refault] Keep what was installed before (the app's
+    // CrashSignalHandler) for the non-iSH-thread path. A second boot must not
+    // record our own handler as "previous", or that path would loop.
+    const int crash_signals[] = { SIGSEGV, SIGBUS, SIGILL, SIGTRAP };
+    for (size_t i = 0; i < sizeof(crash_signals) / sizeof(crash_signals[0]); i++) {
+        int s = crash_signals[i];
+        struct sigaction current;
+        if (sigaction(s, NULL, &current) == 0
+            && !((current.sa_flags & SA_SIGINFO) && current.sa_sigaction == jit_crash_handler)) {
+            g_prev_crash_actions[s] = current;
+        }
+        sigaction(s, &sa, NULL);
+    }
     // Note: SIGABRT intentionally NOT handled — it's used by the system
     // (assert(), Swift runtime, malloc failure) and intercepting it prevents
     // normal crash reporting and can mask OOM conditions.
@@ -661,6 +1128,39 @@ static void handle_process_exit(struct task *task, int code) {
     ISHCommandCompletionCallback _commandCompletionCallback;
     NSTimer *_commandTimeoutTimer;
     dispatch_queue_t _commandQueue;
+}
+
+#pragma mark - AOJIT [T-ios-aojit]
+
++ (BOOL)isAOJITEnabled {
+    // [T-aojit-default-on] On unless the user switched it off: an absent key
+    // (fresh install, or the setting never touched) reads YES, while a value
+    // the user stored, on or off, is kept as is.
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    if ([defaults objectForKey:AOJITEnabledDefaultsKey] == nil) return YES;
+    return [defaults boolForKey:AOJITEnabledDefaultsKey];
+}
+
++ (void)setAOJITEnabled:(BOOL)enabled {
+    [NSUserDefaults.standardUserDefaults setBool:enabled forKey:AOJITEnabledDefaultsKey];
+    [self applyAOJIT];
+}
+
++ (void)applyAOJIT {
+    BOOL on = [self isAOJITEnabled];
+    const char *cmd = on ? "on" : "off";
+    int rc = jit_control(cmd, strlen(cmd));
+    NSLog(@"ISHKernel: [AOJIT] %s (rc=%d)", cmd, rc);
+}
+
++ (NSString *)aojitStatusReport {
+    size_t size = 16384;
+    char *buf = malloc(size);
+    if (buf == NULL) return @"";
+    jit_describe(buf, size);
+    NSString *text = [NSString stringWithUTF8String:buf] ?: @"";
+    free(buf);
+    return text;
 }
 
 + (ISHKernel *)shared {
@@ -812,6 +1312,10 @@ static void handle_process_exit(struct task *task, int code) {
     } else {
         NSLog(@"ISHKernel: realpath(_dataPath) failed (errno=%d), bind-mount cycle guard disabled", errno);
     }
+
+    // [T-ios-aojit] Before any guest code runs: the runtime starts with AOT
+    // installs ON, and AOJIT must default to off.
+    [ISHKernel applyAOJIT];
 
     // 2. Become init process (PID 1)
     err = become_first_process();
@@ -974,6 +1478,19 @@ static void handle_process_exit(struct task *task, int code) {
     // emitted ~10 NSLog lines each pass (~1.5k lines/day). Collapsed into a
     // single summary line at the end; the failure paths (res_ninit fail,
     // inet_ntop fail) still log individually since those are diagnostic.
+
+    // [T-container-network-dns GH#396] DNS Mode = Custom: write exactly the
+    // user's validated servers and stop — the system resolver is not consulted,
+    // so a network change (which lands here via refreshDns) no longer replaces
+    // them. nil = Auto, or Custom with no valid server saved: fall through to
+    // the unchanged system-DNS path below.
+    NSString *custom = [MinisContainerDns customResolvConfForKernel];
+    if (custom) {
+        NSLog(@"ISHKernel: [DNS] configured: mode=custom (user servers, system DNS ignored)");
+        [self writeResolvConf:custom];
+        return;
+    }
+
     NSMutableString *resolvConf = [NSMutableString new];
 
     struct __res_state res;
@@ -1171,6 +1688,13 @@ static void handle_process_exit(struct task *task, int code) {
     int err = fakefs_bind_mount("/etc/resolv.conf", _dnsHostPath.fileSystemRepresentation, false);
     if (err < 0) {
         NSLog(@"ISHKernel: [DNS] bind mount FAILED (%d) — writing via VFS fallback", err);
+        // [T-container-network-dns] In Custom mode the seed below must be the
+        // user's servers, not the public-DNS seed: that seed is exactly what a
+        // Fake-IP / private-DNS user switched to Custom to avoid.
+        NSString *customSeed = [MinisContainerDns customResolvConfForKernel];
+        if (customSeed) {
+            [customSeed writeToFile:_dnsHostPath atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        }
         // Fallback: write directly through VFS like original iSH
         struct task *prev = current;
         current = pid_get_task(1);
@@ -1246,7 +1770,11 @@ static void handle_process_exit(struct task *task, int code) {
             return;
         }
 
-        // Build argv (with V8 flags injection for node)
+        // Build argv. node gets NO V8 flags from here: the ish kernel adds the
+        // right ones on every exec of node (its default mode, or the jitless
+        // fallback when ISH_NODE_MODE=jitless). A --jitless / --no-expose-wasm
+        // from the app would push node into that fallback, which halves the
+        // node AOT image's hit rate and drops WebAssembly.
         char argv[16384];
         size_t pos = 0;
         int exec_argc = 0;
@@ -1262,20 +1790,6 @@ static void handle_process_exit(struct task *task, int code) {
             memcpy(argv + pos, exec_path, len);
             pos += len;
             exec_argc++;
-            // Inject V8 flags to work around scope corruption in emulation
-            static const char *v8_flags[] = {
-                "--jitless",
-                "--no-lazy",
-                "--no-expose-wasm",
-                "--max-old-space-size=512",
-            };
-            for (int fi = 0; fi < (int)(sizeof(v8_flags)/sizeof(v8_flags[0])); fi++) {
-                len = strlen(v8_flags[fi]) + 1;
-                if (pos + len >= sizeof(argv)) break;
-                memcpy(argv + pos, v8_flags[fi], len);
-                pos += len;
-                exec_argc++;
-            }
             // Copy remaining args (skip argv[0])
             for (NSUInteger ai = 1; ai < commandCopy.count; ai++) {
                 const char *carg = commandCopy[ai].UTF8String;
@@ -1921,6 +2435,13 @@ static int      g_gov_count;               // valid samples
 static int      g_gov_zone;                // 0 GREEN / 1 YELLOW / 2 RED
 static uint64_t g_gov_begin_ts;
 static uint64_t g_gov_last_log_ts;
+// [T-crash-heartbeat] Last tick's reading, published for
+// backgroundCPUGovernorStatus (read from other threads).
+static _Atomic int      g_gov_pub_running;
+static _Atomic int      g_gov_pub_zone;
+static _Atomic uint64_t g_gov_pub_w_ms;    // W in CPU-ms
+static _Atomic uint64_t g_gov_pub_r_milli; // R x 1000
+static _Atomic uint64_t g_gov_pub_t_ms;    // time since BEGIN
 
 // Total process CPU time in ns via public mach APIs (libproc.h is not in
 // the iOS SDK): MACH_TASK_BASIC_INFO carries user/system time of TERMINATED
@@ -2071,6 +2592,10 @@ static void gov_tick(void) {
         gov_poke_all_tasks();
 
     double t = (double)(now - g_gov_begin_ts) / 1e9;
+    atomic_store_explicit(&g_gov_pub_zone, zone, memory_order_relaxed);
+    atomic_store_explicit(&g_gov_pub_w_ms, (uint64_t)(W * 1000.0), memory_order_relaxed);
+    atomic_store_explicit(&g_gov_pub_r_milli, (uint64_t)(R * 1000.0), memory_order_relaxed);
+    atomic_store_explicit(&g_gov_pub_t_ms, (uint64_t)(t * 1000.0), memory_order_relaxed);
     if (zone != g_gov_zone) {
         NSLog(@"ISHKernel: [Governor] zone %s→%s t=+%.1fs W=%.1fs R=%.2f pred=%.1fs duty=%.0f%%",
               gov_zone_name(g_gov_zone), gov_zone_name(zone), t, W, R, Wpred, duty * 100);
@@ -2115,6 +2640,11 @@ static void gov_tick(void) {
         atomic_store_explicit(&g_throttle_ratio_q16, 0, memory_order_release);
     });
     g_gov_timer = timer;
+    atomic_store_explicit(&g_gov_pub_zone, 0, memory_order_relaxed);
+    atomic_store_explicit(&g_gov_pub_w_ms, 0, memory_order_relaxed);
+    atomic_store_explicit(&g_gov_pub_r_milli, 0, memory_order_relaxed);
+    atomic_store_explicit(&g_gov_pub_t_ms, 0, memory_order_relaxed);
+    atomic_store_explicit(&g_gov_pub_running, 1, memory_order_relaxed);
     dispatch_resume(timer);
     NSLog(@"ISHKernel: [Governor] BEGIN budget=48s/60s ceiling=%.0fs soft=%.0fs redExit=%.0fs cadence=%llums",
           GOV_HARD_CPU_S, GOV_SOFT_CPU_S, GOV_RED_EXIT_CPU_S, GOV_CADENCE_NS / 1000000ULL);
@@ -2127,8 +2657,38 @@ static void gov_tick(void) {
     double t = (double)(clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW) - g_gov_begin_ts) / 1e9;
     dispatch_source_cancel(g_gov_timer);
     g_gov_timer = nil;
+    atomic_store_explicit(&g_gov_pub_running, 0, memory_order_relaxed);
     NSLog(@"ISHKernel: [Governor] END after %.1fs — lastZone=%s sleeps=%llu totalSleep=%.1fs",
           t, gov_zone_name(g_gov_zone), sleeps, (double)sleep_ns / 1e9);
+}
+
+- (NSDictionary<NSString *, id> *)backgroundCPUGovernorStatus {
+    int zone = atomic_load_explicit(&g_gov_pub_zone, memory_order_relaxed);
+    return @{
+        @"running": @(atomic_load_explicit(&g_gov_pub_running, memory_order_relaxed) != 0),
+        @"zone": @(gov_zone_name(zone)),
+        @"windowCPU": @((double)atomic_load_explicit(&g_gov_pub_w_ms, memory_order_relaxed) / 1000.0),
+        @"rate": @((double)atomic_load_explicit(&g_gov_pub_r_milli, memory_order_relaxed) / 1000.0),
+        @"secondsInBackground": @((double)atomic_load_explicit(&g_gov_pub_t_ms, memory_order_relaxed) / 1000.0),
+    };
+}
+
+- (void)getGuestProcessCount:(int *)processCount anonBytes:(int64_t *)anonBytes {
+    // Guest pages are 1 << PAGE_BITS (4 KB); Darwin's own PAGE_SIZE is the
+    // host's 16 KB, so spell the guest size out.
+    if (anonBytes) *anonBytes = (int64_t)atomic_load(&anon_page_count) << PAGE_BITS;
+    if (!processCount) return;
+    *processCount = -1;
+    if (!_isBooted) { *processCount = 0; return; }
+    // Same pattern as gov_poke_all_tasks: never block on the process table.
+    if (trylock(&pids_lock) != 0) return;
+    int n = 0;
+    for (int i = 1; i < MAX_PID; i++) {
+        struct pid *pid = pid_get(i);
+        if (pid != NULL && pid->task != NULL) n++;
+    }
+    unlock(&pids_lock);
+    *processCount = n;
 }
 
 @end

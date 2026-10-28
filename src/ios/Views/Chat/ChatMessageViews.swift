@@ -156,8 +156,23 @@ private struct ContextMenuPreviewSurface: ViewModifier {
 /// keeps it above the material: `.glassEffect` composites the material over the
 /// view it modifies, so an overlaid label would be painted underneath it and
 /// disappear (the FAB regression).
+/// [T-multi-select-share] True while chat rows are drawn for the share picker or an
+/// export: surfaces that only the live compositor can draw (Liquid Glass) fall back
+/// to their plain fill, so an offscreen `layer.render` still shows them.
+private struct ChatSnapshotRenderingKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var chatSnapshotRendering: Bool {
+        get { self[ChatSnapshotRenderingKey.self] }
+        set { self[ChatSnapshotRenderingKey.self] = newValue }
+    }
+}
+
 private struct UserBubbleSurface: ViewModifier {
     let isQueued: Bool
+    @Environment(\.chatSnapshotRendering) private var snapshotRendering
 
     /// Matches `.contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 18))`
     /// on the row exactly — including the default (non-`.continuous`) corner
@@ -177,7 +192,7 @@ private struct UserBubbleSurface: ViewModifier {
                         .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
                         .foregroundStyle(ChatColors.secondaryText.opacity(0.5))
                 )
-        } else if #available(iOS 26.0, *) {
+        } else if #available(iOS 26.0, *), !snapshotRendering {
             content.glassEffect(.regular, in: shape)
         } else {
             content.background(shape.fill(ChatColors.userBubble))
@@ -212,7 +227,7 @@ struct ChatMessageRow: View {
     var canResume: Bool = false
     var onResume: (() -> Void)?
     var onCompact: (() -> Void)?
-    var onCopyScreenshot: (() -> Void)?
+    var onShareMessages: (() -> Void)?
     /// Read this whole reply aloud from the start (clears any in-progress TTS).
     /// Wired from AIChatView (which owns the view model). Disabled while the
     /// message is still streaming to avoid fighting the live streaming TTS.
@@ -239,6 +254,14 @@ struct ChatMessageRow: View {
     /// The tool block whose detail sheet is currently presented.
     /// Lifted out of ToolCapsuleView so ForEach item changes don't reset it.
     @State private var detailBlock: AssistantBlock?
+    /// [T-in-chat-search] Highlights and the "Search in Chat" opener; nil
+    /// outside the message list.
+    @Environment(\.chatSearchHighlights) private var searchHighlights
+
+    /// [T-in-chat-search] Key of this message's text for the search.
+    private func searchKey(_ field: ChatSearchField = .body) -> ChatSearchUnitKey {
+        ChatSearchUnitKey(messageId: message.id, blockId: nil, field: field)
+    }
 
     /// All text block contents joined, for "Copy All".
     private var fullReplyText: String {
@@ -279,6 +302,9 @@ struct ChatMessageRow: View {
                 parts.append("Memory: \(action)\n\(block.content)")
             case .delegateTool(let title):
                 parts.append("Agent: \(title)\n\(block.content)")
+            case .userAskTool:
+                // [T-user-ask] Copy the questions and the result, not the UI.
+                parts.append("Asked: \(UserAskCardModel.questionsSummary(block))\n\(block.content)")
             case .thinking:
                 if !block.content.isEmpty { parts.append("[Thinking]\n\(block.content)") }
             case .info:
@@ -293,6 +319,7 @@ struct ChatMessageRow: View {
         case .user:
             if let callback = message.agentCallback {
                 AgentCallbackCellView(callback: callback, sessionId: nil)
+                    .environment(\.chatSearchMessageId, message.id)
                     .opacity(message.isCompactedHistory ? 0.5 : 1.0)
             } else {
                 userRow
@@ -323,7 +350,7 @@ struct ChatMessageRow: View {
                     Image(systemName: "arrow.down.right.and.arrow.up.left")
                         .font(.system(size: 10))
                 }
-                Text(message.content)
+                SearchHighlightText(message.content, key: searchKey())
                     .font(.system(size: 12, weight: .medium))
                 if !message.isCompactLoading && message.compactSummary != nil {
                     Button {
@@ -367,7 +394,7 @@ struct ChatMessageRow: View {
                     Image(systemName: icon)
                         .font(.system(size: 10))
                 }
-                Text(message.content)
+                SearchHighlightText(message.content, key: searchKey())
                     .font(.system(size: 12, weight: .medium))
                     .multilineTextAlignment(.center)
             }
@@ -389,16 +416,13 @@ struct ChatMessageRow: View {
 
     // MARK: User Row
 
-    /// User message text with `<user-attached-files>` metadata stripped out.
+    /// User message text without the `<user-attached-files>` metadata and
+    /// without any `<system-reminder>` note meant for the model (e.g. the
+    /// answer to a deferred user_ask) - [T-user-bubble-reminder-strip].
     private var userDisplayText: String {
-        var text = message.content
-        if let start = text.range(of: "<user-attached-files>") {
-            let end = text.range(of: "</user-attached-files>")
-            let endBound = end?.upperBound ?? text.endIndex
-            text = String(text[text.startIndex..<start.lowerBound] + text[endBound...])
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        return text
+        // [T-in-chat-search] The search reads the bubble through this same
+        // function (ChatSearchDisplayText.userBubble).
+        SystemReminderStripper.userBubbleText(message.content)
     }
 
     private var userRow: some View {
@@ -408,7 +432,7 @@ struct ChatMessageRow: View {
             VStack(alignment: .trailing, spacing: 6) {
                 // User-attached files above the text bubble
                 if !message.attachments.isEmpty {
-                    UserAttachmentList(attachments: message.attachments)
+                    UserAttachmentList(attachments: message.attachments, searchMessageId: message.id)
                 } else if !message.inputAttachments.isEmpty {
                     // Queued message: show previews from cache before queue drain
                     QueuedAttachmentPreview(attachments: message.inputAttachments)
@@ -416,7 +440,7 @@ struct ChatMessageRow: View {
 
                 if !userDisplayText.isEmpty {
                     HStack(spacing: 6) {
-                        Text(userDisplayText)
+                        SearchHighlightText(userDisplayText, key: searchKey())
                             .font(.system(size: FontSettings.shared.scaledMessage(16.5)))
                             .foregroundStyle(message.isQueued ? ChatColors.secondaryText : ChatColors.primaryText)
                             .padding(.horizontal, 14)
@@ -452,13 +476,6 @@ struct ChatMessageRow: View {
                 } label: {
                     Label("Copy", systemImage: "doc.on.doc")
                 }
-                if let onCopyScreenshot {
-                    Button {
-                        onCopyScreenshot()
-                    } label: {
-                        Label(AppLocalized("Copy Screenshot"), systemImage: "camera.viewfinder")
-                    }
-                }
                 if let onEdit {
                     Button {
                         onEdit()
@@ -471,6 +488,25 @@ struct ChatMessageRow: View {
                         onRetry()
                     } label: {
                         Label("Retry", systemImage: "arrow.counterclockwise")
+                    }
+                }
+                // [T-multi-select-share] Copy / Edit / Retry, a divider, then Share
+                // Chat… on its own; the destructive items stay last.
+                if let onShareMessages {
+                    Divider()
+                    Button {
+                        onShareMessages()
+                    } label: {
+                        Label(AppLocalized("Share Chat…"), systemImage: "square.and.arrow.up")
+                    }
+                }
+                // [T-in-chat-search]
+                if let open = searchHighlights?.openSearch {
+                    if onShareMessages == nil { Divider() }
+                    Button {
+                        open(nil)
+                    } label: {
+                        Label(AppLocalized("Search in Chat"), systemImage: "magnifyingglass")
                     }
                 }
                 if onDeleteFrom != nil || onCompact != nil {
@@ -559,7 +595,7 @@ struct ChatMessageRow: View {
                             }
                         }
                     } : nil,
-                    onCopyScreenshot: onCopyScreenshot,
+                    onShareMessages: onShareMessages,
                     browserPool: browserPool,
                     toolSnapshots: toolSnapshots,
                     highlightedBlockId: $highlightedBlockId,
@@ -584,12 +620,12 @@ struct ChatMessageRow: View {
             }
 
             // Token usage — two-phase reveal: space expands first, then content fades in
-            if message.streamInterruptCount > 0 || showUsage {
+            // [T-retry-log-sheet] The "↻ N" interrupt badge is gone (in step
+            // with BridgedAssistantFooterV3): retries show as a marker in the
+            // typing row, only while one is under way.
+            if showUsage {
                 HStack(spacing: 6) {
-                    if message.streamInterruptCount > 0 {
-                        streamInterruptBadge(message.streamInterruptCount)
-                    }
-                    if showUsage, let usage = message.usage {
+                    if let usage = message.usage {
                         usageCapsule(usage)
                             .opacity(usageContentVisible ? 1 : 0)
                     }
@@ -640,9 +676,10 @@ struct ChatMessageRow: View {
                     EquatableMenuGate(key: AssistantMenuKey(
                         messageId: message.id,
                         hasReadAloud: onReadAloud != nil,
-                        hasCopyScreenshot: onCopyScreenshot != nil,
+                        hasShareMessages: onShareMessages != nil,
                         hasCompact: onCompact != nil,
-                        isActive: isActiveMessage
+                        isActive: isActiveMessage,
+                        hasSearchInChat: searchHighlights?.openSearch != nil
                     )) {
                         Button {
                             UIPasteboard.general.string = fullReplyText
@@ -664,11 +701,19 @@ struct ChatMessageRow: View {
                             // live streaming TTS of the same reply.
                             .disabled(isActiveMessage)
                         }
-                        if let onCopyScreenshot {
+                        if let onShareMessages {
                             Button {
-                                onCopyScreenshot()
+                                onShareMessages()
                             } label: {
-                                Label(AppLocalized("Copy Screenshot"), systemImage: "camera.viewfinder")
+                                Label(AppLocalized("Share Chat…"), systemImage: "square.and.arrow.up")
+                            }
+                        }
+                        // [T-in-chat-search]
+                        if let open = searchHighlights?.openSearch {
+                            Button {
+                                open(nil)
+                            } label: {
+                                Label(AppLocalized("Search in Chat"), systemImage: "magnifyingglass")
                             }
                         }
                         if let onCompact {
@@ -728,21 +773,6 @@ struct ChatMessageRow: View {
         .background(ChatColors.userBubble.opacity(0.6))
         .clipShape(Capsule())
         .transition(.opacity.combined(with: .scale(scale: 0.8)))
-    }
-
-    @ViewBuilder
-    private func streamInterruptBadge(_ count: Int) -> some View {
-        HStack(spacing: 3) {
-            Image(systemName: "arrow.clockwise")
-                .font(.system(size: 9, weight: .semibold))
-            Text("\(count)")
-                .font(.system(size: 10, design: .monospaced))
-        }
-        .foregroundStyle(Color.orange.opacity(0.8))
-        .padding(.horizontal, 7)
-        .padding(.vertical, 3)
-        .background(Color.orange.opacity(0.12))
-        .clipShape(Capsule())
     }
 
     private func usageSummary(_ u: TokenUsage) -> String {

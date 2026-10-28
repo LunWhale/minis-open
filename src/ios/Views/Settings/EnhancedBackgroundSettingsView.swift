@@ -29,6 +29,19 @@ struct EnhancedBackgroundSettingsView: View {
                 Text("Keeps agent tasks running when the app is in the background. Shows progress via Live Activity on the Lock Screen and Dynamic Island. Also turns on Background Speak so text-to-speech narration keeps playing.")
             }
 
+            // [T-bka-continued-setting] iOS 26+ only (BGContinuedProcessingTask).
+            // Shown whatever Enhanced Background says: the task is the
+            // fallback keep-alive exactly when that (or Background Speak) is
+            // off, so the switch must be reachable then too.
+            if #available(iOS 26.0, *) {
+                Section {
+                    Toggle("Prefer Continued Background Processing (iOS 26+)", isOn: $keepAlive.continuedProcessingPreferred)
+                        .focusHighlight(shouldFocus("continuedProcessingPreferred", current: keepAlive.continuedProcessingPreferred))
+                } footer: {
+                    Text("Shows a Minis task status on screen so the task keeps processing in the background.")
+                }
+            }
+
             // [T-ipad16-liveactivity-restore-crash] Hidden on devices where
             // Live Activities don't exist (iPad < iPadOS 17, iOS-on-Mac,
             // failed runtime probe) — the switch would do nothing there, and

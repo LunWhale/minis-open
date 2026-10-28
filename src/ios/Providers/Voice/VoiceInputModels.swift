@@ -113,9 +113,15 @@ enum VoiceProviderError: LocalizedError {
     /// input unavailable" described neither the cause nor the fix, and read as
     /// an app bug (issue #283).
     case audioSessionPreempted
+    /// [T-voice-asr-failure-retry-prompt] Recognition produced nothing before
+    /// its watchdog fired. A failure (so the audio is kept and the user asked
+    /// to retry), not an empty "you said nothing" result.
+    case timedOut
 
     var errorDescription: String? {
         switch self {
+        case .timedOut:
+            return AppLocalized("Speech recognition timed out", comment: "Voice provider produced no result before its time limit")
         case .unsupported(let msg):
             return AppLocalized("Unsupported: \(msg)", comment: "Voice provider unsupported capability")
         case .httpError(let code, let body):

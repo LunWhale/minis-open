@@ -278,6 +278,30 @@ struct UnifiedModelPicker: View {
     /// per-row bolt button so any model — cloud, group member, or System voice —
     /// can be smoke-tested (speak / text output) without leaving the picker.
     @State private var quickTestEntry: ModelEntry?
+    /// [T-picker-provider-edit] The provider whose detail page is open from its
+    /// section header's edit button (nil = none).
+    @State private var editingProvider: ProviderEditTarget?
+    /// [T-quota-badge-ui] The provider whose quota detail sheet is open from its
+    /// header pill. Hosted here like `editingProvider`, not on the header.
+    @State private var quotaDetailProvider: ProviderEditTarget?
+
+    /// [T-picker-provider-edit] Identifiable wrapper so `.sheet(item:)` can drive
+    /// the provider detail page.
+    struct ProviderEditTarget: Identifiable, Equatable { let id: String }
+
+    /// [T-picker-provider-edit] The instance a section header's edit button may
+    /// open, or nil when there is none: only a provider saved in the store has a
+    /// detail page. The built-in System voice section is a synthetic, local-only
+    /// instance (never stored) - `instance(for:)` resolves it, but there is
+    /// nothing to edit, so it is excluded explicitly as well as by the lookup.
+    static func providerEditTarget(forSectionInstanceId id: String,
+                                   storedInstanceIds: [String]) -> ProviderEditTarget? {
+        guard !id.isEmpty,
+              id != SystemVoiceProvider.builtinProviderId,
+              !id.hasPrefix(SystemVoiceProvider.builtinProviderId + "/"),
+              storedInstanceIds.contains(id) else { return nil }
+        return ProviderEditTarget(id: id)
+    }
 
     // [T-picker-cache-first] The rows this render draws, and where they came
     // from. `nil` means "nothing computed yet" — only then does the list show a
@@ -709,6 +733,27 @@ struct UnifiedModelPicker: View {
                     }
             }
         }
+        .sheet(item: $editingProvider) { target in
+            // [T-picker-provider-edit] The provider's own detail page, on top of
+            // the picker (same pattern as the Model Groups "Edit" sheet), so the
+            // user returns to the picker with their place kept. Edits land in the
+            // store and the picker rebuilds from `configRevision`.
+            NavigationStack {
+                ProviderInstanceDetailView(instanceId: target.id)
+                    .toolbar {
+                        // Leading: the detail page's own action owns the trailing slot.
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { editingProvider = nil }
+                        }
+                    }
+            }
+        }
+        .sheet(item: $quotaDetailProvider) { target in
+            // [T-quota-badge-ui] Read-only quota details, on top of the picker.
+            QuotaDetailSheet(instanceId: target.id)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
         .sheet(item: $quickTestEntry) { entry in
             // [T-quicktest-stale-session] .id(entry.id) forces a FRESH view
             // identity per model: @StateObject's initial-value closure only
@@ -721,6 +766,22 @@ struct UnifiedModelPicker: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
+    }
+
+    /// Green "Active" capsule for the model a group is currently using. Sits
+    /// inline after the model name rather than at the row's trailing edge,
+    /// where it took width from the "Provider · model-id" line and made long
+    /// ids wrap. `fixedSize` keeps the capsule whole, so a long name wraps
+    /// beside it exactly as it did before rather than squeezing it.
+    private var activeBadge: some View {
+        Text("Active")
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(.green)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .background(Color.green.opacity(0.1))
+            .clipShape(Capsule())
+            .fixedSize()
     }
 
     /// Compact per-row Quick Test button — opens the SAME ModelQuickTestSheet used
@@ -853,13 +914,20 @@ struct UnifiedModelPicker: View {
 
             if case .all = config.groupScope,
                store.defaultPrimaryGroupId == group.id {
-                Text("Default")
+                // [T-default-badge-short] Own key, not the shared "Default":
+                // the capsule needs the shortest idiomatic form ("Predet.",
+                // "По умолч."), while the settings rows reusing "Default" keep
+                // the full word. One line, never squeezed: a long translation
+                // narrows the group name beside it instead of wrapping here.
+                Text("Default (badge)", comment: "Short tag on the default model group in the model picker; keep it as short as possible")
                     .font(.caption2.weight(.medium))
                     .foregroundStyle(.blue)
+                    .lineLimit(1)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 1)
                     .background(Color.blue.opacity(0.1))
                     .clipShape(Capsule())
+                    .fixedSize()
             }
 
             Button {
@@ -1080,14 +1148,23 @@ struct UnifiedModelPicker: View {
                 .opacity(disabled ? 0.4 : 1)
 
             VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 4) {
-                    Text(entry.model.displayName)
-                        .font(.subheadline)
-                        .foregroundStyle(disabled ? Color(UIColor.tertiaryLabel) : Color(UIColor.label))
-                    if disabled {
-                        Text("unavailable", comment: "Modality-incompatible model tag")
-                            .font(.system(size: 9, weight: .medium))
-                            .foregroundStyle(.orange)
+                // [T-model-row-premature-wrap] Name + tags on ONE line whenever
+                // they fit; otherwise the name keeps the full width and the tags
+                // move to their own line. A plain HStack instead wrapped the NAME
+                // to make room for the fixed-size tags ("Claude / Sonnet 5 [pill]
+                // [Active]"), and a wrapped text is only as wide as its longest
+                // line, which left the unused space on the right.
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .quotaCapCenter, spacing: 4) {
+                        memberRowName(entry, disabled: disabled)
+                            .fixedSize(horizontal: true, vertical: false)
+                        memberRowTags(entry, isSystem: isSystem, isActive: isActive, disabled: disabled)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        memberRowName(entry, disabled: disabled)
+                        HStack(alignment: .center, spacing: 4) {
+                            memberRowTags(entry, isSystem: isSystem, isActive: isActive, disabled: disabled)
+                        }
                     }
                 }
                 HStack(spacing: 4) {
@@ -1104,18 +1181,11 @@ struct UnifiedModelPicker: View {
                         .foregroundStyle(.tertiary)
                 }
             }
-
-            Spacer()
-
-            if isActive {
-                Text("Active")
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(.green)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 1)
-                    .background(Color.green.opacity(0.1))
-                    .clipShape(Capsule())
-            }
+            // [T-model-row-premature-wrap] The column takes the free width
+            // itself. A bare Spacer() here cost its minimum length plus one
+            // more 10 pt stack gap even with nothing to push apart, which
+            // wrapped the name and the provider · id line early.
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             quickTestButton(entry)
         }
@@ -1136,6 +1206,36 @@ struct UnifiedModelPicker: View {
             } label: {
                 Label(AppLocalized("Copy Shortcut Model ID"), systemImage: "link")
             }
+        }
+    }
+
+    /// Model name on a group member row.
+    private func memberRowName(_ entry: ModelEntry, disabled: Bool) -> some View {
+        Text(entry.model.displayName)
+            .font(.subheadline)
+            .foregroundStyle(disabled ? Color(UIColor.tertiaryLabel) : Color(UIColor.label))
+            .alignmentGuide(.quotaCapCenter) { $0.quotaCapCenter }
+    }
+
+    /// Tags after a group member's name: quota pill, Active badge, "unavailable".
+    @ViewBuilder
+    private func memberRowTags(_ entry: ModelEntry, isSystem: Bool, isActive: Bool, disabled: Bool) -> some View {
+        // [T-quota-group-member-pill] Group rows have no provider header, so the
+        // model's (or its account's) quota sits right after the name, before the
+        // Active badge; tap → quota sheet.
+        if !isSystem {
+            ModelQuotaMemberPill(instanceId: entry.providerInstanceId,
+                                 modelId: entry.baseModel.id) {
+                quotaDetailProvider = ProviderEditTarget(id: entry.providerInstanceId)
+            }
+        }
+        if isActive {
+            activeBadge
+        }
+        if disabled {
+            Text("unavailable", comment: "Modality-incompatible model tag")
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(.orange)
         }
     }
 
@@ -1164,7 +1264,7 @@ struct UnifiedModelPicker: View {
         guard var fresh = store.group(for: group.id) else { return }
         guard fresh.memberEntryIds.contains(entryId) else { return }
         fresh.memberEntryIds.removeAll { $0 == entryId }
-        store.updateGroup(fresh)
+        store.updateGroup(fresh, orderReason: "user-delete")
         MinisToast.show(AppLocalized("Removed from group"))
     }
 
@@ -1277,9 +1377,40 @@ struct UnifiedModelPicker: View {
                 }
             }
         } header: {
-            HStack {
+            HStack(spacing: 8) {
+                // [T-picker-provider-edit] A long provider name truncates rather
+                // than pushing the two fixed-size buttons off the row.
                 Text(item.instance.label)
-                Spacer()
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                // [T-provider-quota P2] The account's balance / quota, the only
+                // place a shared pool is shown in the picker. Empty without data.
+                QuotaSectionHeaderBadge(instanceId: item.instance.id) {
+                    quotaDetailProvider = ProviderEditTarget(id: item.instance.id)
+                }
+                Spacer(minLength: 8)
+                if let target = Self.providerEditTarget(forSectionInstanceId: item.instance.id,
+                                                        storedInstanceIds: store.instances.map(\.id)) {
+                    // [T-picker-provider-edit] Edit sits LEFT of the chevron and is
+                    // its own plain button, so a tap here never folds the section.
+                    // [T-picker-provider-edit-text] Styled exactly like the Model
+                    // Groups header's "Edit" link (caption text, tint, plain) so
+                    // the page has one edit idiom; the spoken label still names
+                    // the provider. One line and fixedSize, so a long provider
+                    // name truncates instead of wrapping or hiding it.
+                    Button {
+                        editingProvider = target
+                    } label: {
+                        Text("Edit")
+                            .font(.caption)
+                            .textCase(nil)
+                            .lineLimit(1)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.tint)
+                    .fixedSize()
+                    .accessibilityLabel(Text("Edit \(item.instance.label)"))
+                }
                 if searchText.isEmpty && item.entries.count > 1 {
                     let collapsed = collapsedInstanceIds.contains(item.instance.id)
                     Button {
@@ -1337,50 +1468,46 @@ struct UnifiedModelPicker: View {
                     .frame(width: 14)
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(entry.model.displayName)
-                        .font(.subheadline)
-                        .foregroundStyle(disabled ? Color(UIColor.tertiaryLabel) : Color(UIColor.label))
                     HStack(spacing: 4) {
-                        // Subtitle from traits (e.g. "iOS built-in, works offline")
-                        // for built-ins; the raw model id for cloud models.
-                        Text(traits.subtitle ?? entry.model.id)
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                        let badges = traits.subtitle == nil ? modalityBadges(entry.model) : []
-                        if !badges.isEmpty {
-                            Text("·")
-                                .font(.caption2)
-                                .foregroundStyle(.quaternary)
-                            ForEach(badges, id: \.self) { badge in
-                                Text(badge)
-                                    .font(.system(size: 9, weight: .medium))
-                                    .foregroundStyle(.secondary)
-                                    .padding(.horizontal, 4)
-                                    .padding(.vertical, 1)
-                                    .background(Color(UIColor.tertiarySystemFill))
-                                    .clipShape(RoundedRectangle(cornerRadius: 3))
-                            }
+                        Text(entry.model.displayName)
+                            .font(.subheadline)
+                            .foregroundStyle(disabled ? Color(UIColor.tertiaryLabel) : Color(UIColor.label))
+                        if !isMulti, config.currentGroupId?() != nil,
+                           config.currentEntryId?() == entry.id {
+                            activeBadge
                         }
-                        if disabled {
-                            Text("unavailable", comment: "Modality-incompatible model tag")
-                                .font(.system(size: 9, weight: .medium))
-                                .foregroundStyle(.orange)
+                    }
+                    // [T-model-row-premature-wrap] The id line has the same trap as
+                    // the group rows' name line: in one HStack the fixed-width tags
+                    // keep their width and the id wraps into the rest, only as wide
+                    // as its longest line ("mimo-v2.6-" / "pro-ultraspeed" in 91 pt
+                    // of a 245 pt column). One line when it all fits; otherwise the
+                    // id keeps the full width and the tags drop below it.
+                    let badges = traits.subtitle == nil ? modalityBadges(entry.model) : []
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 4) {
+                            entryRowSubtitle(entry, traits: traits)
+                                .fixedSize(horizontal: true, vertical: false)
+                            if !badges.isEmpty {
+                                Text("·")
+                                    .font(.caption2)
+                                    .foregroundStyle(.quaternary)
+                            }
+                            entryRowTags(badges, disabled: disabled)
+                        }
+                        VStack(alignment: .leading, spacing: 2) {
+                            entryRowSubtitle(entry, traits: traits)
+                            if !badges.isEmpty || disabled {
+                                HStack(spacing: 4) {
+                                    entryRowTags(badges, disabled: disabled)
+                                }
+                            }
                         }
                     }
                 }
-
-                Spacer()
-
-                if !isMulti, config.currentGroupId?() != nil,
-                   config.currentEntryId?() == entry.id {
-                    Text("Active")
-                        .font(.caption2.weight(.medium))
-                        .foregroundStyle(.green)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .background(Color.green.opacity(0.1))
-                        .clipShape(Capsule())
-                }
+                // [T-model-row-premature-wrap] Same fix as the group rows: the
+                // column takes the free width instead of a Spacer.
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 quickTestButton(entry)
         }
@@ -1402,6 +1529,41 @@ struct UnifiedModelPicker: View {
             } label: {
                 Label(AppLocalized("Copy Shortcut Model ID"), systemImage: "link")
             }
+        }
+    }
+
+    /// Quota hint + the subtitle (built-ins) or raw model id (cloud models).
+    @ViewBuilder
+    private func entryRowSubtitle(_ entry: ModelEntry, traits: ModelDisplayTraits) -> some View {
+        HStack(spacing: 4) {
+            // [T-provider-quota P2] Only a warning on a pool bound to
+            // THIS model; the shared account is on the section header.
+            ModelQuotaHintView(instanceId: entry.providerInstanceId,
+                               modelId: entry.baseModel.id)
+            // Subtitle from traits (e.g. "iOS built-in, works offline")
+            // for built-ins; the raw model id for cloud models.
+            Text(traits.subtitle ?? entry.model.id)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+    }
+
+    /// Modality tags and the "unavailable" tag, as HStack children.
+    @ViewBuilder
+    private func entryRowTags(_ badges: [String], disabled: Bool) -> some View {
+        ForEach(badges, id: \.self) { badge in
+            Text(badge)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 1)
+                .background(Color(UIColor.tertiarySystemFill))
+                .clipShape(RoundedRectangle(cornerRadius: 3))
+        }
+        if disabled {
+            Text("unavailable", comment: "Modality-incompatible model tag")
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(.orange)
         }
     }
 

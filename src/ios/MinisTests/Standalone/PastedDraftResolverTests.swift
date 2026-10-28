@@ -20,6 +20,41 @@
 
 import Foundation
 
+/// The sources that used to be the single file Agent/Chat/ChatStore.swift -
+/// the actor plus the files it was split into - read as one text.
+func chatStoreSource() -> String {
+    let chat = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Agent/Chat")
+    let names = ["ChatStore", "ChatStore+Schema", "ChatStore+SessionCRUD", "ChatStore+SessionList",
+                 "ChatStore+Search", "ChatStore+SessionQueries", "ChatStore+Folders",
+                 "ChatStore+SessionDeletion", "ChatStore+StoredPreview", "ChatStore+Messages",
+                 "ChatStore+Media", "ChatStore+CompactMarkers", "ChatStore+Tombstones",
+                 "ChatStore+WebAppShortcuts", "ChatStore+Maintenance", "ChatStore+Helpers",
+                 "ChatStore+UsageStats", "ChatStoreModels", "ContentPart+ProviderConversion",
+                 "RawMessage+Conversion", "ChatStore+SyncDirty", "ChatStore+SyncRemoteSessions",
+                 "ChatStore+SyncRemoteRecords", "ChatStore+BackupRestore"]
+    return names.compactMap { try? String(contentsOf: chat.appendingPathComponent($0 + ".swift"), encoding: .utf8) }
+        .joined(separator: "\n")
+}
+
+/// The sources that used to be the single file Agent/Chat/AIChatViewModel.swift -
+/// the class body plus the AIChatViewModel+<Concern>.swift files it was split
+/// into (the older extension files are NOT included) - read as one text.
+func chatViewModelSource() -> String {
+    let chat = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Agent/Chat")
+    let names = ["AIChatViewModel", "AIChatViewModel+Lifecycle", "AIChatViewModel+ContextUsage",
+                 "AIChatViewModel+StreamingUI", "AIChatViewModel+Speech", "AIChatViewModel+AutoPlayAudio",
+                 "AIChatViewModel+SystemPrompt", "AIChatViewModel+Send", "AIChatViewModel+Rerun",
+                 "AIChatViewModel+EditMessage", "AIChatViewModel+Cancel", "AIChatViewModel+PromptQueue",
+                 "AIChatViewModel+DebugDumps", "AIChatViewModel+TurnCompletion", "AIChatViewModel+AgentLoop",
+                 "AIChatViewModel+ThinkingLevel", "LLMProviderError"]
+    return names.compactMap { try? String(contentsOf: chat.appendingPathComponent($0 + ".swift"), encoding: .utf8) }
+        .joined(separator: "\n")
+}
+
 var failures = 0
 func check(_ label: String, _ actual: Bool, _ expected: Bool = true) {
     if actual == expected { print("  ✅ \(label)") }
@@ -261,11 +296,11 @@ func sourceOf(_ rel: String) -> String {
     return (try? String(contentsOf: here.appendingPathComponent(rel), encoding: .utf8)) ?? ""
 }
 let attachments = sourceOf("Agent/Chat/AIChatViewModel+Attachments.swift")
-let vm = sourceOf("Agent/Chat/AIChatViewModel.swift")
+let vm = chatViewModelSource()
 let rb = sourceOf("Agent/Chat/AIChatViewModel+RequestBudget.swift")
 let compaction = sourceOf("Agent/Chat/AIChatViewModel+Compaction.swift")
 let fallback = sourceOf("Agent/Chat/AIChatViewModel+Fallback.swift")
-let chatStore = sourceOf("Agent/Chat/ChatStore.swift")
+let chatStore = chatStoreSource()
 check("Attachments read", !attachments.isEmpty)
 check("view model read", !vm.isEmpty)
 check("ChatStore read", !chatStore.isEmpty)

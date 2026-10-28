@@ -34,13 +34,18 @@ struct ToolLoopConfig {
     var unknownToolThreshold: Int
     var criticalThreshold: Int
     var globalCircuitBreakerThreshold: Int
+    /// [T-tool-title-reminder] Remind about a missing `tool_title` on the 1st,
+    /// (N+1)th, (2N+1)th… missing-title call: prompt the first time, then at
+    /// most once per N more, to keep the token cost negligible.
+    var toolTitleReminderEvery: Int
 
     init(
         historySize: Int = 30,
         warningThreshold: Int = 10,
         unknownToolThreshold: Int = 10,
         criticalThreshold: Int = 20,
-        globalCircuitBreakerThreshold: Int = 30
+        globalCircuitBreakerThreshold: Int = 30,
+        toolTitleReminderEvery: Int = 10
     ) {
         // Auto-correct ordering so warning < critical < globalCircuitBreaker.
         let w = max(1, warningThreshold)
@@ -53,6 +58,7 @@ struct ToolLoopConfig {
         self.globalCircuitBreakerThreshold = g
         self.unknownToolThreshold = max(1, unknownToolThreshold)
         self.historySize = h
+        self.toolTitleReminderEvery = max(1, toolTitleReminderEvery)
     }
 }
 
@@ -63,6 +69,13 @@ final class ToolLoopDetector {
     private var history: [ToolCallRecord] = []
     /// Map<warningKey, lastBucket> — used to throttle repeated warnings to once per N triggers.
     private var warningBuckets: [String: Int] = [:]
+    /// [T-tool-title-reminder] Cumulative count of titled tool calls that came
+    /// back without a `tool_title`. Cumulative, not windowed like `history`,
+    /// and cleared by `reset()` with everything else.
+    private var missingTitleCount = 0
+    /// [T-loop-reminder-scheduled-exempt] 1 after a scheduled-task fire, until
+    /// the next recorded call consumes it. Never above 1, never below 0.
+    private var scheduledFireExemption = 0
     private let lock = NSLock()
 
     init(config: ToolLoopConfig = ToolLoopConfig()) {
@@ -142,6 +155,15 @@ final class ToolLoopDetector {
         lock.lock()
         defer { lock.unlock() }
 
+        // [T-loop-reminder-scheduled-exempt] A scheduled fire's call is its
+        // expected repeat (the poll it exists to run): not counted, so fire
+        // after fire of the same command never adds up to a loop warning.
+        if scheduledFireExemption > 0 {
+            scheduledFireExemption -= 1
+            logger.info("loop-detector: \(toolName) exempted (scheduled fire) — not counted")
+            return .pass
+        }
+
         let argsHash = argsHashFor(toolName, params)
         let resultHash = resultHashFor(result: result, errorMessage: errorMessage)
         let unknown = extractUnknownToolName(errorMessage: errorMessage)
@@ -188,6 +210,44 @@ final class ToolLoopDetector {
         defer { lock.unlock() }
         history.removeAll()
         warningBuckets.removeAll()
+        missingTitleCount = 0
+        scheduledFireExemption = 0
+    }
+
+    /// [T-loop-reminder-scheduled-exempt] Called when a scheduled task (a
+    /// `minis-scheduled` timer / loop) fires into this session. Polling on a
+    /// schedule repeats the same call by design — e.g. reading the iTerm2
+    /// screen every 2 minutes — and each fire used to add one identical call,
+    /// so ten fires raised "[LOOP WARNING] … identical arguments" (and enough
+    /// unchanged screens a no-progress block): a false positive that also
+    /// polluted the model's context.
+    ///
+    /// Decrements the repeat count by one per fire, floored at zero: the next
+    /// recorded call is not counted. The exemption does not stack, so fires
+    /// that make no tool call cannot bank credit for later user turns, and a
+    /// fire that runs away within itself is still caught from its second call.
+    func exemptNextCallForScheduledFire() {
+        lock.lock()
+        defer { lock.unlock() }
+        scheduledFireExemption = 1
+    }
+
+    /// [T-tool-title-reminder] Called after a tool ran, next to `record(...)`.
+    /// Counts calls of a tool that declares `tool_title` but arrived without a
+    /// usable one, and returns the soft reminder when one is due: on the 1st,
+    /// 11th, 21st… missing-title call (`config.toolTitleReminderEvery`). The
+    /// caller appends it to the model-facing tool result exactly like a loop
+    /// warning. Same lock, same `warningBuckets` throttle, same `reset()`
+    /// lifecycle as the loop warnings — no separate per-session state.
+    func recordToolTitle(params: [String: Any], titleDeclared: Bool) -> String? {
+        guard titleDeclared, ToolTitleReminder.isMissingTitle(params) else { return nil }
+        lock.lock()
+        defer { lock.unlock() }
+        missingTitleCount += 1
+        guard shouldEmitEvery(warningKey: "title:missing", count: missingTitleCount,
+                              period: config.toolTitleReminderEvery) else { return nil }
+        logger.info("loop-detector: tool_title missing count=\(missingTitleCount) — soft reminder due")
+        return ToolTitleReminder.text
     }
 
     /// Test-only inspection. Not part of production callers.
@@ -210,6 +270,16 @@ final class ToolLoopDetector {
     /// Returns true if this call should emit; updates the bucket pointer.
     private func shouldEmitWarning(warningKey: String, currentCount: Int) -> Bool {
         let bucket = currentCount / config.warningThreshold
+        if let last = warningBuckets[warningKey], last >= bucket { return false }
+        warningBuckets[warningKey] = bucket
+        return true
+    }
+
+    /// [T-tool-title-reminder] Like `shouldEmitWarning`, but first-hit based:
+    /// buckets are `(count - 1) / period`, so it fires on counts 1, period+1,
+    /// 2·period+1… (the loop warnings fire on the threshold itself, 10, 20…).
+    private func shouldEmitEvery(warningKey: String, count: Int, period: Int) -> Bool {
+        let bucket = (count - 1) / max(1, period)
         if let last = warningBuckets[warningKey], last >= bucket { return false }
         warningBuckets[warningKey] = bucket
         return true

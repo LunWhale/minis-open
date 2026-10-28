@@ -385,11 +385,17 @@ final class ImagePreviewContentView: UIView, UIScrollViewDelegate, UIGestureReco
 // MARK: - Fullscreen Image Preview (single image + chrome)
 
 struct ImagePreviewView: View {
+    /// Decoded for DISPLAY (callers downsample). Exported only when `source`
+    /// is nil or its file cannot be read.
     let image: UIImage
+    /// [T-image-save-original] Where the original file is, for Save / Copy /
+    /// Share / Print.
+    var source: ImageExport.Source? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var saveStatus: SaveStatus = .idle
     @State private var copyDone = false
     @State private var showShareSheet = false
+    @State private var shareURL: URL?
 
     private enum SaveStatus {
         case idle, saving, saved, failed
@@ -432,9 +438,12 @@ struct ImagePreviewView: View {
 
                     // Copy button
                     Button {
-                        UIPasteboard.general.image = image
                         copyDone = true
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copyDone = false }
+                        Task {
+                            await ImageExport.copy(source: source, displayed: image)
+                            try? await Task.sleep(nanoseconds: 1_500_000_000)
+                            copyDone = false
+                        }
                     } label: {
                         Image(systemName: copyDone ? "checkmark" : "doc.on.doc")
                             .font(.body.weight(.semibold))
@@ -474,7 +483,10 @@ struct ImagePreviewView: View {
 
                     // Print button
                     Button {
-                        PrintHelper.printImage(image, jobName: AppLocalized("Image"))
+                        Task {
+                            guard let printable = await ImageExport.printableImage(source: source, displayed: image) else { return }
+                            PrintHelper.printImage(printable, jobName: AppLocalized("Image"))
+                        }
                     } label: {
                         Image(systemName: "printer")
                             .font(.body.weight(.semibold))
@@ -486,7 +498,10 @@ struct ImagePreviewView: View {
 
                     // Share button
                     Button {
-                        showShareSheet = true
+                        Task {
+                            shareURL = await ImageExport.shareFile(source: source, displayed: image)
+                            showShareSheet = shareURL != nil
+                        }
                     } label: {
                         Image(systemName: "square.and.arrow.up")
                             .offset(y: -1)
@@ -504,8 +519,8 @@ struct ImagePreviewView: View {
             .zIndex(10)
         }
         .sheet(isPresented: $showShareSheet) {
-            if let data = image.pngData(), let tmpURL = Self.writeTempImageFile(data: data) {
-                MinisShareSheet(url: tmpURL)
+            if let shareURL {
+                MinisShareSheet(url: shareURL)
             }
         }
         .statusBar(hidden: true)
@@ -513,30 +528,15 @@ struct ImagePreviewView: View {
 
     private func saveImageToPhotos() {
         saveStatus = .saving
-        PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
-            guard status == .authorized || status == .limited else {
-                DispatchQueue.main.async { saveStatus = .failed }
-                return
-            }
-            PHPhotoLibrary.shared().performChanges {
-                PHAssetChangeRequest.creationRequestForAsset(from: image)
-            } completionHandler: { success, _ in
-                DispatchQueue.main.async {
-                    saveStatus = success ? .saved : .failed
-                    if success {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                            saveStatus = .idle
-                        }
-                    }
+        // [T-image-save-original] The original file, not the display bitmap.
+        ImageExport.saveToPhotos(source: source, displayed: image) { success in
+            saveStatus = success ? .saved : .failed
+            if success {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    saveStatus = .idle
                 }
             }
         }
-    }
-
-    fileprivate static func writeTempImageFile(data: Data) -> URL? {
-        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("share_image_\(UUID().uuidString).png")
-        try? data.write(to: tmp)
-        return tmp
     }
 }
 
@@ -549,7 +549,7 @@ struct AsyncImagePreviewView: View {
 
     var body: some View {
         if let image = loadedImage {
-            ImagePreviewView(image: image)
+            ImagePreviewView(image: image, source: .remote(url))
         } else {
             ZStack {
                 Color.black.ignoresSafeArea()

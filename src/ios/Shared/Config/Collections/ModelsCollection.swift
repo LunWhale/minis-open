@@ -171,6 +171,45 @@ struct ModelsCollection: ConfigCollection {
         ProviderConfigStore.shared.removeEntry(entry.id)
     }
 
+    // MARK: [T-config-readable] Readable descriptions
+
+    let readableSubjectFormat = "Model %1$@ – %2$@"
+
+    func entityLabel(id: String) -> String? {
+        lookup(id).map(ConfigRefResolver.modelLabel)
+    }
+
+    /// Modality names → label keys, for the override list.
+    static let modalityLabels: [String: String] = [
+        "text_input": "Text input", "text_output": "Text output",
+        "image_input": "Image input", "pdf_input": "PDF input",
+        "audio_input": "Audio input", "video_input": "Video input",
+        "image_output": "Image output", "audio_output": "Audio output",
+        "video_output": "Video output",
+    ]
+
+    func readableForAdd(_ payload: RedactedConfigValue) -> [ReadableLine] {
+        guard case .object(let d) = payload.value else { return [] }
+        let modelId: String = { if case .string(let s)? = d["model_id"] { return s }; return "?" }()
+        var name = modelId
+        if case .string(let s)? = d["display_name"], !s.isEmpty { name = s }
+        let provider: ReadableArg = {
+            if case .string(let i)? = d["instance_id"] { return ConfigRefResolver.name(.providerInstance, i) }
+            return .text("?")
+        }()
+        return [ReadableLine("Add custom model %1$@ to “%2$@”", [.text(name), provider])]
+    }
+
+    func readableForRemove(id: String) -> [ReadableLine] {
+        guard let e = lookup(id) else { return [] }
+        var lines = [ReadableLine("Delete custom model %@", [.text(ConfigRefResolver.modelLabel(e))])]
+        let groups = ProviderConfigStore.shared.config.modelGroups.filter { $0.memberEntryIds.contains(e.id) }
+        if !groups.isEmpty {
+            lines.append(ReadableLine("It is also in: %@", [.list(groups.map { .text($0.name) })]))
+        }
+        return lines
+    }
+
     // MARK: Field factories
 
     private func entry(_ id: String) -> ModelEntry? {
@@ -231,6 +270,7 @@ struct ModelsCollection: ConfigCollection {
             description: "User-visible label override. Empty restores the API default.",
             valueSchema: .string(maxLength: 200),
             risk: .normal, revertable: true,
+            readable: ConfigReadable(.text(empty: "Default")),
             reader: { [self] in
                 guard let e = entry(id) else { return .null }
                 return .string(e.overrides.displayName ?? e.baseModel.displayName)
@@ -255,6 +295,7 @@ struct ModelsCollection: ConfigCollection {
             description: "Override the API-reported max. 0 restores the default.",
             valueSchema: .int(min: 0, max: 1_000_000),
             risk: .sensitive, revertable: true,
+            readable: ConfigReadable(.number(.tokens, zero: "Default")),
             reader: { [self] in
                 guard let e = entry(id) else { return .null }
                 return .int(e.overrides.maxOutputTokens ?? e.baseModel.maxOutputTokens ?? 0)
@@ -277,6 +318,7 @@ struct ModelsCollection: ConfigCollection {
             description: "When true, the model is excluded from pickers and agent loop.",
             valueSchema: .bool,
             risk: .sensitive, revertable: true,
+            readable: ConfigReadable(.bool(on: "Hidden", off: "Shown"), label: "Visibility"),
             reader: { [self] in
                 guard let e = entry(id) else { return .null }
                 return .bool(e.isHidden)
@@ -343,6 +385,7 @@ struct ModelsCollection: ConfigCollection {
             description: "User override list. Pass [] or null to clear and fall back to inferred. Allowed: text_input, text_output, image_input, pdf_input, audio_input, video_input, image_output, audio_output, video_output.",
             valueSchema: .array(.string()),
             risk: .sensitive, revertable: true,
+            readable: ConfigReadable(.stringList(ordered: false, labels: Self.modalityLabels)),
             reader: { [self] in
                 guard let e = entry(id) else { return .null }
                 if let override = e.overrides.modalityOverride {
@@ -385,6 +428,7 @@ struct ModelsCollection: ConfigCollection {
             description: "User override in tokens. 0 clears the override and restores the API/heuristic value.",
             valueSchema: .int(min: 0, max: 10_000_000),
             risk: .sensitive, revertable: true,
+            readable: ConfigReadable(.number(.tokens, zero: "Default")),
             reader: { [self] in
                 guard let e = entry(id) else { return .null }
                 return .int(e.overrides.contextWindow ?? 0)

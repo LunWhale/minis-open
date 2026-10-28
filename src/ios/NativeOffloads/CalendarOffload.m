@@ -23,6 +23,7 @@ static const NSInteger DEFAULT_LIMIT = 100;
 /// in this file) can report an existing geofence too.
 static NSDictionary *reminder_location_dict(EKReminder *reminder);
 static void reminder_put_due(NSMutableDictionary *d, EKReminder *r);   // [T-reminders-date-only]
+static NSDictionary *recurrence_to_dict(EKRecurrenceRule *rule);           // [T-issue282-list-id]
 
 static NSString *const HELP_TEXT =
     @"apple-calendar - Query and manage iOS calendar events and reminders\n"
@@ -88,7 +89,8 @@ static NSString *const HELP_TEXT =
      "  --notify <on|off>    Force the notification on or off, overriding that default.\n"
      "                       on requires --due. Independent of geofence alerts below —\n"
      "                       a reminder can have both.\n"
-     "  --list <name>        Reminder list name\n"
+     "  --list <name>        Reminder list name (exact title)\n"
+     "  --list-id <id>       Reminder list by exact id (`apple-reminders lists`)\n"
      "  --priority <0-9>     Priority level\n"
      "  --notes <text>       Reminder notes\n"
      "  --lat <deg>          Geofence latitude (WGS-84). Requires --lng.\n"
@@ -132,7 +134,8 @@ static NSString *const HELP_TEXT =
      "                       of day (same rule as REMIND).\n"
      "  --notify <on|off>    Force the notification on or off. on requires a due date.\n"
      "                       Leaves any geofence alert untouched.\n"
-     "  --list <name>        Move to a different list\n"
+     "  --list <name>        Move to a different list (exact title)\n"
+     "  --list-id <id>       Move to the list with this exact id\n"
      "  --priority <0-9>     New priority\n"
      "  --notes <text>       New notes\n"
      "  --lat/--lng/--location-name/--radius/--proximity\n"
@@ -206,6 +209,108 @@ static EKCalendar *noff_resolve_calendar_exact(NSString *name,
         *errorOut = noff_json_error(TOOL_NAME, action, NOFF_ERR_INVALID_ARGS, msg);
     }
     return nil;
+}
+
+// [T-issue282-list-id] Resolve the reminder list a command targets from
+// --list-id (exact, EventKit calendarIdentifier) or --list (title).
+// Titles are not unique - two "Work" lists in iCloud and Exchange are common -
+// so --list-id is the only selector that always names one list. Rules:
+//   * both flags          -> invalid_args (ambiguous intent);
+//   * --list-id           -> calendarWithIdentifier:, must be a reminder list;
+//                            for a write it must also accept changes. Never
+//                            falls back to the default list;
+//   * --list (write)      -> the existing exact-title match;
+//   * neither             -> nil with *given = NO; the caller decides.
+// Returns nil with *errorOut set on any failure.
+static EKCalendar *noff_resolve_calendar_by_id_or_name(int argc, char **argv,
+                                                       NSString *action,
+                                                       BOOL forWrite,
+                                                       BOOL *given,
+                                                       NSDictionary **errorOut) {
+    NSString *listId = noff_find_arg(argc, argv, "--list-id");
+    NSString *listName = noff_find_arg(argc, argv, "--list");
+    if (given) *given = (listId != nil || listName != nil);
+    if (listId && listName) {
+        if (errorOut) *errorOut = noff_json_error(TOOL_NAME, action, NOFF_ERR_INVALID_ARGS,
+            @"--list and --list-id are mutually exclusive. Use --list-id <id> (exact, from "
+             "`apple-reminders lists`) or --list <name>, not both.");
+        return nil;
+    }
+    if (listId) {
+        EKCalendar *cal = listId.length > 0 ? [eventStore() calendarWithIdentifier:listId] : nil;
+        if (!cal || !(cal.allowedEntityTypes & EKEntityMaskReminder)) {
+            if (errorOut) *errorOut = noff_json_error(TOOL_NAME, action, NOFF_ERR_INVALID_ARGS,
+                [NSString stringWithFormat:@"No reminder list with id '%@'. Run `apple-reminders lists` "
+                                            "for the current ids (an id can change after a full "
+                                            "account resync).", listId]);
+            return nil;
+        }
+        if (forWrite && !cal.allowsContentModifications) {
+            if (errorOut) *errorOut = noff_json_error(TOOL_NAME, action, NOFF_ERR_INVALID_ARGS,
+                [NSString stringWithFormat:@"Reminder list '%@' (%@, id '%@') is read-only and "
+                                            "cannot receive reminders.",
+                                            cal.title, cal.source.title ?: @"", listId]);
+            return nil;
+        }
+        return cal;
+    }
+    if (listName && forWrite) {
+        return noff_resolve_calendar_exact(listName, EKEntityTypeReminder, action, errorOut);
+    }
+    return nil;
+}
+
+// [T-issue282-list-id] One serialization for every reminder read (list, read):
+// the fields list always had, plus list_id / list_source so a reminder can be
+// placed back into, or checked against, exactly the list it came from.
+static NSMutableDictionary *reminder_to_dict(EKReminder *r) {
+    NSMutableDictionary *d = [NSMutableDictionary dictionary];
+    d[@"id"] = r.calendarItemIdentifier ?: @"";
+    d[@"title"] = r.title ?: @"";
+    d[@"completed"] = @(r.isCompleted);
+    d[@"list"] = r.calendar.title ?: @"";
+    d[@"list_id"] = r.calendar.calendarIdentifier ?: @"";
+    d[@"list_source"] = r.calendar.source.title ?: @"";
+    d[@"priority"] = @(r.priority);
+    d[@"notes"] = r.notes ?: [NSNull null];
+    // [T-reminders-date-only] due + is_all_day; [T-reminders-url] url.
+    reminder_put_due(d, r);
+    d[@"url"] = r.URL.absoluteString ?: [NSNull null];
+    // [T-reminders-location-alarm] Present only for geofenced reminders, so
+    // existing time-only output is unchanged.
+    NSDictionary *rLoc = reminder_location_dict(r);
+    if (rLoc) d[@"location"] = rLoc;
+    // [T-reminders-recurrence] Likewise present only for repeating
+    // reminders, matching how events report their rule.
+    if (r.hasRecurrenceRules && r.recurrenceRules.count > 0) {
+        d[@"recurrence"] = recurrence_to_dict(r.recurrenceRules.firstObject);
+    }
+    return d;
+}
+
+// [T-issue282-fetch-timeout] EventKit answers reminder fetches asynchronously.
+// The wait used to ignore its own timeout, so a slow store came back as
+// ok:true with zero reminders - indistinguishable from "you have none".
+// Returns nil and sets *timedOut when the fetch did not finish in time.
+static const int64_t REMINDER_FETCH_TIMEOUT_SEC = 10;
+static NSArray<EKReminder *> *fetch_reminders(NSPredicate *pred, BOOL *timedOut) {
+    __block NSArray<EKReminder *> *reminders = nil;
+    dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+    [eventStore() fetchRemindersMatchingPredicate:pred completion:^(NSArray *r) {
+        reminders = r;
+        dispatch_semaphore_signal(sem);
+    }];
+    long waited = dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW,
+                                                             REMINDER_FETCH_TIMEOUT_SEC * NSEC_PER_SEC));
+    if (timedOut) *timedOut = (waited != 0);
+    return waited != 0 ? nil : (reminders ?: @[]);
+}
+
+static NSDictionary *reminder_fetch_timeout_error(NSString *action) {
+    return noff_json_error(TOOL_NAME, action, NOFF_ERR_INTERNAL_ERROR,
+        [NSString stringWithFormat:@"Timed out after %llds waiting for the Reminders store; the "
+                                    "result would be incomplete, so none is returned. Retry.",
+                                    (long long)REMINDER_FETCH_TIMEOUT_SEC]);
 }
 
 // Serial queue to prevent concurrent authorization dialogs
@@ -467,8 +572,21 @@ int calendar_cmd_reminders(int argc, char **argv, int stdout_fd, BOOL compact, B
     NSInteger limit = limitStr ? [limitStr integerValue] : DEFAULT_LIMIT;
     NSString *listName = noff_find_arg(argc, argv, "--list");
 
+    // [T-issue282-list-id] --list-id selects exactly one list (read-only lists
+    // allowed: this only reads). --list keeps its old fuzzy meaning here, a
+    // case-insensitive substring filter over list titles.
     NSArray<EKCalendar *> *calendars = nil;
-    if (listName) {
+    NSDictionary *listErr = nil;
+    BOOL listGiven = NO;
+    EKCalendar *byId = noff_resolve_calendar_by_id_or_name(argc, argv, @"reminders", NO,
+                                                           &listGiven, &listErr);
+    if (listErr) {
+        noff_emit_json(stdout_fd, listErr, compact, quiet);
+        return NOFF_EXIT_INVALID_ARGS;
+    }
+    if (byId) {
+        calendars = @[byId];
+    } else if (listName) {
         NSMutableArray *filtered = [NSMutableArray array];
         for (EKCalendar *cal in [eventStore() calendarsForEntityType:EKEntityTypeReminder]) {
             if ([cal.title localizedCaseInsensitiveContainsString:listName]) {
@@ -489,40 +607,18 @@ int calendar_cmd_reminders(int argc, char **argv, int stdout_fd, BOOL compact, B
         pred = [eventStore() predicateForRemindersInCalendars:calendars];
     }
 
-    __block NSArray<EKReminder *> *reminders = nil;
-    dispatch_semaphore_t sem = dispatch_semaphore_create(0);
-    [eventStore() fetchRemindersMatchingPredicate:pred completion:^(NSArray *r) {
-        reminders = r;
-        dispatch_semaphore_signal(sem);
-    }];
-    dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC));
+    BOOL timedOut = NO;
+    NSArray<EKReminder *> *reminders = fetch_reminders(pred, &timedOut);
+    if (timedOut) {
+        noff_emit_json(stdout_fd, reminder_fetch_timeout_error(@"reminders"), compact, quiet);
+        return NOFF_EXIT_ERROR;
+    }
 
-    NSInteger totalCount = (NSInteger)(reminders ?: @[]).count;
+    NSInteger totalCount = (NSInteger)reminders.count;
     NSMutableArray *items = [NSMutableArray array];
-    NSInteger count = 0;
     for (EKReminder *r in reminders) {
-        if (count >= limit) break;
-        NSMutableDictionary *d = [NSMutableDictionary dictionary];
-        d[@"id"] = r.calendarItemIdentifier ?: @"";
-        d[@"title"] = r.title ?: @"";
-        d[@"completed"] = @(r.isCompleted);
-        d[@"list"] = r.calendar.title ?: @"";
-        d[@"priority"] = @(r.priority);
-        d[@"notes"] = r.notes ?: [NSNull null];
-        // [T-reminders-date-only] due + is_all_day; [T-reminders-url] url.
-        reminder_put_due(d, r);
-        d[@"url"] = r.URL.absoluteString ?: [NSNull null];
-        // [T-reminders-location-alarm] Present only for geofenced reminders, so
-        // existing time-only output is unchanged.
-        NSDictionary *rLoc = reminder_location_dict(r);
-        if (rLoc) d[@"location"] = rLoc;
-        // [T-reminders-recurrence] Likewise present only for repeating
-        // reminders, matching how events report their rule.
-        if (r.hasRecurrenceRules && r.recurrenceRules.count > 0) {
-            d[@"recurrence"] = recurrence_to_dict(r.recurrenceRules.firstObject);
-        }
-        [items addObject:d];
-        count++;
+        if ((NSInteger)items.count >= limit) break;
+        [items addObject:reminder_to_dict(r)];
     }
 
     NSMutableDictionary *data = [@{
@@ -537,6 +633,39 @@ int calendar_cmd_reminders(int argc, char **argv, int stdout_fd, BOOL compact, B
         data[@"total_available"] = @(totalCount);
     }
     noff_emit_json(stdout_fd, noff_json_envelope(TOOL_NAME, @"reminders", data), compact, quiet);
+    return NOFF_EXIT_SUCCESS;
+}
+
+// [T-issue282-list-id] `apple-reminders lists`: every reminder list, empty
+// ones included (they never show up in reminder output), with the id that
+// --list-id takes. Titles repeat across accounts; id + source tell them apart.
+int calendar_cmd_reminder_lists(int argc, char **argv, int stdout_fd, BOOL compact, BOOL quiet) {
+    NSString *authErr = nil;
+    if (!requestRemindersAccess(&authErr)) {
+        NSDictionary *err = noff_json_error(TOOL_NAME, @"lists",
+                                             NOFF_ERR_AUTHORIZATION_DENIED, authErr);
+        noff_emit_json(stdout_fd, err, compact, quiet);
+        return NOFF_EXIT_AUTH_DENIED;
+    }
+
+    NSString *defaultId = [eventStore() defaultCalendarForNewReminders].calendarIdentifier;
+    NSMutableArray *items = [NSMutableArray array];
+    for (EKCalendar *cal in [eventStore() calendarsForEntityType:EKEntityTypeReminder]) {
+        CGFloat r = 0, g = 0, b = 0, a = 0;
+        if (cal.CGColor) [[UIColor colorWithCGColor:cal.CGColor] getRed:&r green:&g blue:&b alpha:&a];
+        [items addObject:@{
+            @"id": cal.calendarIdentifier ?: @"",
+            @"title": cal.title ?: @"",
+            @"source": cal.source.title ?: @"",
+            @"source_id": cal.source.sourceIdentifier ?: @"",
+            @"color": [NSString stringWithFormat:@"#%02X%02X%02X",
+                        (int)(r * 255), (int)(g * 255), (int)(b * 255)],
+            @"is_default": @((BOOL)(defaultId != nil && [cal.calendarIdentifier isEqualToString:defaultId])),
+            @"allows_content_modifications": @(cal.allowsContentModifications),
+        }];
+    }
+    NSDictionary *data = @{@"lists": items, @"count": @(items.count)};
+    noff_emit_json(stdout_fd, noff_json_envelope(TOOL_NAME, @"lists", data), compact, quiet);
     return NOFF_EXIT_SUCCESS;
 }
 
@@ -1699,17 +1828,17 @@ int calendar_cmd_remind(int argc, char **argv, int stdout_fd, int stderr_fd, BOO
     // candidate lists, never a silent default (issue #282: batch-created
     // reminders all landed in the wrong list while reporting ok:true).
     // [T-issue282-exact-list-match]
-    NSString *listName = noff_find_arg(argc, argv, "--list");
-    if (listName) {
-        NSDictionary *matchErr = nil;
-        EKCalendar *target = noff_resolve_calendar_exact(listName, EKEntityTypeReminder,
-                                                         @"remind", &matchErr);
-        if (!target) {
-            noff_emit_json(stdout_fd, matchErr, compact, quiet);
-            return NOFF_EXIT_INVALID_ARGS;
-        }
-        reminder.calendar = target;
+    // [T-issue282-list-id] --list-id (exact id) or --list (exact title);
+    // the default list only when neither was given.
+    BOOL listGiven = NO;
+    NSDictionary *matchErr = nil;
+    EKCalendar *target = noff_resolve_calendar_by_id_or_name(argc, argv, @"remind", YES,
+                                                             &listGiven, &matchErr);
+    if (listGiven && !target) {
+        noff_emit_json(stdout_fd, matchErr, compact, quiet);
+        return NOFF_EXIT_INVALID_ARGS;
     }
+    if (target) reminder.calendar = target;
     if (!reminder.calendar) {
         reminder.calendar = [eventStore() defaultCalendarForNewReminders];
     }
@@ -1795,23 +1924,58 @@ int calendar_cmd_remind(int argc, char **argv, int stdout_fd, int stderr_fd, BOO
     return NOFF_EXIT_SUCCESS;
 }
 
-// Helper: fetch a single reminder by calendarItemIdentifier
-static EKReminder *fetch_reminder_by_id(NSString *reminderId) {
-    NSPredicate *pred = [eventStore() predicateForRemindersInCalendars:nil];
-    __block NSArray<EKReminder *> *reminders = nil;
-    dispatch_semaphore_t sem = dispatch_semaphore_create(0);
-    [eventStore() fetchRemindersMatchingPredicate:pred completion:^(NSArray *r) {
-        reminders = r;
-        dispatch_semaphore_signal(sem);
-    }];
-    dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC));
-
+// Helper: fetch a single reminder by calendarItemIdentifier.
+// [T-issue282-read-by-id] O(1) calendarItemWithIdentifier: first (the id is
+// the one list/read/create return); the old whole-store scan stays as a
+// fallback. *timedOut tells a slow store apart from "no such reminder".
+static EKReminder *fetch_reminder_by_id(NSString *reminderId, BOOL *timedOut) {
+    if (timedOut) *timedOut = NO;
+    if (reminderId.length == 0) return nil;
+    EKCalendarItem *item = [eventStore() calendarItemWithIdentifier:reminderId];
+    if ([item isKindOfClass:[EKReminder class]]) return (EKReminder *)item;
+    if (item) return nil;   // an event with this id, not a reminder
+    NSArray<EKReminder *> *reminders = fetch_reminders([eventStore() predicateForRemindersInCalendars:nil],
+                                                       timedOut);
     for (EKReminder *r in reminders) {
-        if ([r.calendarItemIdentifier isEqualToString:reminderId]) {
-            return r;
-        }
+        if ([r.calendarItemIdentifier isEqualToString:reminderId]) return r;
     }
     return nil;
+}
+
+// Error for a reminder id that did not resolve: a timeout is not "not found".
+static NSDictionary *reminder_lookup_error(NSString *action, NSString *reminderId, BOOL timedOut) {
+    if (timedOut) return reminder_fetch_timeout_error(action);
+    return noff_json_error(TOOL_NAME, action, NOFF_ERR_NO_DATA,
+                           [NSString stringWithFormat:@"Reminder not found with id '%@'", reminderId]);
+}
+
+// [T-issue282-read-by-id] `apple-reminders read --id <id>`: one reminder, in
+// the same shape as `list`, so a write can be verified without scanning.
+int calendar_cmd_read_reminder(int argc, char **argv, int stdout_fd, BOOL compact, BOOL quiet) {
+    NSString *authErr = nil;
+    if (!requestRemindersAccess(&authErr)) {
+        NSDictionary *err = noff_json_error(TOOL_NAME, @"read",
+                                             NOFF_ERR_AUTHORIZATION_DENIED, authErr);
+        noff_emit_json(stdout_fd, err, compact, quiet);
+        return NOFF_EXIT_AUTH_DENIED;
+    }
+    NSString *reminderId = noff_find_arg(argc, argv, "--id");
+    if (!reminderId) {
+        NSDictionary *err = noff_json_error(TOOL_NAME, @"read", NOFF_ERR_INVALID_ARGS,
+                                             @"Required: --id <reminder_id>");
+        noff_emit_json(stdout_fd, err, compact, quiet);
+        return NOFF_EXIT_INVALID_ARGS;
+    }
+    BOOL timedOut = NO;
+    EKReminder *reminder = fetch_reminder_by_id(reminderId, &timedOut);
+    if (!reminder) {
+        noff_emit_json(stdout_fd, reminder_lookup_error(@"read", reminderId, timedOut), compact, quiet);
+        return NOFF_EXIT_ERROR;
+    }
+    NSMutableDictionary *data = reminder_to_dict(reminder);
+    data[@"notify"] = @(has_time_alarm(reminder));
+    noff_emit_json(stdout_fd, noff_json_envelope(TOOL_NAME, @"read", data), compact, quiet);
+    return NOFF_EXIT_SUCCESS;
 }
 
 int calendar_cmd_update_reminder(int argc, char **argv, int stdout_fd, BOOL compact, BOOL quiet) {
@@ -1832,12 +1996,11 @@ int calendar_cmd_update_reminder(int argc, char **argv, int stdout_fd, BOOL comp
         return NOFF_EXIT_INVALID_ARGS;
     }
 
-    EKReminder *reminder = fetch_reminder_by_id(reminderId);
+    BOOL lookupTimedOut = NO;                                           // [T-issue282-fetch-timeout]
+    EKReminder *reminder = fetch_reminder_by_id(reminderId, &lookupTimedOut);
     if (!reminder) {
-        NSDictionary *err = noff_json_error(TOOL_NAME, @"update",
-                                             NOFF_ERR_NO_DATA,
-                                             [NSString stringWithFormat:@"Reminder not found with id '%@'", reminderId]);
-        noff_emit_json(stdout_fd, err, compact, quiet);
+        noff_emit_json(stdout_fd, reminder_lookup_error(@"update", reminderId, lookupTimedOut),
+                       compact, quiet);
         return NOFF_EXIT_ERROR;
     }
 
@@ -1890,19 +2053,17 @@ int calendar_cmd_update_reminder(int argc, char **argv, int stdout_fd, BOOL comp
     NSString *priorityStr = noff_find_arg(argc, argv, "--priority");
     if (priorityStr) reminder.priority = (NSUInteger)[priorityStr integerValue];
 
-    NSString *listName = noff_find_arg(argc, argv, "--list");
-    if (listName) {
-        // [T-issue282-exact-list-match] Exact match or error — the old
-        // substring miss silently kept the reminder's previous list.
-        NSDictionary *matchErr = nil;
-        EKCalendar *target = noff_resolve_calendar_exact(listName, EKEntityTypeReminder,
-                                                         @"update", &matchErr);
-        if (!target) {
-            noff_emit_json(stdout_fd, matchErr, compact, quiet);
-            return NOFF_EXIT_INVALID_ARGS;
-        }
-        reminder.calendar = target;
+    // [T-issue282-exact-list-match] / [T-issue282-list-id] Move by exact title
+    // or exact id; a miss is an error, never "silently kept its old list".
+    BOOL listGiven = NO;
+    NSDictionary *matchErr = nil;
+    EKCalendar *target = noff_resolve_calendar_by_id_or_name(argc, argv, @"update", YES,
+                                                             &listGiven, &matchErr);
+    if (listGiven && !target) {
+        noff_emit_json(stdout_fd, matchErr, compact, quiet);
+        return NOFF_EXIT_INVALID_ARGS;
     }
+    if (target) reminder.calendar = target;
 
     // [T-reminders-recurrence] Same builder / flags as create and as
     // `apple-calendar`. The anchor is the reminder's EFFECTIVE due date — the
@@ -2053,12 +2214,11 @@ int calendar_cmd_complete_reminder(int argc, char **argv, int stdout_fd, BOOL co
 
     BOOL uncomplete = noff_has_flag(argc, argv, "--undo");
 
-    EKReminder *reminder = fetch_reminder_by_id(reminderId);
+    BOOL lookupTimedOut = NO;                                           // [T-issue282-fetch-timeout]
+    EKReminder *reminder = fetch_reminder_by_id(reminderId, &lookupTimedOut);
     if (!reminder) {
-        NSDictionary *err = noff_json_error(TOOL_NAME, @"complete",
-                                             NOFF_ERR_NO_DATA,
-                                             [NSString stringWithFormat:@"Reminder not found with id '%@'", reminderId]);
-        noff_emit_json(stdout_fd, err, compact, quiet);
+        noff_emit_json(stdout_fd, reminder_lookup_error(@"complete", reminderId, lookupTimedOut),
+                       compact, quiet);
         return NOFF_EXIT_ERROR;
     }
 
@@ -2104,12 +2264,11 @@ int calendar_cmd_delete_reminder(int argc, char **argv, int stdout_fd, BOOL comp
         return NOFF_EXIT_INVALID_ARGS;
     }
 
-    EKReminder *reminder = fetch_reminder_by_id(reminderId);
+    BOOL lookupTimedOut = NO;                                           // [T-issue282-fetch-timeout]
+    EKReminder *reminder = fetch_reminder_by_id(reminderId, &lookupTimedOut);
     if (!reminder) {
-        NSDictionary *err = noff_json_error(TOOL_NAME, @"delete",
-                                             NOFF_ERR_NO_DATA,
-                                             [NSString stringWithFormat:@"Reminder not found with id '%@'", reminderId]);
-        noff_emit_json(stdout_fd, err, compact, quiet);
+        noff_emit_json(stdout_fd, reminder_lookup_error(@"delete", reminderId, lookupTimedOut),
+                       compact, quiet);
         return NOFF_EXIT_ERROR;
     }
 

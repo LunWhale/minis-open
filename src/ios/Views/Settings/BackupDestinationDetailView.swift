@@ -155,7 +155,8 @@ struct BackupDestinationDetailView: View {
         isDeleting = true
         defer { isDeleting = false }
         do {
-            RcloneRemoteStore.syncToRclone()
+            // [T-restore-list-sync-race] Awaited: see ServerPackageListView.reload().
+            await RcloneRemoteStore.syncToRcloneAndWait()
             try await Task.detached(priority: .utility) {
                 try RcloneTransfer.deletePackage(pkg, from: r)
             }.value
@@ -496,7 +497,8 @@ struct BackupDestinationDetailView: View {
         isTesting = true
         testResult = nil
         defer { isTesting = false }
-        RcloneRemoteStore.syncToRclone()
+        // [T-restore-list-sync-race] Awaited: see ServerPackageListView.reload().
+        await RcloneRemoteStore.syncToRcloneAndWait()
         do {
             _ = try await Task.detached(priority: .userInitiated) {
                 try RcloneBridge.rpc("operations/list",
@@ -514,7 +516,8 @@ struct BackupDestinationDetailView: View {
     private func loadPackages(_ r: RcloneRemoteStore.Remote) async {
         isLoadingPackages = true
         defer { isLoadingPackages = false }
-        RcloneRemoteStore.syncToRclone()
+        // [T-restore-list-sync-race] Awaited: see ServerPackageListView.reload().
+        await RcloneRemoteStore.syncToRcloneAndWait()
         packages = (try? await Task.detached(priority: .utility) {
             try RcloneTransfer.listPackages(remote: r)
         }.value) ?? []

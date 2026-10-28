@@ -39,7 +39,13 @@ struct ConfigAuditView: View {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(entries) { entry in
-                    auditRow(entry)
+                    // [T-config-readable] Tap a record for its details: the
+                    // readable description plus the full raw change.
+                    NavigationLink {
+                        ConfigAuditDetailView(entry: entry)
+                    } label: {
+                        auditRow(entry)
+                    }
                 }
             }
         }
@@ -64,7 +70,7 @@ struct ConfigAuditView: View {
             }
             Button("Cancel", role: .cancel) { }
         } message: { entry in
-            Text("\(entry.key)\n\(displayJSON(entry.newValueJSON)) → \(displayJSON(entry.oldValueJSON))")
+            Text(verbatim: ConfigAuditRevert.dialogMessage(for: entry))
         }
     }
 
@@ -77,7 +83,7 @@ struct ConfigAuditView: View {
     private func auditRow(_ entry: ConfigAuditEntry) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
-                statusBadge(entry.status)
+                ConfigAuditStatusBadge(status: entry.status)
                 Text(entry.actor.rawValue)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
@@ -88,18 +94,30 @@ struct ConfigAuditView: View {
             }
             Text(entry.key)
                 .font(.system(.subheadline, design: .monospaced))
-            HStack(alignment: .top, spacing: 6) {
-                Text(displayJSON(entry.oldValueJSON))
-                    .lineLimit(1)
-                    .foregroundStyle(.secondary)
-                Image(systemName: "arrow.right")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                Text(displayJSON(entry.newValueJSON))
-                    .lineLimit(1)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            // [T-config-readable] The readable description when the row has
+            // one; older rows keep the raw one-line diff.
+            if let readable = entry.readable, !readable.displayText.isEmpty {
+                ConfigReadableDivider()
+                Text(verbatim: readable.displayText)
+                    .font(.subheadline)
+                    .lineLimit(3)
                     .foregroundStyle(entry.status == .applied ? .primary : .secondary)
+            } else {
+                HStack(alignment: .top, spacing: 6) {
+                    Text(displayJSON(entry.oldValueJSON))
+                        .lineLimit(1)
+                        .foregroundStyle(.secondary)
+                    Image(systemName: "arrow.right")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                    Text(displayJSON(entry.newValueJSON))
+                        .lineLimit(1)
+                        .foregroundStyle(entry.status == .applied ? .primary : .secondary)
+                }
+                .font(.system(.caption, design: .monospaced))
             }
-            .font(.system(.caption, design: .monospaced))
 
             if let caption = entry.caption, !caption.isEmpty {
                 Label {
@@ -136,25 +154,6 @@ struct ConfigAuditView: View {
             }
         }
         .padding(.vertical, 4)
-    }
-
-    @ViewBuilder
-    private func statusBadge(_ status: ConfigAuditStatus) -> some View {
-        Text(status.rawValue.uppercased())
-            .font(.system(.caption2, design: .monospaced))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 1)
-            .background(badgeColor(status), in: Capsule())
-    }
-
-    private func badgeColor(_ status: ConfigAuditStatus) -> Color {
-        switch status {
-        case .applied: return .green
-        case .rejected: return .gray
-        case .timeout: return .orange
-        case .reverted: return .purple
-        }
     }
 
     /// Coarse, static relative time. Computed once per `reload()` —
@@ -206,23 +205,15 @@ struct ConfigAuditView: View {
     private func performRevert(_ entry: ConfigAuditEntry) {
         revertingId = entry.id
         Task {
-            let bridgeResult = await Task.detached { () -> NSDictionary in
-                ConfigOffloadBridge.auditRevert(
-                    id: entry.id,
-                    actorRaw: "user-revert",
-                    sessionId: nil,
-                    skipConfirmation: true
-                )
-            }.value
+            let outcome = await ConfigAuditRevert.perform(entry)
             await MainActor.run {
                 revertingId = nil
-                if (bridgeResult["ok"] as? Bool) == true {
+                if outcome.ok {
                     revertResult = AlertMessage(title: "Reverted",
                                                 body: "Setting restored.")
                 } else {
-                    let reason = bridgeResult["reason"] as? String ?? "Unknown error"
                     revertResult = AlertMessage(title: "Revert Failed",
-                                                body: reason)
+                                                body: outcome.reason)
                 }
                 reload()
             }

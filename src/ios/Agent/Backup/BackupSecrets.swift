@@ -22,11 +22,29 @@ private let logger = AppLogger(category: "Backup")
 /// `base64EncodedString()` emits no line breaks by default, so the two are
 /// byte-identical). Deviating here would silently break interop, which §5.4
 /// explicitly warns against ("do not invent a second scheme").
+// BEGIN BackupSecretsShape
 struct BackupSecrets: Codable {
     var v: Int = 1
     var providers: [ProviderSecret] = []
     var envVars: [EnvVarSecret] = []
     var mcpOAuth: [MCPOAuthSecret] = []
+
+    init() {}
+
+    /// [T-backup-secrets-tolerant] Tolerant per §2.2 rule 2: a missing
+    /// section is empty. Android's encoder omits default values, so a package
+    /// from a phone without MCP OAuth tokens has no `mcpOAuth` key (and an
+    /// empty list of anything is omitted the same way). The synthesized
+    /// decoder required every key, so such a secrets.json failed to decode
+    /// as a whole and NOTHING in it was restored - no provider keys, no
+    /// environment variable values - with only a log line to show for it.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        v = try c.decodeIfPresent(Int.self, forKey: .v) ?? 1
+        providers = try c.decodeIfPresent([ProviderSecret].self, forKey: .providers) ?? []
+        envVars = try c.decodeIfPresent([EnvVarSecret].self, forKey: .envVars) ?? []
+        mcpOAuth = try c.decodeIfPresent([MCPOAuthSecret].self, forKey: .mcpOAuth) ?? []
+    }
 
     /// One provider instance's credentials. Every value is base64; nil means
     /// the credential simply isn't present for that instance.
@@ -66,6 +84,7 @@ struct BackupSecrets: Codable {
         var clientSecret: String?
     }
 }
+// END BackupSecretsShape
 
 /// Reads credentials out of the Keychain and assembles the §5.4 structure.
 ///

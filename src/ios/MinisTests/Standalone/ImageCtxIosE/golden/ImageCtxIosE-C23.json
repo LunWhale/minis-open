@@ -1,0 +1,990 @@
+{
+  "live" : {
+    "anthropic" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 9,
+              "head" : "read both",
+              "sha8" : "f10cb3bf",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_h-fc_h",
+            "kind" : "toolUse",
+            "name" : "read_image"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_h-fc_h",
+            "kind" : "toolResult",
+            "text" : {
+              "chars" : 28,
+              "head" : "Image 4032x3024 -> 2000x1500",
+              "sha8" : "3d6f56c3",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 802792,
+              "bytes" : 602093,
+              "fmt" : "jpeg",
+              "h" : 1500,
+              "mime" : "image\/jpeg",
+              "sha256" : "890bb04cef28e3c7",
+              "w" : 2000
+            },
+            "inToolResult" : true,
+            "kind" : "image"
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_e-fc_e",
+            "kind" : "toolUse",
+            "name" : "read_image"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_e-fc_e",
+            "kind" : "toolResult",
+            "text" : {
+              "chars" : 28,
+              "head" : "Image 4032x3024 -> 1500x2000",
+              "sha8" : "ac1afc95",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 812868,
+              "bytes" : 609649,
+              "fmt" : "jpeg",
+              "h" : 2000,
+              "mime" : "image\/jpeg",
+              "sha256" : "4c4c3fc3b4cf31e9",
+              "w" : 1500
+            },
+            "inToolResult" : true,
+            "kind" : "image"
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "antigravity" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 9,
+              "head" : "read both",
+              "sha8" : "f10cb3bf",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "read_image",
+            "kind" : "toolUse",
+            "name" : "read_image"
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "read_image",
+            "kind" : "toolResult",
+            "name" : "read_image",
+            "text" : {
+              "chars" : 41,
+              "head" : "{\"result\":\"Image 4032x3024 -> 2000x1500\"}",
+              "sha8" : "b928f68c",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 802792,
+              "bytes" : 602093,
+              "fmt" : "jpeg",
+              "h" : 1500,
+              "mime" : "image\/jpeg",
+              "sha256" : "890bb04cef28e3c7",
+              "w" : 2000
+            },
+            "kind" : "image"
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "read_image",
+            "kind" : "toolUse",
+            "name" : "read_image"
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "read_image",
+            "kind" : "toolResult",
+            "name" : "read_image",
+            "text" : {
+              "chars" : 41,
+              "head" : "{\"result\":\"Image 4032x3024 -> 1500x2000\"}",
+              "sha8" : "7a43c2f7",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 812868,
+              "bytes" : 609649,
+              "fmt" : "jpeg",
+              "h" : 2000,
+              "mime" : "image\/jpeg",
+              "sha256" : "4c4c3fc3b4cf31e9",
+              "w" : 1500
+            },
+            "kind" : "image"
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "chat" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 9,
+              "head" : "read both",
+              "sha8" : "f10cb3bf",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_h|fc_h",
+            "kind" : "toolUse",
+            "name" : "read_image"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_h|fc_h",
+            "kind" : "toolResult",
+            "text" : {
+              "chars" : 28,
+              "head" : "Image 4032x3024 -> 2000x1500",
+              "sha8" : "3d6f56c3",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "tool"
+      },
+      {
+        "parts" : [
+          {
+            "image" : {
+              "base64Len" : 802792,
+              "bytes" : 602093,
+              "fmt" : "jpeg",
+              "h" : 1500,
+              "mime" : "image\/jpeg",
+              "sha256" : "890bb04cef28e3c7",
+              "w" : 2000
+            },
+            "kind" : "image"
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_e|fc_e",
+            "kind" : "toolUse",
+            "name" : "read_image"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_e|fc_e",
+            "kind" : "toolResult",
+            "text" : {
+              "chars" : 28,
+              "head" : "Image 4032x3024 -> 1500x2000",
+              "sha8" : "ac1afc95",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "tool"
+      },
+      {
+        "parts" : [
+          {
+            "image" : {
+              "base64Len" : 812868,
+              "bytes" : 609649,
+              "fmt" : "jpeg",
+              "h" : 2000,
+              "mime" : "image\/jpeg",
+              "sha256" : "4c4c3fc3b4cf31e9",
+              "w" : 1500
+            },
+            "kind" : "image"
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "gemini" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 9,
+              "head" : "read both",
+              "sha8" : "f10cb3bf",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "read_image",
+            "kind" : "toolUse",
+            "name" : "read_image"
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "read_image",
+            "kind" : "toolResult",
+            "name" : "read_image",
+            "text" : {
+              "chars" : 41,
+              "head" : "{\"result\":\"Image 4032x3024 -> 2000x1500\"}",
+              "sha8" : "b928f68c",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 802792,
+              "bytes" : 602093,
+              "fmt" : "jpeg",
+              "h" : 1500,
+              "mime" : "image\/jpeg",
+              "sha256" : "890bb04cef28e3c7",
+              "w" : 2000
+            },
+            "kind" : "image"
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "read_image",
+            "kind" : "toolUse",
+            "name" : "read_image"
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "read_image",
+            "kind" : "toolResult",
+            "name" : "read_image",
+            "text" : {
+              "chars" : 41,
+              "head" : "{\"result\":\"Image 4032x3024 -> 1500x2000\"}",
+              "sha8" : "7a43c2f7",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 812868,
+              "bytes" : 609649,
+              "fmt" : "jpeg",
+              "h" : 2000,
+              "mime" : "image\/jpeg",
+              "sha256" : "4c4c3fc3b4cf31e9",
+              "w" : 1500
+            },
+            "kind" : "image"
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "responses" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 9,
+              "head" : "read both",
+              "sha8" : "f10cb3bf",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "reasoning"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_h",
+            "kind" : "toolUse",
+            "name" : "read_image"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_h",
+            "kind" : "toolResult",
+            "text" : {
+              "chars" : 28,
+              "head" : "Image 4032x3024 -> 2000x1500",
+              "sha8" : "3d6f56c3",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "tool"
+      },
+      {
+        "parts" : [
+          {
+            "image" : {
+              "base64Len" : 802792,
+              "bytes" : 602093,
+              "fmt" : "jpeg",
+              "h" : 1500,
+              "mime" : "image\/jpeg",
+              "sha256" : "890bb04cef28e3c7",
+              "w" : 2000
+            },
+            "kind" : "image"
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "reasoning"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_e",
+            "kind" : "toolUse",
+            "name" : "read_image"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_e",
+            "kind" : "toolResult",
+            "text" : {
+              "chars" : 28,
+              "head" : "Image 4032x3024 -> 1500x2000",
+              "sha8" : "ac1afc95",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "tool"
+      },
+      {
+        "parts" : [
+          {
+            "image" : {
+              "base64Len" : 812868,
+              "bytes" : 609649,
+              "fmt" : "jpeg",
+              "h" : 2000,
+              "mime" : "image\/jpeg",
+              "sha256" : "4c4c3fc3b4cf31e9",
+              "w" : 1500
+            },
+            "kind" : "image"
+          }
+        ],
+        "role" : "user"
+      }
+    ]
+  },
+  "restart" : {
+    "anthropic" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 9,
+              "head" : "read both",
+              "sha8" : "f10cb3bf",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_h-fc_h",
+            "kind" : "toolUse",
+            "name" : "read_image"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_h-fc_h",
+            "kind" : "toolResult",
+            "text" : {
+              "chars" : 28,
+              "head" : "Image 4032x3024 -> 2000x1500",
+              "sha8" : "3d6f56c3",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 830444,
+              "bytes" : 622833,
+              "fmt" : "jpeg",
+              "h" : 1500,
+              "mime" : "image\/jpeg",
+              "sha256" : "c2449cff36107a7b",
+              "w" : 2000
+            },
+            "inToolResult" : true,
+            "kind" : "image"
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_e-fc_e",
+            "kind" : "toolUse",
+            "name" : "read_image"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_e-fc_e",
+            "kind" : "toolResult",
+            "text" : {
+              "chars" : 28,
+              "head" : "Image 4032x3024 -> 1500x2000",
+              "sha8" : "ac1afc95",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 791428,
+              "bytes" : 593570,
+              "fmt" : "jpeg",
+              "h" : 2000,
+              "mime" : "image\/jpeg",
+              "sha256" : "df1a5563ae629995",
+              "w" : 1500
+            },
+            "inToolResult" : true,
+            "kind" : "image"
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "antigravity" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 9,
+              "head" : "read both",
+              "sha8" : "f10cb3bf",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "read_image",
+            "kind" : "toolUse",
+            "name" : "read_image"
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "read_image",
+            "kind" : "toolResult",
+            "name" : "read_image",
+            "text" : {
+              "chars" : 41,
+              "head" : "{\"result\":\"Image 4032x3024 -> 2000x1500\"}",
+              "sha8" : "b928f68c",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 830444,
+              "bytes" : 622833,
+              "fmt" : "jpeg",
+              "h" : 1500,
+              "mime" : "image\/jpeg",
+              "sha256" : "c2449cff36107a7b",
+              "w" : 2000
+            },
+            "kind" : "image"
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "read_image",
+            "kind" : "toolUse",
+            "name" : "read_image"
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "read_image",
+            "kind" : "toolResult",
+            "name" : "read_image",
+            "text" : {
+              "chars" : 41,
+              "head" : "{\"result\":\"Image 4032x3024 -> 1500x2000\"}",
+              "sha8" : "7a43c2f7",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 791428,
+              "bytes" : 593570,
+              "fmt" : "jpeg",
+              "h" : 2000,
+              "mime" : "image\/jpeg",
+              "sha256" : "df1a5563ae629995",
+              "w" : 1500
+            },
+            "kind" : "image"
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "chat" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 9,
+              "head" : "read both",
+              "sha8" : "f10cb3bf",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_h|fc_h",
+            "kind" : "toolUse",
+            "name" : "read_image"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_h|fc_h",
+            "kind" : "toolResult",
+            "text" : {
+              "chars" : 28,
+              "head" : "Image 4032x3024 -> 2000x1500",
+              "sha8" : "3d6f56c3",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "tool"
+      },
+      {
+        "parts" : [
+          {
+            "image" : {
+              "base64Len" : 830444,
+              "bytes" : 622833,
+              "fmt" : "jpeg",
+              "h" : 1500,
+              "mime" : "image\/jpeg",
+              "sha256" : "c2449cff36107a7b",
+              "w" : 2000
+            },
+            "kind" : "image"
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_e|fc_e",
+            "kind" : "toolUse",
+            "name" : "read_image"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_e|fc_e",
+            "kind" : "toolResult",
+            "text" : {
+              "chars" : 28,
+              "head" : "Image 4032x3024 -> 1500x2000",
+              "sha8" : "ac1afc95",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "tool"
+      },
+      {
+        "parts" : [
+          {
+            "image" : {
+              "base64Len" : 791428,
+              "bytes" : 593570,
+              "fmt" : "jpeg",
+              "h" : 2000,
+              "mime" : "image\/jpeg",
+              "sha256" : "df1a5563ae629995",
+              "w" : 1500
+            },
+            "kind" : "image"
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "gemini" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 9,
+              "head" : "read both",
+              "sha8" : "f10cb3bf",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "read_image",
+            "kind" : "toolUse",
+            "name" : "read_image"
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "read_image",
+            "kind" : "toolResult",
+            "name" : "read_image",
+            "text" : {
+              "chars" : 41,
+              "head" : "{\"result\":\"Image 4032x3024 -> 2000x1500\"}",
+              "sha8" : "b928f68c",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 830444,
+              "bytes" : 622833,
+              "fmt" : "jpeg",
+              "h" : 1500,
+              "mime" : "image\/jpeg",
+              "sha256" : "c2449cff36107a7b",
+              "w" : 2000
+            },
+            "kind" : "image"
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "read_image",
+            "kind" : "toolUse",
+            "name" : "read_image"
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "read_image",
+            "kind" : "toolResult",
+            "name" : "read_image",
+            "text" : {
+              "chars" : 41,
+              "head" : "{\"result\":\"Image 4032x3024 -> 1500x2000\"}",
+              "sha8" : "7a43c2f7",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 791428,
+              "bytes" : 593570,
+              "fmt" : "jpeg",
+              "h" : 2000,
+              "mime" : "image\/jpeg",
+              "sha256" : "df1a5563ae629995",
+              "w" : 1500
+            },
+            "kind" : "image"
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "responses" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 9,
+              "head" : "read both",
+              "sha8" : "f10cb3bf",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "reasoning"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_h",
+            "kind" : "toolUse",
+            "name" : "read_image"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_h",
+            "kind" : "toolResult",
+            "text" : {
+              "chars" : 28,
+              "head" : "Image 4032x3024 -> 2000x1500",
+              "sha8" : "3d6f56c3",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "tool"
+      },
+      {
+        "parts" : [
+          {
+            "image" : {
+              "base64Len" : 830444,
+              "bytes" : 622833,
+              "fmt" : "jpeg",
+              "h" : 1500,
+              "mime" : "image\/jpeg",
+              "sha256" : "c2449cff36107a7b",
+              "w" : 2000
+            },
+            "kind" : "image"
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "reasoning"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_e",
+            "kind" : "toolUse",
+            "name" : "read_image"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_e",
+            "kind" : "toolResult",
+            "text" : {
+              "chars" : 28,
+              "head" : "Image 4032x3024 -> 1500x2000",
+              "sha8" : "ac1afc95",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "tool"
+      },
+      {
+        "parts" : [
+          {
+            "image" : {
+              "base64Len" : 791428,
+              "bytes" : 593570,
+              "fmt" : "jpeg",
+              "h" : 2000,
+              "mime" : "image\/jpeg",
+              "sha256" : "df1a5563ae629995",
+              "w" : 1500
+            },
+            "kind" : "image"
+          }
+        ],
+        "role" : "user"
+      }
+    ]
+  }
+}

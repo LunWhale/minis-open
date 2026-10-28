@@ -55,6 +55,27 @@ enum ConfigValue: Codable, Hashable, Equatable, CustomStringConvertible {
         return try? JSONDecoder().decode(ConfigValue.self, from: data)
     }
 
+    /// [T-container-network-dns] A `minis-config set` argument: JSON as before,
+    /// or — when it is not JSON and the target takes a string — the raw text as
+    /// that string, so `set network.dnsMode custom` works like `'"custom"'`.
+    /// Anything that parsed as JSON keeps its JSON meaning; a non-JSON value
+    /// for a non-string target is still unparseable (nil).
+    static func decode(cliValue raw: String, for schema: ConfigValueSchema) -> ConfigValue? {
+        if let v = decode(json: raw) { return v }
+        switch schema {
+        case .string, .stringEnum, .path, .optional(.string), .optional(.stringEnum), .optional(.path):
+            return .string(raw)
+        case .array(let element):
+            // A bare list (`8.8.8.8,1.1.1.1`) for an array of strings: pass the
+            // text on as ONE string; the field's normalizeForWrite decides how
+            // to split it. Fields without a normalizer reject it as before.
+            if case .string = element { return .string(raw) }
+            return nil
+        default:
+            return nil
+        }
+    }
+
     /// Object/array keys whose VALUES are credentials and must never be
     /// persisted to the audit log or shown in the confirmation sheet in
     /// plaintext. [T-minis-config-provider-add] minis-config can now WRITE a
@@ -237,6 +258,12 @@ protocol ConfigField {
     var access: ConfigAccess { get }
     var risk: ConfigRisk { get }
 
+    /// [T-config-readable] How a change to this field reads to the person
+    /// approving it (confirm sheet) and reviewing it (Logs → Config Changes).
+    /// Deliberately has NO default: a new field does not compile until it says
+    /// how its values read. `.generic(reason:)` is the explicit opt-out.
+    var readable: ConfigReadable { get }
+
     /// Whether `audit revert <id>` may roll a write back. Add/remove
     /// operations on collections always set this false on the synthetic
     /// audit row that records them.
@@ -252,6 +279,21 @@ protocol ConfigField {
 
     @MainActor func read() throws -> ConfigValue
     @MainActor func write(_ value: ConfigValue) throws
+
+    /// [T-container-network-dns] Turn an accepted input shape into the stored
+    /// shape BEFORE validation and the confirmation sheet (e.g. a
+    /// comma-separated string into an array). Default: unchanged.
+    func normalizeForWrite(_ value: ConfigValue) throws -> ConfigValue
+
+    /// [T-container-network-dns] Everything that must hold for a write to
+    /// succeed, checked BEFORE the confirmation sheet so the user is never
+    /// asked to approve a value the writer will reject. Default: the schema.
+    func validateForWrite(_ value: ConfigValue) throws
+}
+
+extension ConfigField {
+    func normalizeForWrite(_ value: ConfigValue) throws -> ConfigValue { value }
+    func validateForWrite(_ value: ConfigValue) throws { try valueSchema.validate(value) }
 }
 
 extension ConfigField {

@@ -173,13 +173,21 @@ struct InputAttachmentGridView: View {
     var onMove: ((_ fromID: UUID, _ toID: UUID) -> Void)?
 
     @State private var draggingID: UUID?
+    /// [T-input-attachment-preview-index] The attachment whose preview is open.
+    /// One sheet for the whole strip, keyed by the tapped attachment's id:
+    /// each chip used to own a `.sheet(isPresented:)`, and with one sheet per
+    /// sibling the preview reported opening on the LAST chip regardless of
+    /// which one was tapped.
+    @State private var previewTarget: AttachmentPreviewTarget?
 
     var body: some View {
         FlowLayout(hSpacing: 8, vSpacing: 8) {
             ForEach(attachments) { attachment in
-                AttachmentChip(attachment: attachment) {
+                AttachmentChip(attachment: attachment, onRemove: {
                     onRemove(attachment)
-                }
+                }, onPreview: {
+                    previewTarget = AttachmentPreviewTarget(id: attachment.id)
+                })
                 .opacity(draggingID == attachment.id ? 0.4 : 1)
                 .onDrag {
                     draggingID = attachment.id
@@ -197,7 +205,18 @@ struct InputAttachmentGridView: View {
         }
         .padding(.horizontal, 16)
         .padding(.top, 6)  // room for × button overhang (offset y: -4)
+        .sheet(item: $previewTarget) { target in
+            AttachmentPreviewSheet(
+                attachments: attachments.filter { $0.loadState == .ready },
+                initialID: target.id,
+                onDone: { previewTarget = nil })
+        }
     }
+}
+
+/// [T-input-attachment-preview-index] Which attachment the preview opens on.
+struct AttachmentPreviewTarget: Identifiable, Equatable {
+    let id: UUID
 }
 
 // MARK: - Attachment Drop Delegate
@@ -246,7 +265,9 @@ private struct VideoLoadingChip: View {
 private struct AttachmentChip: View {
     let attachment: InputAttachment
     let onRemove: () -> Void
-    @State private var showPreview = false
+    /// [T-input-attachment-preview-index] Tap on a loaded chip; the grid
+    /// presents the preview.
+    let onPreview: () -> Void
     @State private var cachedImage: UIImage? = nil
 
     var body: some View {
@@ -275,19 +296,7 @@ private struct AttachmentChip: View {
             }
         }
         .onAppear { loadThumbnailIfNeeded() }
-        .onTapGesture { showPreview = true }
-        .sheet(isPresented: $showPreview) {
-            NavigationStack {
-                AttachmentPreviewView(url: attachment.cacheURL)
-                    .navigationTitle(attachment.fileName)
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button("Done") { showPreview = false }
-                        }
-                    }
-            }
-        }
+        .onTapGesture { onPreview() }
     }
 
     /// [T-ios-photo-pick-placeholder] Loading placeholder shown while the picked
@@ -579,25 +588,83 @@ struct PastedTextChipRow: View {
 
 // MARK: - Attachment Preview (QuickLook)
 
+/// [T-input-attachment-preview-index] Preview of the composer's attachments,
+/// opened on the one that was tapped. Every loaded attachment is in the
+/// preview, in strip order, so swiping moves to its neighbours; the title
+/// follows the item on screen.
+struct AttachmentPreviewSheet: View {
+    let attachments: [InputAttachment]
+    let initialID: UUID
+    let onDone: () -> Void
+    @State private var index: Int?
+
+    // BEGIN previewStartIndex
+    /// Position of the tapped attachment in the previewed list; 0 when it is
+    /// gone (removed while the sheet was opening).
+    static func previewStartIndex(of id: UUID, in ids: [UUID]) -> Int {
+        ids.firstIndex(of: id) ?? 0
+    }
+    // END previewStartIndex
+
+    var body: some View {
+        let start = Self.previewStartIndex(of: initialID, in: attachments.map(\.id))
+        let shown = index ?? start
+        NavigationStack {
+            AttachmentPreviewView(urls: attachments.map(\.cacheURL), initialIndex: start,
+                                  onIndexChange: { index = $0 })
+                .navigationTitle(attachments.indices.contains(shown) ? attachments[shown].fileName : "")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") { onDone() }
+                    }
+                }
+        }
+    }
+}
+
 private struct AttachmentPreviewView: UIViewControllerRepresentable {
-    let url: URL
+    let urls: [URL]
+    let initialIndex: Int
+    let onIndexChange: (Int) -> Void
 
     func makeUIViewController(context: Context) -> QLPreviewController {
         let controller = QLPreviewController()
         controller.dataSource = context.coordinator
+        // Set before the controller is shown, so it opens on the tapped item.
+        controller.currentPreviewItemIndex = initialIndex
+        context.coordinator.observe(controller)
         return controller
     }
 
-    func updateUIViewController(_ controller: QLPreviewController, context: Context) {}
+    func updateUIViewController(_ controller: QLPreviewController, context: Context) {
+        context.coordinator.onIndexChange = onIndexChange
+    }
 
-    func makeCoordinator() -> Coordinator { Coordinator(url: url) }
+    func makeCoordinator() -> Coordinator { Coordinator(urls: urls, onIndexChange: onIndexChange) }
 
     class Coordinator: NSObject, QLPreviewControllerDataSource {
-        let url: URL
-        init(url: URL) { self.url = url }
-        func numberOfPreviewItems(in controller: QLPreviewController) -> Int { 1 }
+        let urls: [URL]
+        var onIndexChange: (Int) -> Void
+        private var indexObservation: NSKeyValueObservation?
+
+        init(urls: [URL], onIndexChange: @escaping (Int) -> Void) {
+            self.urls = urls
+            self.onIndexChange = onIndexChange
+        }
+
+        /// Swiping changes `currentPreviewItemIndex`; report it so the title
+        /// follows the item on screen.
+        func observe(_ controller: QLPreviewController) {
+            indexObservation = controller.observe(\.currentPreviewItemIndex, options: [.new]) { [weak self] controller, _ in
+                let index = controller.currentPreviewItemIndex
+                DispatchQueue.main.async { self?.onIndexChange(index) }
+            }
+        }
+
+        func numberOfPreviewItems(in controller: QLPreviewController) -> Int { urls.count }
         func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> QLPreviewItem {
-            url as NSURL
+            urls[index] as NSURL
         }
     }
 }
@@ -722,6 +789,9 @@ enum UserAttachmentTileMetrics {
 
 struct UserAttachmentList: View {
     let attachments: [AttachmentMeta]
+    /// [T-in-chat-search] The message these tiles belong to, so a file name
+    /// can carry search highlights; nil where search does not apply.
+    var searchMessageId: UUID? = nil
     @Environment(\.openURL) private var openURL
     @Environment(\.openImageGallery) private var openImageGallery
 
@@ -745,7 +815,11 @@ struct UserAttachmentList: View {
                 } else if meta.pastedId != nil {
                     pastedTile(meta)
                 } else {
-                    fileTile(meta)
+                    fileTile(meta, searchKey: searchMessageId.flatMap { mid in
+                        attachments.firstIndex(where: { $0.id == meta.id }).map {
+                            ChatSearchUnitKey(messageId: mid, blockId: nil, field: .attachmentName($0))
+                        }
+                    })
                 }
             }
         }
@@ -781,7 +855,9 @@ struct UserAttachmentList: View {
                     else { return nil }
                     NativeMediaImageCache.shared.set(img, for: cacheKey)
                     return img
-                }
+                },
+                // [T-image-save-original] Save / Copy / Share read the file itself.
+                source: .markdown(meta.minisURL)
             )
         }
         openImageGallery(GalleryPresentation(items: items, startIndex: start))
@@ -822,7 +898,7 @@ struct UserAttachmentList: View {
         .buttonStyle(.plain)
     }
 
-    private func fileTile(_ meta: AttachmentMeta) -> some View {
+    private func fileTile(_ meta: AttachmentMeta, searchKey: ChatSearchUnitKey? = nil) -> some View {
         Button {
             if let url = URL(string: meta.minisURL) { openURL(url) }
         } label: {
@@ -832,7 +908,7 @@ struct UserAttachmentList: View {
                     .foregroundStyle(ChatColors.secondaryText)
                     .frame(maxHeight: .infinity, alignment: .bottom)
 
-                Text(meta.fileName)
+                SearchHighlightText(meta.fileName, key: searchKey)
                     .font(.system(size: 9))
                     .foregroundStyle(ChatColors.primaryText)
                     .lineLimit(2)
@@ -951,6 +1027,38 @@ struct QueuedAttachmentPreview: View {
 
 
 class PastableUITextView: UITextView, UIDropInteractionDelegate {
+    /// [T-composer-placeholder-clip-ios16] Clip only while scrolling.
+    ///
+    /// The empty composer is one line + `minHeightExtra` tall, and a placeholder
+    /// that wraps (e.g. the context-usage hint) hangs its second line below the
+    /// text view into the gap above the button row - the user's choice over
+    /// growing the box a full line ([T-composer-placeholder-room]). That only
+    /// shows where the text view does not clip: on iOS 27 a non-scrolling
+    /// UITextView reports clipsToBounds == false (measured on an iPhone 11), but
+    /// on iOS 16.6 it keeps UIScrollView's default `true` and the second line
+    /// was cut off (user screenshot). While scrolling is off the view is sized to its content, so there is
+    /// nothing of the TYPED text to clip; once it scrolls (past maxHeight) it
+    /// must clip, or the scrolled-away lines would draw over the chat.
+    override var isScrollEnabled: Bool {
+        didSet { clipsToBounds = isScrollEnabled }
+    }
+
+    /// Replace the whole text from code (the SwiftUI binding changed: cleared
+    /// after send, draft restored, session switched).
+    ///
+    /// [T-composer-undo-range-crash] Assigning `text` does NOT clear the text
+    /// view's undo stack: the typing operations recorded for the OLD text stay,
+    /// and Undo (the iPad keyboard shortcut bar, shake, cmd+Z) replays their
+    /// ranges against the new, shorter storage -> NSRangeException out of
+    /// -[NSMutableRLEArray replaceObjectsInRange:withObject:length:], an abort
+    /// with no app frames (crashpoint CvY8hje8GickQbwj8mQbej, iOS 16.2 iPad).
+    /// Those operations describe text that no longer exists, so drop them;
+    /// typing after this write registers fresh, valid ones.
+    func applyProgrammaticText(_ newText: String) {
+        text = newText
+        undoManager?.removeAllActions()
+    }
+
     var onPasteImage: ((UIImage) -> Void)?
     var onPasteFile: ((URL) -> Void)?
     /// [T-paste-placeholder] Long pasted text → the vm stashes it and returns
@@ -968,6 +1076,19 @@ class PastableUITextView: UITextView, UIDropInteractionDelegate {
     /// [T-ipad-composer-resize] The composer's natural growth cap. Single
     /// source of truth so the SwiftUI side and the text view can't drift.
     static let defaultMaxHeight: CGFloat = 120
+    /// [T-composer-placeholder-room] Extra height below the first line when
+    /// the composer is at its smallest. The placeholder label can wrap to a
+    /// second line (e.g. the context-usage hint) that the one-line box does not
+    /// size for, so it drew flush against the button row below. A small
+    /// margin, not a full second line — the user settled on 1pt (2pt was
+    /// tried first).
+    static let minHeightExtra: CGFloat = 1
+
+    /// The composer's smallest height: one line of the input font plus
+    /// `minHeightExtra`.
+    static func minHeight(for font: UIFont?) -> CGFloat {
+        (font?.lineHeight ?? 20) + minHeightExtra
+    }
     /// The height at which typing stops growing the composer and starts
     /// scrolling inside it. Raised while the user drags the composer taller.
     var maxHeight: CGFloat = PastableUITextView.defaultMaxHeight
@@ -1173,7 +1294,34 @@ class PastableUITextView: UITextView, UIDropInteractionDelegate {
         return v
     }()
     override var inputAccessoryView: UIView? {
-        get { _inputAccessoryView }
+        get {
+            // [T-ipad-ios27-keyboard-constraint-crash] Not on iOS 27+. One iPad
+            // (iPad13,4, iOS 27.0 24A437) crashed 4+ times since 1.14 with an
+            // uncaught NSLayoutConstraint exception thrown from
+            // -[NSLayoutConstraint _setActive:mutuallyExclusiveConstraints:]
+            // inside -[UIInputWindowControllerHostingItem updateViewConstraints]
+            // / updateSupportsDockViewController, while a touch switched the
+            // minimized hardware-keyboard bar to the full software keyboard
+            // (_UIRemoteKeyboards _updateEventSource -> UIKeyboard setMinimized:
+            // -> maximize). No app frame is on the stack; this zero-size
+            // accessory is the only custom piece of that path, and it predates
+            // iOS 27 without trouble, so iOS 27's keyboard-dock layout is the
+            // likely trigger. Cost: with a hardware keyboard on iPadOS 26+ the
+            // (already emptied) shortcut bar may show again - cosmetic.
+            //
+            // [T-ipad-ios26-keyboard-inputviewset-crash] Extended to iPad on iOS 26.
+            // 1.15 (13) on one iPad12,1 (iOS 26.0.1) crashed twice inside
+            // -[UITrackingElementWindowController changeToInputViewSet:]:
+            // once messaging a freed object while a context-menu dismissal
+            // restored the keyboard placement, once adding a nil input
+            // assistant child controller (updateInputAssistantView:). Same
+            // keyboard-host path, no app frame; the accessory is again the
+            // only custom input view in the set. iPad only: the iPhone
+            // keyboard has no shortcut bar and no report points at it.
+            if #available(iOS 27, *) { return nil }
+            if #available(iOS 26, *), UIDevice.current.userInterfaceIdiom == .pad { return nil }
+            return _inputAccessoryView
+        }
         set { _inputAccessoryView = newValue }
     }
 
@@ -1232,7 +1380,7 @@ class PastableUITextView: UITextView, UIDropInteractionDelegate {
         // Guard against zero-width layout pass (happens on iOS 16 during keyboard animation)
         // to prevent sizeThatFits returning an inflated height that causes the input bar to jump.
         guard bounds.width > 0 else {
-            return CGSize(width: UIView.noIntrinsicMetric, height: font?.lineHeight ?? 20)
+            return CGSize(width: UIView.noIntrinsicMetric, height: Self.minHeight(for: font))
         }
         let size = sizeThatFits(CGSize(width: bounds.width, height: .greatestFiniteMagnitude))
         isScrollEnabled = size.height > maxHeight
@@ -1241,7 +1389,8 @@ class PastableUITextView: UITextView, UIDropInteractionDelegate {
         if let pinnedHeight {
             return CGSize(width: UIView.noIntrinsicMetric, height: pinnedHeight)
         }
-        return CGSize(width: UIView.noIntrinsicMetric, height: min(size.height, maxHeight))
+        return CGSize(width: UIView.noIntrinsicMetric,
+                      height: min(max(size.height, Self.minHeight(for: font)), maxHeight))
     }
 
     /// [T-ios-composer-paste-scroll-stale] Whether the CURRENT text overflows
@@ -1665,7 +1814,9 @@ struct PastableTextView: UIViewRepresentable {
         }
         let fitSize = tv.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
         let lineH = tv.font?.lineHeight ?? 20
-        let effective = tv.text.isEmpty ? lineH : fitSize.height
+        // [T-composer-placeholder-room] Never below one line + minHeightExtra.
+        let effective = max(tv.text.isEmpty ? lineH : fitSize.height,
+                            PastableUITextView.minHeight(for: tv.font))
         let maxH = tv.maxHeight
         tv.isScrollEnabled = fitSize.height > maxH
         // [T-ipad-composer-resize] When the user has dragged the composer to an
@@ -1728,7 +1879,7 @@ struct PastableTextView: UIViewRepresentable {
                 // property reflects the committed-but-cleared state.
                 tv.unmarkText()
             }
-            tv.text = text
+            tv.applyProgrammaticText(text)
             // [T-share-url-input-height] Plain `tv.text =` reset clears
             // attributes — the word-wrap paragraph style we stamped
             // onto typingAttributes only applies to text typed AFTER this
@@ -1811,7 +1962,12 @@ struct PastableTextView: UIViewRepresentable {
         // Sync placeholder
         if let label = tv.viewWithTag(999) as? UILabel {
             label.isHidden = !text.isEmpty
-            if label.font != inputFont { label.font = inputFont }
+            // [T-composer-hint-fit] Not while the usage line is on the label:
+            // it carries its own (possibly shrunk) font, and assigning `font`
+            // would flatten it — size and highlight. The coordinator re-fits it
+            // against the new input font instead, and restores the input font
+            // when the line is retired.
+            if label.font != inputFont, !context.coordinator.isTransientHintOnLabel { label.font = inputFont }
             // [T-ios-composer-placeholder-rotation] Only the focus handler
             // picks a new entry. This runs on EVERY parent re-render (the
             // composer has no Equatable gate), so assigning `placeholder`
@@ -1831,9 +1987,22 @@ struct PastableTextView: UIViewRepresentable {
         }
 
         // Sync focus from SwiftUI → UIKit (guard to prevent feedback loops)
+        //
+        // [T-pop-keyboard-flash-home] EDGE-triggered: act only when SwiftUI's
+        // request actually changed. It used to be level-triggered (any
+        // wantsFocus != hasFocus), so whenever something else resigned the
+        // text view while the binding still said true, this forced focus
+        // straight back. lldb on iOS 16.1: at the start of a back swipe
+        // SwiftUI's hosting controller resigns the text view from
+        // viewWillDisappear, then `closure #1 in updateUIView` called
+        // becomeFirstResponder twice — the keyboard dropped and bounced back.
+        // External resigns now write the binding back in textViewDidEndEditing
+        // instead of being fought here.
         let wantsFocus = isFocused
         let hasFocus = tv.isFirstResponder
-        if wantsFocus != hasFocus {
+        let requestChanged = context.coordinator.lastRequestedFocus != wantsFocus
+        context.coordinator.lastRequestedFocus = wantsFocus
+        if requestChanged && wantsFocus != hasFocus {
             pasteLog.debug("[updateUIView] focus sync: wantsFocus=\(wantsFocus) hasFocus=\(hasFocus)")
             let coordinator = context.coordinator
             coordinator.isSyncingFocus = true
@@ -1856,6 +2025,51 @@ struct PastableTextView: UIViewRepresentable {
                     guard !blocked else {
                         pasteLog.debug("[updateUIView] skipping becomeFirstResponder — a modal is presented")
                         coordinator.isSyncingFocus = false
+                        // Level-triggered retry for this case only: the next
+                        // update after the modal closes tries again.
+                        coordinator.lastRequestedFocus = nil
+                        return
+                    }
+                    // [T-pop-keyboard-flash-home] Never pull the keyboard back
+                    // up while this page is being popped or dismissed: the
+                    // chat released it for the transition, and a re-focus here
+                    // left a keyboard that was then dismissed over the home
+                    // screen (iOS 16 flash).
+                    //
+                    // An interactive back swipe needs the transition check:
+                    // UIKit itself resigns the text view when the swipe starts
+                    // (and restores it if the swipe is cancelled), while
+                    // `isMovingFromParent` is still false during the drag. The
+                    // focus sync then saw wantsFocus=true / hasFocus=false and
+                    // re-focused, so the keyboard dropped and popped back up on
+                    // every swipe. Only the page the transition is leaving is
+                    // blocked — pushing INTO a chat still auto-focuses.
+                    let (leavingNow, leavingTransition) = PastableTextView.leavingTransition(of: tv)
+                    let leaving = leavingNow || coordinator.holdFocusForTransition
+                    pasteLog.debug("[updateUIView] refocus check leaving=\(leavingNow) hold=\(coordinator.holdFocusForTransition) interactive=\(leavingTransition?.isInteractive ?? false)")
+                    guard !leaving else {
+                        pasteLog.debug("[updateUIView] skipping becomeFirstResponder — page is leaving")
+                        coordinator.isSyncingFocus = false
+                        // [T-focus-refused-writes-back] Report the refusal the
+                        // way textViewDidEndEditing reports an external resign.
+                        // The request was already recorded (lastRequestedFocus =
+                        // true) with the binding true; left like that, every
+                        // later `inputFocused = true` changed nothing, so the
+                        // edge-triggered sync never fired again — tap-to-focus,
+                        // the slash button, edit-message and swipe-up-to-focus
+                        // stayed dead until the user tapped the text view itself.
+                        if coordinator.parent.isFocused { coordinator.parent.isFocused = false }
+                        coordinator.lastRequestedFocus = false
+                        // A cancelled swipe keeps the page: give focus back
+                        // if UIKit did not restore it on its own.
+                        leavingTransition?.animate(alongsideTransition: nil) { [weak tv, weak coordinator] context in
+                            guard context.isCancelled, let tv, tv.window != nil, !tv.isFirstResponder else { return }
+                            pasteLog.debug("[updateUIView] swipe cancelled — restoring focus")
+                            coordinator?.lastRequestedFocus = true
+                            coordinator?.parent.isFocused = true
+                            tv.allowsFirstResponder = true
+                            tv.becomeFirstResponder()
+                        }
                         return
                     }
                     pasteLog.debug("[updateUIView] calling becomeFirstResponder")
@@ -1875,7 +2089,9 @@ struct PastableTextView: UIViewRepresentable {
                     // reuses this instance) is refused again until the next real
                     // tap or focus-sync request.
                     tv.allowsFirstResponder = false
+                    coordinator.isResigningForSync = true
                     tv.resignFirstResponder()
+                    coordinator.isResigningForSync = false
                     // Re-measure after keyboard dismiss so the text view
                     // doesn't retain its keyboard-present height (iOS 16).
                     tv.invalidateIntrinsicContentSize()
@@ -1916,10 +2132,47 @@ struct PastableTextView: UIViewRepresentable {
         }
     }
 
+    /// [T-pop-keyboard-flash-home] Whether the page holding `view` is being
+    /// popped / dismissed, and the transition doing it when there is one.
+    ///
+    /// View-based on purpose. The first version walked
+    /// `nearestViewController` → `parent` looking for the transition's `.from`
+    /// controller; lldb on iOS 16.1 showed it returning false in the middle of
+    /// a back swipe (the SwiftUI NavigationStack page controller was not on
+    /// that chain), so the refocus went through. Asking every ancestor's
+    /// navigation controller for its transition and testing whether this view
+    /// sits inside the `.from` view does not depend on how SwiftUI nests its
+    /// hosting controllers.
+    static func leavingTransition(of view: UIView) -> (Bool, UIViewControllerTransitionCoordinator?) {
+        var walk: UIViewController? = view.nearestViewController
+        while let w = walk {
+            if w.isMovingFromParent || w.isBeingDismissed { return (true, w.transitionCoordinator) }
+            for tc in [w.transitionCoordinator, w.navigationController?.transitionCoordinator].compactMap({ $0 }) {
+                if let from = tc.view(forKey: .from) ?? tc.viewController(forKey: .from)?.view,
+                   view.isDescendant(of: from) {
+                    return (true, tc)
+                }
+            }
+            walk = w.parent
+        }
+        return (false, nil)
+    }
+
     class Coordinator: NSObject, UITextViewDelegate {
         var parent: PastableTextView
         /// Guard flag to prevent focus feedback loop between UIKit delegate → SwiftUI → updateUIView
         var isSyncingFocus = false
+        /// [T-pop-keyboard-flash-home] Last `isFocused` value the focus sync
+        /// acted on; nil forces the next update to act (initial focus, retry).
+        var lastRequestedFocus: Bool?
+        /// True only while the focus sync itself resigns the text view, so
+        /// textViewDidEndEditing can tell that apart from an external resign.
+        var isResigningForSync = false
+        /// [T-pop-keyboard-flash-home] Set when the text view is resigned by
+        /// someone else because its page is being popped; the focus sync does
+        /// not re-focus until that transition completes (cancel restores
+        /// focus) or the user focuses the field again.
+        var holdFocusForTransition = false
         /// [T-ios-composer-residual-text-33549] When `updateUIView` clears
 
         init(_ parent: PastableTextView) {
@@ -1959,6 +2212,58 @@ struct PastableTextView: UIViewRepresentable {
             [parent.placeholder] + parent.placeholderRotation
         }
 
+        /// [T-composer-hint-in-rotation] The context-usage and quota lines are
+        /// focus-rotation entries too, after the text entries: one per page of
+        /// the latest usage figures (the parent keeps `contextUsageHint` after
+        /// the transient line is consumed). None before the first finished turn.
+        private var usagePoolPages: [ContextUsageHint.Page] {
+            guard let hint = parent.contextUsageHint else { return [] }
+            return hint.pages.isEmpty ? [Self.page(of: hint, at: 0)] : hint.pages
+        }
+
+        /// Size of the whole rotation pool: text entries, then usage pages.
+        private var rotationPoolCount: Int { placeholderPool.count + usagePoolPages.count }
+
+        /// The usage page at combined pool index `index`, or nil for a text entry.
+        private func usagePage(atPoolIndex index: Int) -> ContextUsageHint.Page? {
+            let i = index - placeholderPool.count
+            let pages = usagePoolPages
+            return pages.indices.contains(i) ? pages[i] : nil
+        }
+
+        /// Width / base size the usage pool entry on the label was fitted for.
+        private var poolUsageFitWidth: CGFloat = 0
+        private var poolUsageFitBase: CGFloat = 0
+
+        /// Put pool entry `index` on the label: a text entry in the input font,
+        /// a usage page fitted and tinted like the transient usage line.
+        private func applyPoolEntry(_ index: Int, to label: UILabel, in textView: UITextView, animated: Bool) {
+            let apply: () -> Void
+            if let page = usagePage(atPoolIndex: index) {
+                let attributed = fittedPage(page, in: textView, fallbackFont: label.font)
+                poolUsageFitWidth = textView.bounds.width
+                poolUsageFitBase = textView.font?.pointSize ?? label.font.pointSize
+                apply = {
+                    label.attributedText = attributed
+                    label.accessibilityLabel = page.text
+                }
+            } else {
+                let text = placeholderPool[min(index, placeholderPool.count - 1)]
+                apply = {
+                    // After an attributed assignment `label.font` is the
+                    // (possibly shrunk) usage font; back to the input font.
+                    if let font = textView.font { label.font = font }
+                    label.accessibilityLabel = nil
+                    label.text = text
+                }
+            }
+            if animated, !UIAccessibility.isReduceMotionEnabled {
+                UIView.transition(with: label, duration: 0.25, options: .transitionCrossDissolve, animations: apply)
+            } else {
+                apply()
+            }
+        }
+
         /// True while something other than the default is on screen, so
         /// `updateUIView` doesn't overwrite a rotated hint on the next
         /// re-render (the composer has no Equatable gate — this runs a lot).
@@ -1967,7 +2272,7 @@ struct PastableTextView: UIViewRepresentable {
         // MARK: - [T-ios-context-usage-hint] Transient context-usage line
         //
         // After a turn finishes the parent hands down a `ContextUsageHint`;
-        // the label shows "Context 62% used · 124k / 200k" and KEEPS showing it
+        // the label shows "Context 62% · 124k/200k" and KEEPS showing it
         // until the user actually types — the first character entering the
         // composer is what consumes it. It used to expire on a 3.5 s Timer;
         // the user asked for it to stay so the figure can be read at leisure.
@@ -2012,6 +2317,33 @@ struct PastableTextView: UIViewRepresentable {
         /// line; gates `refreshPlaceholderText`'s re-assertion so a re-render
         /// inside the debounce window does not pre-empt the crossfade.
         private var transientHintApplied = false
+        /// [T-composer-hint-fit] Text-view width the applied line was fitted
+        /// to; a different width (rotation, iPad split view) re-fits it.
+        private var transientHintFitWidth: CGFloat = 0
+        /// Input font size the applied line was fitted from; a font-size
+        /// setting change re-fits it.
+        private var transientHintFitBase: CGFloat = 0
+        /// The usage line (with its own font) is on the placeholder label. Set
+        /// when it is applied, cleared only when it is retired — NOT when a
+        /// newer generation starts its debounce, since the previous line stays
+        /// on screen until the crossfade.
+        private(set) var isTransientHintOnLabel = false
+        /// [T-composer-hint-carousel] Which of the line's pages (context,
+        /// quota) the label shows, and the timer that turns them every
+        /// `hintPageInterval`. The timer runs only while the line is up and
+        /// the composer is on screen.
+        private(set) var transientPageIndex = 0
+        private var hintPageTimer: Timer?
+        static let hintPageInterval: TimeInterval = 5
+        /// [T-composer-hint-carousel-rounds] Full rounds (every page once) the
+        /// line turns before it settles on the context page (page 0) and stays
+        /// there until something replaces it: typing, the focus rotation, or
+        /// the next turn's figures (which start a fresh set of rounds).
+        static let hintCarouselRounds = 3
+        /// Pages turned for the current figures; counts across the carousel
+        /// pausing off screen, so coming back does not start the rounds over.
+        private var hintPageTurns = 0
+        private var hintCarouselFinished = false
 
         /// Called from `updateUIView` on every re-render; acts only when the
         /// parent's hint carries a generation not yet seen.
@@ -2036,6 +2368,10 @@ struct PastableTextView: UIViewRepresentable {
             transientHintApplied = false
             hasUnconsumedTransientHint = true
             hasProtectedFirstFocus = false
+            stopHintCarousel()
+            transientPageIndex = 0
+            hintPageTurns = 0
+            hintCarouselFinished = false
             contextHintDebounce?.cancel()
             let work = DispatchWorkItem { [weak self, weak textView] in
                 guard let self, let textView else { return }
@@ -2057,9 +2393,67 @@ struct PastableTextView: UIViewRepresentable {
             hintLog.info("[show] gen\(hint.generation) applying '\(hint.text)' tier=\(hint.tier) focused=\(textView.isFirstResponder) reduceMotion=\(UIAccessibility.isReduceMotionEnabled)")
             // State was claimed in syncContextUsageHint; this is the visual.
             transientHintApplied = true
-            let attributed = Self.attributedHint(hint, font: label.font)
+            isTransientHintOnLabel = true
+            transientPageIndex = 0
+            let attributed = fittedHint(hint, in: textView, fallbackFont: label.font)
+            // VoiceOver hears the whole line; the label itself does not rotate.
+            label.accessibilityLabel = hint.text
             let apply = { label.attributedText = attributed }
             // Reduce Motion: swap instantly, same as the rotation.
+            if UIAccessibility.isReduceMotionEnabled {
+                apply()
+            } else {
+                UIView.transition(with: label, duration: 0.25,
+                                  options: .transitionCrossDissolve, animations: apply)
+            }
+            startHintCarouselIfNeeded(in: textView)
+        }
+
+        /// [T-composer-hint-carousel] The context and quota lines take turns
+        /// every `hintPageInterval`. Not under VoiceOver (a changing label
+        /// re-announces and talks over the user; it reads the whole line from
+        /// the accessibility label instead), and only with two pages.
+        private func startHintCarouselIfNeeded(in textView: UITextView) {
+            guard hintPageTimer == nil, hasUnconsumedTransientHint, transientHintApplied,
+                  !hintCarouselFinished,
+                  let hint = transientHint, hint.pages.count > 1,
+                  !UIAccessibility.isVoiceOverRunning, textView.window != nil else { return }
+            let timer = Timer(timeInterval: Self.hintPageInterval, repeats: true) { [weak self, weak textView] _ in
+                guard let self, let textView else { return }
+                self.turnHintPage(in: textView)
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            hintPageTimer = timer
+            hintLog.info("[carousel] gen\(hint.generation) start \(hint.pages.count) pages every \(Self.hintPageInterval)s")
+        }
+
+        private func stopHintCarousel() {
+            hintPageTimer?.invalidate()
+            hintPageTimer = nil
+        }
+
+        private func turnHintPage(in textView: UITextView) {
+            // Off screen (chat closed, another pushed on top): stop; the next
+            // re-render on screen starts it again (refreshPlaceholderText).
+            guard textView.window != nil, hasUnconsumedTransientHint, transientHintApplied,
+                  !UIAccessibility.isVoiceOverRunning,
+                  let hint = transientHint, hint.pages.count > 1, textView.text.isEmpty,
+                  let label = textView.viewWithTag(999) as? UILabel else {
+                stopHintCarousel()
+                return
+            }
+            transientPageIndex = (transientPageIndex + 1) % hint.pages.count
+            hintPageTurns += 1
+            // [T-composer-hint-carousel-rounds] After the last round the turn
+            // lands back on page 0 (context): stay there.
+            if hintPageTurns >= Self.hintCarouselRounds * hint.pages.count {
+                hintCarouselFinished = true
+                transientPageIndex = 0
+                stopHintCarousel()
+                hintLog.info("[carousel] gen\(hint.generation) \(Self.hintCarouselRounds) rounds done → stays on the context page")
+            }
+            let attributed = fittedHint(hint, in: textView, fallbackFont: label.font)
+            let apply = { label.attributedText = attributed }
             if UIAccessibility.isReduceMotionEnabled {
                 apply()
             } else {
@@ -2081,15 +2475,87 @@ struct PastableTextView: UIViewRepresentable {
         func consumeTransientHintIfNeeded(in textView: UITextView) {
             guard hasUnconsumedTransientHint, !textView.text.isEmpty else { return }
             hintLog.info("[consume] gen\(transientHint?.generation ?? -1) input began (\(textView.text.count) chars) → back to default")
+            stopHintCarousel()
+            transientPageIndex = 0
             hasUnconsumedTransientHint = false
             transientHint = nil
             placeholderPoolIndex = 0
             transientHintApplied = false
             hasProtectedFirstFocus = false
+            isTransientHintOnLabel = false
             if let label = textView.viewWithTag(999) as? UILabel {
+                // [T-composer-hint-fit] Back to the input font first: after an
+                // attributed assignment `label.font` is the (shrunk) hint font.
+                if let font = textView.font { label.font = font }
+                label.accessibilityLabel = nil
                 label.text = placeholderPool[0]
             }
         }
+
+        /// [T-composer-hint-fit] The usage line in a font shrunk just enough to
+        /// fit ONE line of the text view — the context + quota figures run a
+        /// little wider than the composer at the input font (e.g. 344pt of text
+        /// in 344pt on a 402pt-wide phone), and a wrapped second line reads as
+        /// clutter. Only this line shrinks; the ordinary placeholder and the
+        /// rotating tips keep the input font. Floor: `hintMinimumScale` of the
+        /// input font — a line still too wide there wraps at the floor size
+        /// rather than shrinking into illegibility or being truncated.
+        private func fittedHint(_ hint: ContextUsageHint, in textView: UITextView,
+                                fallbackFont: UIFont) -> NSAttributedString {
+            // The text view's font IS the input font (updateUIView keeps it in
+            // sync); the label's own `font` may already be a shrunk one.
+            let font = textView.font ?? fallbackFont
+            let width = textView.bounds.width
+            transientHintFitWidth = width
+            transientHintFitBase = font.pointSize
+            // [T-composer-hint-carousel] The page on screen, each fitted on its
+            // own; one line each, so this rarely shrinks at all now.
+            let page = Self.page(of: hint, at: transientPageIndex)
+            return fittedPage(page, in: textView, fallbackFont: fallbackFont)
+        }
+
+        /// One usage page in the input font, shrunk just enough to fit one line.
+        private func fittedPage(_ page: ContextUsageHint.Page, in textView: UITextView,
+                                fallbackFont: UIFont) -> NSAttributedString {
+            let font = textView.font ?? fallbackFont
+            let width = textView.bounds.width
+            let size = Self.fittedHintPointSize(base: font.pointSize, width: width) { pt in
+                Self.attributedHint(page, font: font.withSize(pt))
+                    .boundingRect(with: CGSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude),
+                                  options: [.usesLineFragmentOrigin], context: nil).width
+            }
+            if size < font.pointSize {
+                hintLog.info("[fit] page '\(page.text.prefix(12))…' \(font.pointSize)pt → \(size)pt for width \(width)")
+            }
+            return Self.attributedHint(page, font: font.withSize(size))
+        }
+
+        /// The page at `index`, or the whole line as one page for a hint built
+        /// without pages.
+        static func page(of hint: ContextUsageHint, at index: Int) -> ContextUsageHint.Page {
+            guard !hint.pages.isEmpty else { return .init(text: hint.text, highlights: hint.highlights, tier: hint.tier) }
+            return hint.pages[index % hint.pages.count]
+        }
+
+        static let hintMinimumScale: CGFloat = 0.75
+
+        // BEGIN fittedHintPointSize
+        /// Largest point size, in 0.25pt steps from `base` down to
+        /// `base * hintMinimumScale`, at which `measure` (single-line width at
+        /// that size) fits `width`. `base` when it already fits or the width is
+        /// not known yet (no layout pass); the floor when nothing fits.
+        static func fittedHintPointSize(base: CGFloat, width: CGFloat,
+                                        measure: (CGFloat) -> CGFloat) -> CGFloat {
+            guard width > 0, measure(base) > width else { return base }
+            let floor = base * hintMinimumScale
+            // Start from the proportional guess (width scales ~linearly with
+            // size), then step down: bold segments and kerning make the guess
+            // slightly optimistic.
+            var size = max(floor, (base * width / measure(base) * 4).rounded(.down) / 4)
+            while size > floor, measure(size) > width { size = max(floor, size - 0.25) }
+            return size
+        }
+        // END fittedHintPointSize
 
         /// Grey line with the two number segments in the tier's colour and a
         /// medium weight. Segments are located by `range(of:)` on the exact
@@ -2100,23 +2566,27 @@ struct PastableTextView: UIViewRepresentable {
         /// red at semibold jumped out of the grey placeholder line; a
         /// placeholder is meant to sit back, so the numbers get just enough
         /// weight to read as the part that matters.
-        private static func attributedHint(_ hint: ContextUsageHint, font: UIFont) -> NSAttributedString {
+        /// [T-composer-hint-carousel] One page: the context page tints by the
+        /// context tier, the quota page by the quota's own tier.
+        private static func attributedHint(_ page: ContextUsageHint.Page, font: UIFont) -> NSAttributedString {
             let attributed = NSMutableAttributedString(
-                string: hint.text,
+                string: page.text,
                 attributes: [.font: font, .foregroundColor: UIColor.placeholderText])
-            guard let tone = hint.tier.highlightColor else { return attributed }
             let emphasis = UIFont.systemFont(ofSize: font.pointSize, weight: .medium)
-            let ns = hint.text as NSString
-            for segment in hint.highlights {
-                let range = ns.range(of: segment)
-                guard range.location != NSNotFound else { continue }
-                attributed.addAttributes([.foregroundColor: tone, .font: emphasis], range: range)
+            let ns = page.text as NSString
+            if let tone = page.tier.highlightColor {
+                for segment in page.highlights {
+                    let range = ns.range(of: segment)
+                    guard range.location != NSNotFound else { continue }
+                    attributed.addAttributes([.foregroundColor: tone, .font: emphasis], range: range)
+                }
             }
             return attributed
         }
 
         deinit {
             contextHintDebounce?.cancel()
+            hintPageTimer?.invalidate()
         }
 
         /// Rotate to a random pool entry on focus gain. Called from
@@ -2141,6 +2611,8 @@ struct PastableTextView: UIViewRepresentable {
                 hintLog.info("[rotate] second focus — retiring usage line gen\(transientHint?.generation ?? -1)")
                 contextHintDebounce?.cancel()
                 contextHintDebounce = nil
+                stopHintCarousel()
+                transientPageIndex = 0
                 hasUnconsumedTransientHint = false
                 transientHint = nil
                 transientHintApplied = false
@@ -2148,9 +2620,10 @@ struct PastableTextView: UIViewRepresentable {
                 // Put the pool entry back first, so every early return below
                 // (VoiceOver, first-focus opt-out, single-entry pool) still
                 // leaves the label without the stale figure.
-                if let label = textView.viewWithTag(999) as? UILabel,
-                   placeholderPoolIndex < placeholderPool.count {
-                    label.text = placeholderPool[placeholderPoolIndex]
+                isTransientHintOnLabel = false                           // [T-composer-hint-fit]
+                if let label = textView.viewWithTag(999) as? UILabel {
+                    if placeholderPoolIndex >= rotationPoolCount { placeholderPoolIndex = 0 }
+                    applyPoolEntry(placeholderPoolIndex, to: label, in: textView, animated: false)
                 }
             }
             // VoiceOver: swapping the label retriggers announcements and talks
@@ -2164,31 +2637,21 @@ struct PastableTextView: UIViewRepresentable {
                 hasFocusedOnce = true
                 guard parent.placeholderRotatesOnFirstFocus else { return }
             }
-            let pool = placeholderPool
-            guard pool.count > 1 else { return }
+            // [T-composer-hint-in-rotation] Text entries plus the usage pages.
+            let count = rotationPoolCount
+            guard count > 1 else { return }
             guard let label = textView.viewWithTag(999) as? UILabel else { return }
 
             // Random, but never the entry already on screen — a repeat reads as
             // "the rotation is broken" rather than as chance.
-            var next = Int.random(in: 0..<pool.count)
-            while next == placeholderPoolIndex { next = Int.random(in: 0..<pool.count) }
+            var next = Int.random(in: 0..<count)
+            while next == placeholderPoolIndex { next = Int.random(in: 0..<count) }
             placeholderPoolIndex = next
-            let text = pool[next]
-            hintLog.info("[rotate] swapped to pool[\(next)]")
-            guard label.text != text else { return }
-
-            // Reduce Motion: swap instantly rather than cross-dissolving.
-            guard !UIAccessibility.isReduceMotionEnabled else {
-                label.text = text
-                return
-            }
-            // Cross-dissolve on the UIKit side. SwiftUI's .transition/.animation
-            // do not cross the UIViewRepresentable boundary, so this is the only
-            // place the fade can happen.
-            UIView.transition(with: label,
-                              duration: 0.25,
-                              options: .transitionCrossDissolve,
-                              animations: { label.text = text })
+            hintLog.info("[rotate] swapped to pool[\(next)] of \(count) (usage=\(usagePage(atPoolIndex: next) != nil))")
+            // Cross-dissolve on the UIKit side (SwiftUI's .transition/.animation
+            // do not cross the UIViewRepresentable boundary); instant under
+            // Reduce Motion.
+            applyPoolEntry(next, to: label, in: textView, animated: true)
         }
 
         /// Re-resolve the on-screen text against the CURRENT pool, without
@@ -2203,15 +2666,32 @@ struct PastableTextView: UIViewRepresentable {
             if hasUnconsumedTransientHint, let hint = transientHint {
                 // Only once the debounce has applied it; before that the label
                 // keeps whatever it showed, and the crossfade lands on time.
-                if transientHintApplied, label.text != hint.text {
-                    label.attributedText = Self.attributedHint(hint, font: label.font)
+                if transientHintApplied,
+                   label.text != Self.page(of: hint, at: transientPageIndex).text
+                    || abs(textView.bounds.width - transientHintFitWidth) > 0.5
+                    || textView.font.map({ $0.pointSize != transientHintFitBase }) == true {
+                    label.attributedText = fittedHint(hint, in: textView, fallbackFont: label.font)
+                }
+                // [T-composer-hint-carousel] Back on screen (or VoiceOver
+                // turned off): turn the pages again.
+                if transientHintApplied { startHintCarouselIfNeeded(in: textView) }
+                return
+            }
+            // [T-composer-hint-in-rotation] A usage page from the pool stays
+            // on screen; re-fit it when the figures, width or font change.
+            if let page = usagePage(atPoolIndex: placeholderPoolIndex) {
+                if label.text != page.text
+                    || abs(textView.bounds.width - poolUsageFitWidth) > 0.5
+                    || textView.font.map({ $0.pointSize != poolUsageFitBase }) == true {
+                    applyPoolEntry(placeholderPoolIndex, to: label, in: textView, animated: false)
                 }
                 return
             }
             let pool = placeholderPool
             guard placeholderPoolIndex < pool.count else {
+                // A usage entry whose figures are gone: back to the default.
                 placeholderPoolIndex = 0
-                if label.text != pool[0] { label.text = pool[0] }
+                applyPoolEntry(0, to: label, in: textView, animated: false)
                 return
             }
             let text = pool[placeholderPoolIndex]
@@ -2332,6 +2812,8 @@ struct PastableTextView: UIViewRepresentable {
 
         func textViewDidBeginEditing(_ textView: UITextView) {
             pasteLog.debug("[Coordinator] textViewDidBeginEditing isSyncing=\(self.isSyncingFocus)")
+            // Focus is back (user tap or restore): no transition hold applies.
+            holdFocusForTransition = false
             if !isSyncingFocus {
                 parent.isFocused = true
             }
@@ -2344,9 +2826,35 @@ struct PastableTextView: UIViewRepresentable {
         }
 
         func textViewDidEndEditing(_ textView: UITextView) {
-            pasteLog.debug("[Coordinator] textViewDidEndEditing isSyncing=\(self.isSyncingFocus)")
-            if !isSyncingFocus {
-                parent.isFocused = false
+            pasteLog.debug("[Coordinator] textViewDidEndEditing isSyncing=\(self.isSyncingFocus) forSync=\(self.isResigningForSync)")
+            // [T-pop-keyboard-flash-home] Any resign the focus sync did not
+            // make (SwiftUI on viewWillDisappear, endEditing, another
+            // responder) is reported to SwiftUI, even mid-sync: a binding left
+            // at true while unfocused made later `inputFocused = true`
+            // requests no-ops under the edge-triggered sync.
+            if !isResigningForSync {
+                if parent.isFocused { parent.isFocused = false }
+                lastRequestedFocus = false
+                // Resigned because the page is being swiped away: if the swipe
+                // is cancelled the page stays, so give the focus back.
+                let (isLeaving, leaving) = PastableTextView.leavingTransition(of: textView)
+                pasteLog.debug("[Coordinator] external resign leaving=\(isLeaving) bindingAfterWrite=\(self.parent.isFocused)")
+                // Latch the decision NOW. Device log (iOS 16.1, 22:49:20):
+                // leaving=true here, yet ~100 ms later the binding read true
+                // again and a fresh leavingTransition() in the async refocus
+                // answered false, so the keyboard came straight back. The
+                // hold is released only by this transition's completion.
+                if isLeaving { holdFocusForTransition = true }
+                leaving?.animate(alongsideTransition: nil) { [weak self, weak textView] context in
+                    self?.holdFocusForTransition = false
+                    guard context.isCancelled, let self, let textView,
+                          textView.window != nil, !textView.isFirstResponder else { return }
+                    pasteLog.debug("[Coordinator] swipe cancelled — restoring focus")
+                    self.lastRequestedFocus = true
+                    self.parent.isFocused = true
+                    (textView as? PastableUITextView)?.allowsFirstResponder = true
+                    textView.becomeFirstResponder()
+                }
             }
             // Force re-layout after keyboard dismiss — on iOS 16 the
             // UIViewRepresentable sizeThatFits may not be re-queried,
@@ -2398,5 +2906,32 @@ private extension ContextUsage.Tier {
         case .warning: return UIColor.systemOrange.withAlphaComponent(0.50)
         case .critical: return UIColor.systemRed.withAlphaComponent(0.60)
         }
+    }
+}
+
+// MARK: - [T-ipad-floating-keyboard] Docked vs floating keyboard
+
+/// Whether a visible keyboard is docked at the bottom edge of the screen.
+/// iPad keyboards can float (the mini keyboard, dragged anywhere) or be
+/// undocked / split; SwiftUI's keyboard avoidance still lifted the composer by
+/// a docked keyboard's height then, leaving an empty band under it.
+enum KeyboardDockRules {
+    /// A floating keyboard is at least this tall; the iPad shortcut / assistant
+    /// bar shown with a hardware keyboard is far shorter and keeps the normal
+    /// avoidance (it sits at the bottom and would otherwise cover the composer).
+    static let minFloatingHeight: CGFloat = 120
+
+    /// `keyboardFrame` and `screenBounds` in screen coordinates (the
+    /// keyboard-notification end frame and the screen's bounds).
+    static func isUndocked(keyboardFrame f: CGRect, screenBounds s: CGRect) -> Bool {
+        // Hidden or moving off screen: not a keyboard to lay out around.
+        guard !f.isEmpty, f.minY < s.maxY - 1, f.intersects(s) else { return false }
+        let touchesBottom = f.maxY >= s.maxY - 1
+        let fullWidth = f.width >= s.width - 1
+        if touchesBottom && fullWidth { return false }   // docked
+        if !touchesBottom { return true }                 // undocked / split, or floating mid-screen
+        // Narrow and at the bottom: a floating keyboard dragged down, or the
+        // small shortcut bar. Only the former counts.
+        return f.height >= minFloatingHeight
     }
 }

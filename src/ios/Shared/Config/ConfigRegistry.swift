@@ -2,11 +2,17 @@ import Foundation
 
 /// Single source of truth for every configurable setting in the app.
 ///
-/// Add a new setting in three steps:
+/// Add a new setting in four steps:
 ///   1. Pick a dot-path id (`appearance.theme`, `browser.uaProfile`, …).
 ///   2. Construct a `ConfigField` (or `ConfigCollection` for dynamic
 ///      children) and register it in `ConfigRegistry+Builtins.swift`.
-///   3. Done — the offload bridge, confirmation sheet, audit log,
+///   3. Say how it reads to a person: pass `readable:` (a `ConfigReadable`
+///      — bool / enum labels / number unit / id → name …) and add its label
+///      keys to Localizable.xcstrings. [T-config-readable] This is required:
+///      the field does not compile without it, `.generic(reason:)` is the
+///      only (logged) opt-out, and ConfigReadableKeysTests fails on a label
+///      key with no zh-Hans / zh-Hant translation.
+///   4. Done — the offload bridge, confirmation sheet, audit log,
 ///      revert flow, and `--help` output all derive from this registry.
 ///
 /// Threading: the registry is `@MainActor` because every reader/writer
@@ -29,6 +35,7 @@ final class ConfigRegistry {
         guard !didRegisterBuiltins else { return }
         didRegisterBuiltins = true
         Self.registerBuiltins(into: self)
+        ConfigReadableRenderer.validateRegistry(self)
     }
 
     func register(_ field: ConfigField) {
@@ -127,6 +134,21 @@ final class ConfigRegistry {
 
     func collection(basePath: String) -> ConfigCollection? {
         collections[basePath]
+    }
+
+    /// [T-config-readable] Every registered field, hidden ones included, plus
+    /// one representative child's fields per collection. Used by the launch-
+    /// time readable-template validation only.
+    func allFieldsForValidation() -> [ConfigField] {
+        var out = Array(fields.values)
+        for c in collections.values {
+            if let first = c.childIds().first { out.append(contentsOf: c.fields(for: first)) }
+        }
+        return out.sorted { $0.path < $1.path }
+    }
+
+    func allCollections() -> [ConfigCollection] {
+        collections.values.sorted { $0.basePath < $1.basePath }
     }
 
     /// All registered top-level field paths (excluding hidden), used by

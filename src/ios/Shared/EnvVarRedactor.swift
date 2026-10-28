@@ -140,6 +140,10 @@ enum EnvVarRedactor {
         var out: [String] = []
         out.reserveCapacity(entries.count)
         for entry in entries {
+            // [T-shortcut-envvar] Shortcut-stored variables carry text the
+            // user sent to Minis precisely so a session can read it (an SMS,
+            // a note); masking it would defeat the action. Not secrets.
+            if EnvVarStore.isShortcutKey(entry.key) { continue }
             if let v = EnvVarStore.loadValueSync(forKey: entry.key), !v.isEmpty {
                 out.append(v)
             }

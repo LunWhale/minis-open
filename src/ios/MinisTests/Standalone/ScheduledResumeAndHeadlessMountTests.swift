@@ -308,9 +308,13 @@ if sched.isEmpty || mfm.isEmpty || app.isEmpty {
           !followUpBranch.contains("agentHistory") && !followUpBranch.contains("isCallbackText")
           && !followUpBranch.contains("kind: .scheduled") && !followUpBranch.contains("lastFire"))
     check("follow-up fire submits through the job-origin channel",
-          followUpBranch.contains("vm.submitProgrammaticPrompt(text, origin: .job(jobId: job.id), silent: true)"))
+          // [T-scheduled-preset-tool] followed by the job's optional preset.
+          followUpBranch.contains("vm.submitProgrammaticPrompt(text, origin: .job(jobId: job.id), silent: true,"))
     check("the envelope's fire index is firedCount + 1", sched.contains("fireIndex = job.firedCount + 1"))
-    check("the body keeps roundPrefix + prompt verbatim for the model", sched.contains("body: roundPrefix(job) + prompt,"))
+    // [T-scheduled-preset-tool] The preset note is empty for a job without one,
+    // so that body is still exactly roundPrefix + prompt.
+    check("the body keeps roundPrefix + prompt verbatim for the model",
+          sched.contains(#"body: roundPrefix(job) + (job.presetToolCall?.envelopeNote ?? "") + prompt,"#))
     check("the round prefix names the fire in prose",
           sched.contains("return \"[Scheduled task \\\"\\(name)\\\" · fire \\(fire)\\(remaining) · \\(job.trigger.logLabel)]\\n\""))
 

@@ -1,0 +1,826 @@
+{
+  "live" : {
+    "anthropic" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 14,
+              "head" : "first question",
+              "sha8" : "e1e98cdf",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 12,
+              "head" : "first answer",
+              "sha8" : "858e1de4",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 15,
+              "head" : "second question",
+              "sha8" : "06c62973",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 13,
+              "head" : "second answer",
+              "sha8" : "1809ed52",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 530,
+              "head" : "<context-summary>\nThe following is a summary of the earlier conversation that was compacted to save context space.\nTreat it as background context only. The user",
+              "sha8" : "6297694b",
+              "tail" : "ires it.\n\nS: the user asked two questions\n<\/context-summary>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 14,
+              "head" : "third question",
+              "sha8" : "94f18e03",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "antigravity" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 14,
+              "head" : "first question",
+              "sha8" : "e1e98cdf",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 12,
+              "head" : "first answer",
+              "sha8" : "858e1de4",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 15,
+              "head" : "second question",
+              "sha8" : "06c62973",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 13,
+              "head" : "second answer",
+              "sha8" : "1809ed52",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 530,
+              "head" : "<context-summary>\nThe following is a summary of the earlier conversation that was compacted to save context space.\nTreat it as background context only. The user",
+              "sha8" : "6297694b",
+              "tail" : "ires it.\n\nS: the user asked two questions\n<\/context-summary>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 14,
+              "head" : "third question",
+              "sha8" : "94f18e03",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "chat" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 14,
+              "head" : "first question",
+              "sha8" : "e1e98cdf",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 12,
+              "head" : "first answer",
+              "sha8" : "858e1de4",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 15,
+              "head" : "second question",
+              "sha8" : "06c62973",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 13,
+              "head" : "second answer",
+              "sha8" : "1809ed52",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 530,
+              "head" : "<context-summary>\nThe following is a summary of the earlier conversation that was compacted to save context space.\nTreat it as background context only. The user",
+              "sha8" : "6297694b",
+              "tail" : "ires it.\n\nS: the user asked two questions\n<\/context-summary>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 14,
+              "head" : "third question",
+              "sha8" : "94f18e03",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "gemini" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 14,
+              "head" : "first question",
+              "sha8" : "e1e98cdf",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 12,
+              "head" : "first answer",
+              "sha8" : "858e1de4",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 15,
+              "head" : "second question",
+              "sha8" : "06c62973",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 13,
+              "head" : "second answer",
+              "sha8" : "1809ed52",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 530,
+              "head" : "<context-summary>\nThe following is a summary of the earlier conversation that was compacted to save context space.\nTreat it as background context only. The user",
+              "sha8" : "6297694b",
+              "tail" : "ires it.\n\nS: the user asked two questions\n<\/context-summary>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 14,
+              "head" : "third question",
+              "sha8" : "94f18e03",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "responses" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 14,
+              "head" : "first question",
+              "sha8" : "e1e98cdf",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 12,
+              "head" : "first answer",
+              "sha8" : "858e1de4",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 15,
+              "head" : "second question",
+              "sha8" : "06c62973",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 13,
+              "head" : "second answer",
+              "sha8" : "1809ed52",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 530,
+              "head" : "<context-summary>\nThe following is a summary of the earlier conversation that was compacted to save context space.\nTreat it as background context only. The user",
+              "sha8" : "6297694b",
+              "tail" : "ires it.\n\nS: the user asked two questions\n<\/context-summary>"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 14,
+              "head" : "third question",
+              "sha8" : "94f18e03",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ]
+  },
+  "restart" : {
+    "anthropic" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 14,
+              "head" : "first question",
+              "sha8" : "e1e98cdf",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 12,
+              "head" : "first answer",
+              "sha8" : "858e1de4",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 15,
+              "head" : "second question",
+              "sha8" : "06c62973",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 13,
+              "head" : "second answer",
+              "sha8" : "1809ed52",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 530,
+              "head" : "<context-summary>\nThe following is a summary of the earlier conversation that was compacted to save context space.\nTreat it as background context only. The user",
+              "sha8" : "6297694b",
+              "tail" : "ires it.\n\nS: the user asked two questions\n<\/context-summary>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 14,
+              "head" : "third question",
+              "sha8" : "94f18e03",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "antigravity" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 14,
+              "head" : "first question",
+              "sha8" : "e1e98cdf",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 12,
+              "head" : "first answer",
+              "sha8" : "858e1de4",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 15,
+              "head" : "second question",
+              "sha8" : "06c62973",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 13,
+              "head" : "second answer",
+              "sha8" : "1809ed52",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 530,
+              "head" : "<context-summary>\nThe following is a summary of the earlier conversation that was compacted to save context space.\nTreat it as background context only. The user",
+              "sha8" : "6297694b",
+              "tail" : "ires it.\n\nS: the user asked two questions\n<\/context-summary>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 14,
+              "head" : "third question",
+              "sha8" : "94f18e03",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "chat" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 14,
+              "head" : "first question",
+              "sha8" : "e1e98cdf",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 12,
+              "head" : "first answer",
+              "sha8" : "858e1de4",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 15,
+              "head" : "second question",
+              "sha8" : "06c62973",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 13,
+              "head" : "second answer",
+              "sha8" : "1809ed52",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 530,
+              "head" : "<context-summary>\nThe following is a summary of the earlier conversation that was compacted to save context space.\nTreat it as background context only. The user",
+              "sha8" : "6297694b",
+              "tail" : "ires it.\n\nS: the user asked two questions\n<\/context-summary>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 14,
+              "head" : "third question",
+              "sha8" : "94f18e03",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "gemini" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 14,
+              "head" : "first question",
+              "sha8" : "e1e98cdf",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 12,
+              "head" : "first answer",
+              "sha8" : "858e1de4",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 15,
+              "head" : "second question",
+              "sha8" : "06c62973",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 13,
+              "head" : "second answer",
+              "sha8" : "1809ed52",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 530,
+              "head" : "<context-summary>\nThe following is a summary of the earlier conversation that was compacted to save context space.\nTreat it as background context only. The user",
+              "sha8" : "6297694b",
+              "tail" : "ires it.\n\nS: the user asked two questions\n<\/context-summary>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 14,
+              "head" : "third question",
+              "sha8" : "94f18e03",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "responses" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 14,
+              "head" : "first question",
+              "sha8" : "e1e98cdf",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 12,
+              "head" : "first answer",
+              "sha8" : "858e1de4",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 15,
+              "head" : "second question",
+              "sha8" : "06c62973",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 13,
+              "head" : "second answer",
+              "sha8" : "1809ed52",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 530,
+              "head" : "<context-summary>\nThe following is a summary of the earlier conversation that was compacted to save context space.\nTreat it as background context only. The user",
+              "sha8" : "6297694b",
+              "tail" : "ires it.\n\nS: the user asked two questions\n<\/context-summary>"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 14,
+              "head" : "third question",
+              "sha8" : "94f18e03",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ]
+  }
+}

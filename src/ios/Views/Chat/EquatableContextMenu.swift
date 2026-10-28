@@ -39,18 +39,22 @@ struct EquatableMenuGate<Key: Equatable, Content: View>: View, Equatable {
 struct AssistantMenuKey: Equatable {
     let messageId: UUID
     let hasReadAloud: Bool
-    let hasCopyScreenshot: Bool
+    let hasShareMessages: Bool
     let hasCompact: Bool
     let isActive: Bool
+    /// [T-in-chat-search] Offers "Search in Chat".
+    var hasSearchInChat: Bool = false
 }
 
 /// Value key for the tool-capsule long-press menu. `blockId` identifies the
 /// tool; `isProcessing` toggles the "Re-run From Here" branch;
 /// `canRevokeMemoryWrite` toggles the "Undo This Memory Write" branch. The
 /// clipboard dump and the written-memory text are built lazily at tap time and
-/// deliberately excluded from the key.
+/// deliberately excluded from the key. `canSearchInChat` toggles the
+/// [T-in-chat-search] "Search in Chat" item (only where a search bar exists).
 struct ToolMenuKey: Equatable {
     let blockId: UUID
     let isProcessing: Bool
     let canRevokeMemoryWrite: Bool
+    var canSearchInChat: Bool = false
 }

@@ -21,6 +21,19 @@
 
 import Foundation
 
+/// [T-messagelist-v3-split] CollectionViewMessageListV3.swift became the folder
+/// Agent/MessageList/CollectionViewMessageListV3/ (code moved verbatim); read all
+/// of it as one text, the way the single file used to be read.
+func messageListV3Source() -> String {
+    let ios = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let dir = ios.appendingPathComponent("Agent/MessageList/CollectionViewMessageListV3")
+    let files = (FileManager.default.enumerator(at: dir, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? [])
+        .filter { $0.pathExtension == "swift" }
+    return files.sorted { $0.path < $1.path }
+        .compactMap { try? String(contentsOf: $0, encoding: .utf8) }.joined(separator: "\n")
+}
+
 #if canImport(CoreGraphics)
 import CoreGraphics
 #endif
@@ -33,7 +46,7 @@ func checkEq<T: Equatable>(_ l: String, _ a: T, _ b: T) {
     if a == b { print("  ✅ \(l)") } else { print("  ❌ \(l)\n     expected: \(b)\n     actual:   \(a)"); failures += 1 }
 }
 
-// MARK: - Under test (mirrors CollectionViewMessageListV3.swift)
+// MARK: - Under test (mirrors Agent/MessageList/CollectionViewMessageListV3/Support/MessageListV3HeightCache.swift)
 
 struct HeightCacheKey: Hashable {
     let contentLength: Int
@@ -251,8 +264,9 @@ checkEq("a Dynamic Type change re-measures", measures, 120)
 // MARK: - 4. The untouched constants (spec item 4)
 
 print("\n▶️  nothing that was ruled out has moved")
-let listPath = "../../Agent/MessageList/CollectionViewMessageListV3.swift"
-guard let src = try? String(contentsOfFile: listPath, encoding: .utf8) else {
+let listPath = "Agent/MessageList/CollectionViewMessageListV3/"
+let src = messageListV3Source()
+guard !src.isEmpty else {
     print("  ❌ could not read \(listPath)"); failures += 1; exit(1)
 }
 

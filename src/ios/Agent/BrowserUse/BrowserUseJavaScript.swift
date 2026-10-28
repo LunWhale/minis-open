@@ -4,6 +4,58 @@ import Foundation
 /// Each function returns a self-executing IIFE that JSON.stringify()s the result.
 enum BrowserUseJS {
 
+    // BEGIN BrowserReadGuard
+    /// [T-js-error-detail] Wraps a read script (an IIFE expression returning a
+    /// JSON string) so it can never fail as WebKit's bare "A JavaScript
+    /// exception occurred". Read scripts used `document.body.*` unguarded, and
+    /// a document without a body - mid-navigation, or not HTML at all (SVG,
+    /// XML, an image) - threw a TypeError the tool reported with no reason.
+    ///
+    /// - no body yet (or still loading with an empty body) → a JSON `error`
+    ///   saying so and what to do; with `requiresBody: false` the script runs
+    ///   anyway (get_page_info must work exactly then);
+    /// - anything thrown → `{error: "Script threw: <name>: <message>"}`.
+    /// The wrapped script's own return value passes through unchanged, so a
+    /// successful result is byte-identical to the unwrapped one.
+    static func guardedRead(_ iife: String, requiresBody: Bool = true) -> String {
+        """
+        (function() {
+            \(requiresBody ? bodyCheckJS : "")
+            try {
+                return \(iife);
+            } catch (e) {
+                return JSON.stringify({error: 'Script threw: ' + ((e && e.name) || 'Error') + ': ' + ((e && e.message) || String(e))});
+            }
+        })()
+        """
+    }
+
+    /// The same guard for a `callAsyncJavaScript` function BODY (statements
+    /// with `return`, possibly `await`), e.g. scroll_and_collect.
+    static func guardedAsyncBody(_ body: String) -> String {
+        """
+        \(bodyCheckJS)
+        try {
+        \(body)
+        } catch (e) {
+            return JSON.stringify({error: 'Script threw: ' + ((e && e.name) || 'Error') + ': ' + ((e && e.message) || String(e))});
+        }
+        """
+    }
+
+    /// Returns early with a JSON error when the page has no usable body.
+    static let bodyCheckJS = """
+    var __b = document.body;
+    if (!__b || (document.readyState === 'loading' && !__b.firstElementChild && !(__b.textContent || '').trim())) {
+        var __rs = document.readyState, __u = String(location.href).substring(0, 200);
+        if (__rs === 'loading' || !__b && __rs !== 'complete') {
+            return JSON.stringify({error: 'The page has no body yet (readyState=' + __rs + ', url=' + __u + '). Wait for it to finish loading - e.g. call wait_for_dom_stable or get_page_info first - then retry.'});
+        }
+        return JSON.stringify({error: 'This document has no <body> (readyState=' + __rs + ', contentType=' + (document.contentType || '?') + ', url=' + __u + ') - it is not an HTML page (e.g. SVG, XML or an image). Use execute_js with document.documentElement instead.'});
+    }
+    """
+    // END BrowserReadGuard
+
     /// Safely escape a string for embedding in JavaScript source.
     static func jsQuote(_ s: String) -> String {
         var result = ""
@@ -119,6 +171,12 @@ enum BrowserUseJS {
     // MARK: - Get Text
 
     static func getText(selector: String?) -> String {
+        guardedRead(unguardedGetText(selector: selector))
+    }
+
+    /// get_text as it was, without `guardedRead` (kept separate so the
+    /// guard's pass-through is testable).
+    static func unguardedGetText(selector: String?) -> String {
         if let sel = selector {
             return """
             (function() {
@@ -183,6 +241,10 @@ enum BrowserUseJS {
     // MARK: - Get Readable
 
     static func getReadable() -> String {
+        guardedRead(unguardedGetReadable())
+    }
+
+    static func unguardedGetReadable() -> String {
         """
         (function() {
             var candidateSelectors = [
@@ -375,6 +437,10 @@ enum BrowserUseJS {
     // MARK: - Get Backbone
 
     static func getBackbone(maxDepth: Int) -> String {
+        guardedRead(unguardedGetBackbone(maxDepth: maxDepth))
+    }
+
+    static func unguardedGetBackbone(maxDepth: Int) -> String {
         """
         (function() {
             var MAX_DEPTH = \(maxDepth);
@@ -672,7 +738,7 @@ enum BrowserUseJS {
         } else {
             itemSelectorJS = "null"
         }
-        return """
+        return guardedAsyncBody("""
         var SCROLL_COUNT = \(scrollCount);
         var PIXELS = \(pixels);
         var ITEM_CAP = 500;
@@ -846,19 +912,21 @@ enum BrowserUseJS {
             itemSelector: effectiveItemSelector,
             items: finalItems
         });
-        """
+        """)
     }
 
     // MARK: - Get Page Info
 
     static func getPageInfo() -> String {
-        """
+        // [T-js-error-detail] Must work on a page without a body: the
+        // no-body error of the other read actions points the model here.
+        guardedRead("""
         (function() {
             return JSON.stringify({
                 url: window.location.href,
                 title: document.title,
                 scrollY: window.scrollY,
-                scrollHeight: document.body.scrollHeight,
+                scrollHeight: document.body ? document.body.scrollHeight : (document.documentElement ? document.documentElement.scrollHeight : 0),
                 viewportWidth: window.innerWidth,
                 viewportHeight: window.innerHeight,
                 readyState: document.readyState,
@@ -867,6 +935,44 @@ enum BrowserUseJS {
                 images: document.images.length
             });
         })()
-        """
+        """, requiresBody: false)
     }
 }
+
+// BEGIN BrowserJSErrorFormatter
+/// [T-js-error-detail] One description for a WKWebView JavaScript failure.
+/// For `WKError.javaScriptExceptionOccurred` the localized description is only
+/// the generic "A JavaScript exception occurred" (发生了JavaScript异常); the
+/// real reason is in userInfo. Prefer it, add a short location when WebKit
+/// gives one, fall back to the localized description otherwise. Callers keep
+/// their own "JavaScript error: " prefix via `message(_:)`.
+enum BrowserJSErrorFormatter {
+    static let messageKey = "WKJavaScriptExceptionMessage"
+    static let lineKey = "WKJavaScriptExceptionLineNumber"
+    static let columnKey = "WKJavaScriptExceptionColumnNumber"
+    static let sourceURLKey = "WKJavaScriptExceptionSourceURL"
+
+    static func describe(_ error: Error) -> String {
+        let info = (error as NSError).userInfo
+        guard let message = (info[messageKey] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !message.isEmpty else {
+            return error.localizedDescription
+        }
+        var location: [String] = []
+        let line = (info[lineKey] as? NSNumber)?.intValue ?? 0
+        let column = (info[columnKey] as? NSNumber)?.intValue ?? 0
+        if line > 0 { location.append(column > 0 ? "line \(line):\(column)" : "line \(line)") }
+        let source: String? = {
+            if let u = info[sourceURLKey] as? URL { return u.absoluteString }
+            return info[sourceURLKey] as? String
+        }()
+        if let source, !source.isEmpty, source != "about:blank" {
+            location.append(source.count > 120 ? String(source.prefix(117)) + "..." : source)
+        }
+        return location.isEmpty ? message : "\(message) (\(location.joined(separator: ", ")))"
+    }
+
+    /// The tool-facing text: the existing "JavaScript error: " prefix + `describe`.
+    static func message(_ error: Error) -> String { "JavaScript error: " + describe(error) }
+}
+// END BrowserJSErrorFormatter

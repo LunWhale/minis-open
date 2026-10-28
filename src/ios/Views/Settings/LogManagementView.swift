@@ -161,6 +161,16 @@ struct LogManagementView: View {
                 }
             }
 
+            // [T-crash-diag-export] Breadcrumbs, crash contexts and MetricKit
+            // reports, with a sanitised zip export.
+            Section {
+                NavigationLink {
+                    CrashDiagnosticsView()
+                } label: {
+                    Label("Crash Diagnostics", systemImage: "stethoscope")
+                }
+            }
+
             if #available(iOS 17.0, *) {
                 Section {
                     NavigationLink {

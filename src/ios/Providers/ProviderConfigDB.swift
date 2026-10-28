@@ -567,6 +567,9 @@ actor ProviderConfigDB {
         let storedEntry = Dictionary(uniqueKeysWithValues: loadAllEntryRows().compactMap { r in (r["id"] as? String).map { ($0, r) } })
         let storedGroup = Dictionary(uniqueKeysWithValues: loadAllGroupRows().compactMap { r in (r["id"] as? String).map { ($0, r) } })
         var instChanged = 0, entryChanged = 0, groupChanged = 0
+        // [T-group-order-log] Lines about group rows whose updated_at is
+        // re-stamped below; written out after COMMIT, not inside the transaction.
+        var groupRewriteNotes: [String] = []
 
         Self.exec(db: db, "DELETE FROM provider_local_kv")
         Self.exec(db: db, "DELETE FROM provider_session_bindings")
@@ -673,6 +676,11 @@ actor ProviderConfigDB {
                 continue
             }
             groupChanged += 1
+            if let stored = storedGroup[group.id] {
+                groupRewriteNotes.append(Self.groupRewriteNote(
+                    stored: stored, group: group, sortOrder: idx, memberJSON: memberJSON,
+                    removedJSON: removedJSON, addedJSON: addedJSON, now: now))
+            }
             upsertGroupRow(
                 id: group.id,
                 name: group.name,
@@ -734,9 +742,56 @@ actor ProviderConfigDB {
         }
 
         Self.exec(db: db, "COMMIT")
+        for note in groupRewriteNotes { GroupOrderLog.emit(note) }
         let c = counts()
         logger.info("[v3] bulkReplace done: instances=\(c.instances) entries=\(c.entries) groups=\(c.groups)")
     }
+
+    /// [T-group-order-log] Why `bulkReplace` is about to rewrite an existing
+    /// group row and stamp it `updated_at = now`: which of the compared fields
+    /// differ from the stored row. Read-only; mirrors the comparison above
+    /// field by field.
+    ///
+    /// The case to watch is `updatedAt-bump-sortorder-only`: the group itself
+    /// was not edited, but another group was added, deleted or dragged, so
+    /// this one's position in the list (`sort_order`) moved - and the rewrite
+    /// gives it a fresh `updated_at`. On inbound sync the side with the newer
+    /// group `updated_at` decides the MEMBER order, so such a stamp can make
+    /// this device's member order win over a reorder really made elsewhere.
+    // BEGIN GroupRewriteNote
+    static func groupRewriteNote(stored r: [String: Any], group: ModelGroup, sortOrder idx: Int,
+                                 memberJSON: String, removedJSON: String, addedJSON: String,
+                                 now: Double) -> String {
+        var fields: [String] = []
+        if (r["name"] as? String) != group.name { fields.append("name") }
+        if (r["strategy"] as? String) != group.strategy.rawValue { fields.append("strategy") }
+        if (r["fallback_strategy"] as? String) != group.fallbackStrategy.rawValue { fields.append("fallback") }
+        if (r["default_thinking_level"] as? String) != group.defaultThinkingLevel?.rawValue { fields.append("thinking") }
+        if (r["context_limit_tokens"] as? Int) != group.contextLimitTokens
+            || (r["context_limit_remembered"] as? Int) != group.lastContextLimitTokens { fields.append("ctx") }
+        let storedMemberJSON = (r["member_entry_ids_json"] as? String) ?? "[]"
+        if storedMemberJSON != memberJSON { fields.append("members") }
+        let oldSort = r["sort_order"] as? Int
+        if oldSort != idx { fields.append("sort_order") }
+        if ((r["removed_members_json"] as? String) ?? "{}") != removedJSON { fields.append("removed") }
+        if ((r["added_members_json"] as? String) ?? "{}") != addedJSON { fields.append("added") }
+
+        let tag = GroupOrderDiff.groupTag(id: group.id, name: group.name)
+        let sort = "sortOrder=\(oldSort.map(String.init) ?? "-")→\(idx)"
+        let stamps = "updatedAt=\(GroupOrderLog.stamp(r["updated_at"] as? Double))→\(GroupOrderLog.stamp(now))"
+        if fields == ["sort_order"] {
+            return "reason=updatedAt-bump-sortorder-only group=\(tag) \(sort) \(stamps) members=\(group.memberEntryIds.count)(unchanged)"
+        }
+        var text = "reason=updatedAt-bump group=\(tag) fields=[\(fields.joined(separator: ","))] \(sort) \(stamps)"
+        if fields.contains("members") {
+            let before = (storedMemberJSON.data(using: .utf8)
+                .flatMap { try? JSONDecoder().decode([String].self, from: $0) }) ?? []
+            let s = GroupOrderDiff.summary(before: before, after: group.memberEntryIds)
+            text += " membersChange=\(s.change) before=\(GroupOrderDiff.describe(before)) after=\(GroupOrderDiff.describe(group.memberEntryIds))"
+        }
+        return text
+    }
+    // END GroupRewriteNote
 
     /// Build a `ProviderConfig` value from the current DB contents.
     /// Used by ProviderConfigStore (S3) to (a) hydrate its in-memory
@@ -1081,7 +1136,8 @@ actor ProviderConfigDB {
         contextLimitRemembered: Int?, memberEntryIdsJson: String,
         sortOrder: Int, updatedAt: Double, extrasJson: String?,
         inboundAddedMembers: [String: Date] = [:],
-        inboundRemovedMembers: [String: Date] = [:]
+        inboundRemovedMembers: [String: Date] = [:],
+        inboundMeta: String = ""
     ) -> Bool {
         guard let db else { return false }
 
@@ -1178,6 +1234,28 @@ actor ProviderConfigDB {
         let memberChanged = finalMembers != localMembers
             || Self.encodeMemberTimestamps(finalAdded) != Self.encodeMemberTimestamps(localAdded.filter { referenced.contains($0.key) })
             || Self.encodeMemberTimestamps(finalRemoved) != Self.encodeMemberTimestamps(localRemoved.filter { !referenced.contains($0.key) })
+
+        // [T-group-order-log] An inbound record is about to change this
+        // group's member list. Say which side's order was taken and why (the
+        // newer group updated_at leads), with all three orders. A warning when
+        // the members that stay changed places; info when only the set did.
+        // Skipped for a group this device did not have: nothing to reorder.
+        if localTs != nil, finalMembers != localMembers {
+            let s = GroupOrderDiff.summary(before: localMembers, after: finalMembers)
+            if !s.isUnchanged {
+                let tombstoned = localMembers.filter { !isPresent($0) }
+                var text = "reason=sync-inbound change=\(s.change) group=\(GroupOrderDiff.groupTag(id: id, name: name))"
+                    + " local=\(GroupOrderDiff.describe(localMembers)) inbound=\(GroupOrderDiff.describe(inboundMembers))"
+                    + " final=\(GroupOrderDiff.describe(finalMembers)) winner=\(scalarIsNewer ? "inbound" : "local")"
+                    + " localUpdatedAt=\(GroupOrderLog.stamp(localTs)) inboundUpdatedAt=\(GroupOrderLog.stamp(updatedAt))"
+                    + " scalarIsNewer=\(scalarIsNewer) inboundSortOrder=\(sortOrder)"
+                if !s.added.isEmpty { text += " added=\(GroupOrderDiff.describe(s.added)) addedAtTail=\(s.addedOnlyAtTail)" }
+                if !s.removed.isEmpty { text += " removed=\(GroupOrderDiff.describe(s.removed))" }
+                if !tombstoned.isEmpty { text += " droppedByRemovalTombstone=\(GroupOrderDiff.describe(tombstoned))" }
+                if !inboundMeta.isEmpty { text += " \(inboundMeta)" }
+                GroupOrderLog.emit(text, warning: s.reordered)
+            }
+        }
 
         if !scalarIsNewer && !memberChanged {
             return false  // nothing to do

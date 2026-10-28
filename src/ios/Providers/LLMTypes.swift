@@ -117,6 +117,16 @@ struct LLMModel: Equatable, Hashable, Identifiable, Sendable, Codable {
     /// Android LLMModel.voiceRole (same name, same values).
     var voiceRole: String?
 
+    /// [OpenMinis#438] True when `contextWindow` / `maxOutputTokens` were read
+    /// from this endpoint's own /models entry (`context_length`, `limit.context`,
+    /// `max_output_tokens`, …). models.dev then only fills the fields the
+    /// endpoint left nil: its match for a relay id is a cross-provider guess,
+    /// and a guessed window larger than the gateway's real one turns a graceful
+    /// compaction into a hard 400. Optional so older saves decode as nil (the
+    /// catalog keeps winning, as before); set after init and carried across
+    /// `ModelEntry.model`'s rebuild by hand, like `voiceRole`.
+    var limitsReportedByEndpoint: Bool?
+
     init(id: String, displayName: String, provider: String, modalityOverride: ModelModality? = nil,
          contextWindow: Int? = nil, maxOutputTokens: Int? = nil,
          supportsReasoning: Bool? = nil, interleavedReasoningField: String? = nil,
@@ -164,11 +174,9 @@ struct LLMModel: Equatable, Hashable, Identifiable, Sendable, Codable {
     /// [T-anthropic-opus55] Adaptive-thinking only, like Fable 5.1 above: Opus
     /// 5.5 REJECTS `thinking.type: "disabled"` with
     ///   400 … not supported for this model
-    /// so the request must carry adaptive thinking or no `thinking` field at
-    /// all. `AnthropicProvider.modelAcceptsExplicitThinkingDisabled` already
-    /// answers false for it (its version gate is `major == 4 && minor >= 6`,
-    /// and this is major 5), so no change was needed there — but that is a
-    /// load-bearing accident, and `AnthropicOpus55ThinkingTests` pins it.
+    /// so the request must carry adaptive thinking. Its "thinking off" is
+    /// adaptive + `output_config.effort: "low"` (`AnthropicProvider.offThinking`
+    /// answers `.lowEffort`), pinned by `GPT6SolLunaOpus55Tests`.
     ///
     /// Also gated on the CLI fingerprint: Anthropic requires
     /// `claude-cli >= 2.1.280` for this id, which is why `ClaudeCLIMimicry`
@@ -206,6 +214,28 @@ struct LLMModel: Equatable, Hashable, Identifiable, Sendable, Codable {
         maxOutputTokens: 128_000
     )
 
+    /// [T-anthropic-sonnet55] Claude Sonnet 5.5 (CLIProxyAPI registry
+    /// 9a3b869f "feat(models): add claude-sonnet-5-5 model"): 1M context, 128K
+    /// output, text + image in, thinking levels low…max. Upstream's thinking
+    /// entry is identical to claude-sonnet-5 / claude-opus-5, and on the wire
+    /// it takes the same Claude-5 path, all keyed on the parsed version (5,5):
+    /// no `temperature`, adaptive thinking + `output_config.effort`. "Thinking
+    /// off" is `thinking: {"type": "between_tools"}` - the only model that takes
+    /// it; `disabled` 400s here, and an absent field thinks at the default high
+    /// effort (`AnthropicProvider.offThinking` answers `.betweenTools`).
+    ///
+    /// Not in models-dev-api.json yet; enrichment reaches it through the
+    /// stage-3 prefix fallback (claude-sonnet-5-5 → claude-sonnet-5), and
+    /// `ThinkingLevelCatalog` pins the .max ceiling in case that lookup ever
+    /// misses. Output is 128K here (upstream), not Sonnet 5's static 64K.
+    static let claudeSonnet55 = LLMModel(
+        id: "claude-sonnet-5-5",
+        displayName: "Claude Sonnet 5.5",
+        provider: "Anthropic",
+        contextWindow: 1_000_000,
+        maxOutputTokens: 128_000
+    )
+
     static let claudeSonnet5 = LLMModel(
         id: "claude-sonnet-5",
         displayName: "Claude Sonnet 5",
@@ -231,7 +261,7 @@ struct LLMModel: Equatable, Hashable, Identifiable, Sendable, Codable {
     )
 
     static let allAnthropic: [LLMModel] = [
-        .claudeFable51, .claudeFable5, .claudeOpus55, .claudeOpus5, .claudeOpus48, .claudeOpus46, .claudeSonnet5, .claudeSonnet46, .claudeHaiku45,
+        .claudeFable51, .claudeFable5, .claudeOpus55, .claudeOpus5, .claudeOpus48, .claudeOpus46, .claudeSonnet55, .claudeSonnet5, .claudeSonnet46, .claudeHaiku45,
     ]
 
     // MARK: - Gemini Models
@@ -312,6 +342,29 @@ struct LLMModel: Equatable, Hashable, Identifiable, Sendable, Codable {
         id: "gpt-6-astra",
         displayName: "GPT-6 Astra",
         provider: "OpenAI",
+        supportsReasoning: true
+    )
+
+    /// [T-gpt61-sol] GPT-6.1 Sol (OpenAI DevDay 2026-09-29), from CLIProxyAPI
+    /// PR #6207 "register GPT-6.1 Sol and client capabilities": context
+    /// 272000, max output 128000, thinking levels low…max,
+    /// `minimal_client_version` 0.155.0 in that PR; `OpenAIProvider
+    /// .codexClientVersion` is now 0.159.0 (see [T-codex-client-0159]).
+    ///
+    /// - `supportsReasoning: true` is explicit for the same reason as Astra: a
+    ///   new id is not in models-dev-api.json, so without it every level would
+    ///   collapse to the Codex-OAuth fallback effort "low".
+    /// - The context window is explicit too. No `gpt-6` rule exists in
+    ///   `contextWindowTokens`, so a gpt-6.x id falls through to the 128K
+    ///   default. That would make ContextPolicy compact at ~108K on a 272K
+    ///   model whenever the Codex backend's catalogue (which carries the real
+    ///   value) is not reachable and this built-in list is served.
+    static let gpt61Sol = LLMModel(
+        id: "gpt-6.1-sol",
+        displayName: "GPT-6.1 Sol",
+        provider: "OpenAI",
+        contextWindow: 272_000,
+        maxOutputTokens: 128_000,
         supportsReasoning: true
     )
 
@@ -565,8 +618,13 @@ struct LLMModel: Equatable, Hashable, Identifiable, Sendable, Codable {
     /// been probed against a live Codex OAuth token here, so if either turns out
     /// to be tier-gated it will present as the empty-assistant-turn symptom
     /// described above; remove it rather than assuming the picker is broken.
+    ///
+    /// [T-gpt61-sol] gpt-6.1-sol from CLIProxyAPI PR #6207, where its catalog
+    /// entry is declared for Team / Plus / Pro and NOT for Free. Not probed
+    /// against a live token here either: on a Free plan it is expected to show
+    /// the tier-gated symptom above.
     static let allOpenAICodexOAuth: [LLMModel] = [
-        .gpt6Astra, .gpt6Sol, .gpt6Luna,
+        .gpt6Astra, .gpt61Sol, .gpt6Sol, .gpt6Luna,
         .gpt56Sol, .gpt56Terra, .gpt56Luna,
         .gpt55, .gpt54, .gpt54Mini,
         // gptImage2 is kept: it is an image endpoint, not a Codex chat model,
@@ -1071,8 +1129,34 @@ enum ThinkingLevel: String, Codable, Hashable, CaseIterable, Comparable {
 
     var isEnabled: Bool { self != .off }
 
+    /// [T-ios-restore-thinking-level] Case-insensitive parse; nil when the
+    /// value names no level. Android persists levels by enum NAME ("HIGH"),
+    /// iOS by raw value ("high"), and both land in the same backup/config
+    /// JSON. The strict `init(rawValue:)` rejected Android's spelling, so an
+    /// Android backup's "HIGH" fell through `decoded` to `.xhigh` — a
+    /// silently raised level — or to nil where callers used `rawValue:`.
+    static func parse(_ raw: String) -> ThinkingLevel? {
+        ThinkingLevel(rawValue: raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+    }
+
     static func decoded(_ raw: String) -> ThinkingLevel {
-        ThinkingLevel(rawValue: raw) ?? .xhigh
+        parse(raw) ?? .xhigh
+    }
+
+    /// [T-ios-restore-thinking-level] Replaces the synthesized decoder for
+    /// every Codable type holding a ThinkingLevel, so both spellings read.
+    /// An unrecognized value still throws, exactly as the synthesized
+    /// decoder did — callers that fall back on that error keep doing so.
+    /// Encoding is untouched (RawRepresentable default: the raw value).
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let raw = try container.decode(String.self)
+        guard let level = ThinkingLevel.parse(raw) else {
+            throw DecodingError.dataCorruptedError(
+                in: container, debugDescription: "Unknown ThinkingLevel \"\(raw)\""
+            )
+        }
+        self = level
     }
 }
 

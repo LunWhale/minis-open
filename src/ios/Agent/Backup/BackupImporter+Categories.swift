@@ -412,12 +412,20 @@ extension BackupImporter {
         let merged = await MainActor.run { Self.disambiguateGroupNames(config) }
 
         let before = await MainActor.run { ProviderConfigStore.shared.config.instances.count }
+        let groupsBefore = await MainActor.run { Set(ProviderConfigStore.shared.config.modelGroups.map(\.id)) }
         if #available(iOS 17.0, *) {
             await CloudSyncEngine.mergeProviderConfigForRestore(merged)
         } else {
             await MainActor.run { Self.mergeProviderConfigFallback(merged) }
         }
         let after = await MainActor.run { ProviderConfigStore.shared.config.instances.count }
+        // [T-backup-restore-tombstone] Groups the restore brought back (a
+        // deleted group, or one this device never had). Counted separately
+        // because the instance arithmetic below cannot see them: restoring a
+        // deleted group used to read "Imported 0" even once it worked.
+        let groupsRestored = await MainActor.run {
+            Set(ProviderConfigStore.shared.config.modelGroups.map(\.id)).subtracting(groupsBefore).count
+        }
 
         // Report what the merge actually did, not the package's instance count:
         // an instance already present locally is not a new arrival.
@@ -436,6 +444,7 @@ extension BackupImporter {
         // hash) already reports for an unchanged item.
         report.imported = max(0, after - before)
         report.skipped = max(0, config.instances.count - report.imported)
+        report.imported += groupsRestored
 
         // [T-backup-thinking-rules] AFTER the instance merge, never before: a
         // rule's `instance_id` points at a ProviderInstance, so importing rules
@@ -504,7 +513,7 @@ extension BackupImporter {
                 // [T-subagent-thinking-override] Absent in a package written
                 // before the field existed → nil → "not set".
                 thinkingLevelOverride: r.thinkingLevelOverride
-                    .flatMap { ThinkingLevel(rawValue: $0) },
+                    .flatMap { ThinkingLevel.parse($0) },  // Android writes "HIGH"
                 isBuiltIn: false,
                 sortOrder: r.sortOrder,
                 updatedAt: r.updatedAt
@@ -684,7 +693,20 @@ extension BackupImporter {
         local.agentLoopGroupIds = Array(
             Set(local.agentLoopGroupIds).union(remote.agentLoopGroupIds))
 
-        store.applyConfig(local)
+        // [T-backup-restore-tombstone] This path already brings a deleted item
+        // back (it appends by id and never consults tombstones), but it left
+        // the item's tombstone in place. Every later run of the shared merger
+        // starts by removing tombstoned ids, so the next restore or legacy
+        // snapshot merge would delete the group again. Clear the tombstones
+        // of everything the package carries, the same rule as the iOS 17 path.
+        local.deletedInstances = ProviderConfigTombstone.survivingRestore(
+            local.deletedInstances, restoring: Set(remote.instances.map(\.id)))
+        local.deletedModelEntries = ProviderConfigTombstone.survivingRestore(
+            local.deletedModelEntries, restoring: Set(remote.modelEntries.map(\.id)))
+        local.deletedModelGroups = ProviderConfigTombstone.survivingRestore(
+            local.deletedModelGroups, restoring: Set(remote.modelGroups.map(\.id)))
+
+        store.applyConfig(local, orderReason: "restore-merge")
         logger.info("[Restore] provider merge (iOS16 path): instances=\(local.instances.count) entries=\(local.modelEntries.count) groups=\(local.modelGroups.count)")
     }
 
@@ -728,12 +750,22 @@ extension BackupImporter {
         let data = try Data(contentsOf: src)
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        let incoming = try decoder.decode([EnvVarEntry].self, from: data)
+        // [T-envvar-disable] EnvVarBackupEntry reads `enabled` (missing in an
+        // older backup → enabled).
+        let incoming = try decoder.decode([EnvVarBackupEntry].self, from: data)
+
+        // [T-envvar-backup-values] Values first (secrets.json, never
+        // overwriting), so the variables created below pick them up even when
+        // the Providers category - whose credential pass used to be the only
+        // writer of these values - is not part of this restore.
+        await MainActor.run { _ = BackupSecretsImporter.restoreEnvVarValues(from: root) }
 
         await MainActor.run {
             let store = EnvVarStore.shared
             let existing = Set(store.entries.map(\.key))
             for entry in incoming {
+                // An existing variable of that name is left exactly as it is,
+                // its enabled state included (never overwrite).
                 guard !existing.contains(entry.key) else {
                     report.skipped += 1
                     continue
@@ -742,6 +774,10 @@ extension BackupImporter {
                 // value into the Keychain; keep it rather than blanking it.
                 let value = EnvVarStore.loadValueSync(forKey: entry.key) ?? ""
                 store.add(key: entry.key, value: value, note: entry.note)
+                if !entry.enabled,
+                   let created = store.entries.first(where: { $0.key == entry.key.uppercased() }) {
+                    store.setEnabled(id: created.id, false)
+                }
                 report.imported += 1
             }
         }

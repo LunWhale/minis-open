@@ -1,0 +1,1028 @@
+{
+  "live" : {
+    "anthropic" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 66,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/IMG_2400x1800.gif]",
+              "sha8" : "e0628300",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 821468,
+              "bytes" : 616100,
+              "fmt" : "jpeg",
+              "h" : 1500,
+              "mime" : "image\/jpeg",
+              "sha256" : "bb88e7cd5b271c89",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 210,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/IMG_2400x1800.gif\" url=\"minis:\/\/attachments\/uploads\/IMG_2400x1800.gif\" size=\"2118884\" modifie",
+              "sha8" : "4ba796fe",
+              "tail" : "4\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 6,
+              "head" : "queued",
+              "sha8" : "d36be649",
+              "tail" : ""
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 68,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/IMG_2400x1800_1.gif]",
+              "sha8" : "52c5688f",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 821468,
+              "bytes" : 616100,
+              "fmt" : "jpeg",
+              "h" : 1500,
+              "mime" : "image\/jpeg",
+              "sha256" : "bb88e7cd5b271c89",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 214,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/IMG_2400x1800_1.gif\" url=\"minis:\/\/attachments\/uploads\/IMG_2400x1800_1.gif\" size=\"2118884\" mod",
+              "sha8" : "9c11029e",
+              "tail" : "4\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "sent",
+              "sha8" : "7afbb334",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "antigravity" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 66,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/IMG_2400x1800.gif]",
+              "sha8" : "e0628300",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 821468,
+              "bytes" : 616100,
+              "fmt" : "jpeg",
+              "h" : 1500,
+              "mime" : "image\/jpeg",
+              "sha256" : "bb88e7cd5b271c89",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 210,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/IMG_2400x1800.gif\" url=\"minis:\/\/attachments\/uploads\/IMG_2400x1800.gif\" size=\"2118884\" modifie",
+              "sha8" : "4ba796fe",
+              "tail" : "4\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 6,
+              "head" : "queued",
+              "sha8" : "d36be649",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 68,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/IMG_2400x1800_1.gif]",
+              "sha8" : "52c5688f",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 821468,
+              "bytes" : 616100,
+              "fmt" : "jpeg",
+              "h" : 1500,
+              "mime" : "image\/jpeg",
+              "sha256" : "bb88e7cd5b271c89",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 214,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/IMG_2400x1800_1.gif\" url=\"minis:\/\/attachments\/uploads\/IMG_2400x1800_1.gif\" size=\"2118884\" mod",
+              "sha8" : "9c11029e",
+              "tail" : "4\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "sent",
+              "sha8" : "7afbb334",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "chat" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 66,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/IMG_2400x1800.gif]",
+              "sha8" : "e0628300",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 821468,
+              "bytes" : 616100,
+              "fmt" : "jpeg",
+              "h" : 1500,
+              "mime" : "image\/jpeg",
+              "sha256" : "bb88e7cd5b271c89",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 258,
+              "head" : "[The image shown above is also saved at \/var\/minis\/attachments\/uploads\/IMG_2400x1800.gif — this is that same image, not an additional one. Use the path only if ",
+              "sha8" : "79454110",
+              "tail" : "e-read it at full resolution, crop, OCR, inspect metadata).]"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 210,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/IMG_2400x1800.gif\" url=\"minis:\/\/attachments\/uploads\/IMG_2400x1800.gif\" size=\"2118884\" modifie",
+              "sha8" : "4ba796fe",
+              "tail" : "4\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 6,
+              "head" : "queued",
+              "sha8" : "d36be649",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 68,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/IMG_2400x1800_1.gif]",
+              "sha8" : "52c5688f",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 821468,
+              "bytes" : 616100,
+              "fmt" : "jpeg",
+              "h" : 1500,
+              "mime" : "image\/jpeg",
+              "sha256" : "bb88e7cd5b271c89",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 260,
+              "head" : "[The image shown above is also saved at \/var\/minis\/attachments\/uploads\/IMG_2400x1800_1.gif — this is that same image, not an additional one. Use the path only i",
+              "sha8" : "a3680677",
+              "tail" : "e-read it at full resolution, crop, OCR, inspect metadata).]"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 214,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/IMG_2400x1800_1.gif\" url=\"minis:\/\/attachments\/uploads\/IMG_2400x1800_1.gif\" size=\"2118884\" mod",
+              "sha8" : "9c11029e",
+              "tail" : "4\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "sent",
+              "sha8" : "7afbb334",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "gemini" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 66,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/IMG_2400x1800.gif]",
+              "sha8" : "e0628300",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 821468,
+              "bytes" : 616100,
+              "fmt" : "jpeg",
+              "h" : 1500,
+              "mime" : "image\/jpeg",
+              "sha256" : "bb88e7cd5b271c89",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 210,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/IMG_2400x1800.gif\" url=\"minis:\/\/attachments\/uploads\/IMG_2400x1800.gif\" size=\"2118884\" modifie",
+              "sha8" : "4ba796fe",
+              "tail" : "4\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 6,
+              "head" : "queued",
+              "sha8" : "d36be649",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 68,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/IMG_2400x1800_1.gif]",
+              "sha8" : "52c5688f",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 821468,
+              "bytes" : 616100,
+              "fmt" : "jpeg",
+              "h" : 1500,
+              "mime" : "image\/jpeg",
+              "sha256" : "bb88e7cd5b271c89",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 214,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/IMG_2400x1800_1.gif\" url=\"minis:\/\/attachments\/uploads\/IMG_2400x1800_1.gif\" size=\"2118884\" mod",
+              "sha8" : "9c11029e",
+              "tail" : "4\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "sent",
+              "sha8" : "7afbb334",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "responses" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 66,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/IMG_2400x1800.gif]",
+              "sha8" : "e0628300",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "image" : {
+              "base64Len" : 821468,
+              "bytes" : 616100,
+              "fmt" : "jpeg",
+              "h" : 1500,
+              "mime" : "image\/jpeg",
+              "sha256" : "bb88e7cd5b271c89",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 258,
+              "head" : "[The image shown above is also saved at \/var\/minis\/attachments\/uploads\/IMG_2400x1800.gif — this is that same image, not an additional one. Use the path only if ",
+              "sha8" : "79454110",
+              "tail" : "e-read it at full resolution, crop, OCR, inspect metadata).]"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 210,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/IMG_2400x1800.gif\" url=\"minis:\/\/attachments\/uploads\/IMG_2400x1800.gif\" size=\"2118884\" modifie",
+              "sha8" : "4ba796fe",
+              "tail" : "4\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 6,
+              "head" : "queued",
+              "sha8" : "d36be649",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 68,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/IMG_2400x1800_1.gif]",
+              "sha8" : "52c5688f",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "image" : {
+              "base64Len" : 821468,
+              "bytes" : 616100,
+              "fmt" : "jpeg",
+              "h" : 1500,
+              "mime" : "image\/jpeg",
+              "sha256" : "bb88e7cd5b271c89",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 260,
+              "head" : "[The image shown above is also saved at \/var\/minis\/attachments\/uploads\/IMG_2400x1800_1.gif — this is that same image, not an additional one. Use the path only i",
+              "sha8" : "a3680677",
+              "tail" : "e-read it at full resolution, crop, OCR, inspect metadata).]"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 214,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/IMG_2400x1800_1.gif\" url=\"minis:\/\/attachments\/uploads\/IMG_2400x1800_1.gif\" size=\"2118884\" mod",
+              "sha8" : "9c11029e",
+              "tail" : "4\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "sent",
+              "sha8" : "7afbb334",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ]
+  },
+  "restart" : {
+    "anthropic" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 66,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/IMG_2400x1800.gif]",
+              "sha8" : "e0628300",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 821468,
+              "bytes" : 616100,
+              "fmt" : "jpeg",
+              "h" : 1500,
+              "mime" : "image\/jpeg",
+              "sha256" : "bb88e7cd5b271c89",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 210,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/IMG_2400x1800.gif\" url=\"minis:\/\/attachments\/uploads\/IMG_2400x1800.gif\" size=\"2118884\" modifie",
+              "sha8" : "4ba796fe",
+              "tail" : "4\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 6,
+              "head" : "queued",
+              "sha8" : "d36be649",
+              "tail" : ""
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 68,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/IMG_2400x1800_1.gif]",
+              "sha8" : "52c5688f",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 821468,
+              "bytes" : 616100,
+              "fmt" : "jpeg",
+              "h" : 1500,
+              "mime" : "image\/jpeg",
+              "sha256" : "bb88e7cd5b271c89",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 214,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/IMG_2400x1800_1.gif\" url=\"minis:\/\/attachments\/uploads\/IMG_2400x1800_1.gif\" size=\"2118884\" mod",
+              "sha8" : "9c11029e",
+              "tail" : "4\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "sent",
+              "sha8" : "7afbb334",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "antigravity" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 66,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/IMG_2400x1800.gif]",
+              "sha8" : "e0628300",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 821468,
+              "bytes" : 616100,
+              "fmt" : "jpeg",
+              "h" : 1500,
+              "mime" : "image\/jpeg",
+              "sha256" : "bb88e7cd5b271c89",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 210,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/IMG_2400x1800.gif\" url=\"minis:\/\/attachments\/uploads\/IMG_2400x1800.gif\" size=\"2118884\" modifie",
+              "sha8" : "4ba796fe",
+              "tail" : "4\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 6,
+              "head" : "queued",
+              "sha8" : "d36be649",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 68,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/IMG_2400x1800_1.gif]",
+              "sha8" : "52c5688f",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 821468,
+              "bytes" : 616100,
+              "fmt" : "jpeg",
+              "h" : 1500,
+              "mime" : "image\/jpeg",
+              "sha256" : "bb88e7cd5b271c89",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 214,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/IMG_2400x1800_1.gif\" url=\"minis:\/\/attachments\/uploads\/IMG_2400x1800_1.gif\" size=\"2118884\" mod",
+              "sha8" : "9c11029e",
+              "tail" : "4\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "sent",
+              "sha8" : "7afbb334",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "chat" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 66,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/IMG_2400x1800.gif]",
+              "sha8" : "e0628300",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 821468,
+              "bytes" : 616100,
+              "fmt" : "jpeg",
+              "h" : 1500,
+              "mime" : "image\/jpeg",
+              "sha256" : "bb88e7cd5b271c89",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 258,
+              "head" : "[The image shown above is also saved at \/var\/minis\/attachments\/uploads\/IMG_2400x1800.gif — this is that same image, not an additional one. Use the path only if ",
+              "sha8" : "79454110",
+              "tail" : "e-read it at full resolution, crop, OCR, inspect metadata).]"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 210,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/IMG_2400x1800.gif\" url=\"minis:\/\/attachments\/uploads\/IMG_2400x1800.gif\" size=\"2118884\" modifie",
+              "sha8" : "4ba796fe",
+              "tail" : "4\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 6,
+              "head" : "queued",
+              "sha8" : "d36be649",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 68,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/IMG_2400x1800_1.gif]",
+              "sha8" : "52c5688f",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 821468,
+              "bytes" : 616100,
+              "fmt" : "jpeg",
+              "h" : 1500,
+              "mime" : "image\/jpeg",
+              "sha256" : "bb88e7cd5b271c89",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 260,
+              "head" : "[The image shown above is also saved at \/var\/minis\/attachments\/uploads\/IMG_2400x1800_1.gif — this is that same image, not an additional one. Use the path only i",
+              "sha8" : "a3680677",
+              "tail" : "e-read it at full resolution, crop, OCR, inspect metadata).]"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 214,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/IMG_2400x1800_1.gif\" url=\"minis:\/\/attachments\/uploads\/IMG_2400x1800_1.gif\" size=\"2118884\" mod",
+              "sha8" : "9c11029e",
+              "tail" : "4\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "sent",
+              "sha8" : "7afbb334",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "gemini" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 66,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/IMG_2400x1800.gif]",
+              "sha8" : "e0628300",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 821468,
+              "bytes" : 616100,
+              "fmt" : "jpeg",
+              "h" : 1500,
+              "mime" : "image\/jpeg",
+              "sha256" : "bb88e7cd5b271c89",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 210,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/IMG_2400x1800.gif\" url=\"minis:\/\/attachments\/uploads\/IMG_2400x1800.gif\" size=\"2118884\" modifie",
+              "sha8" : "4ba796fe",
+              "tail" : "4\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 6,
+              "head" : "queued",
+              "sha8" : "d36be649",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 68,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/IMG_2400x1800_1.gif]",
+              "sha8" : "52c5688f",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 821468,
+              "bytes" : 616100,
+              "fmt" : "jpeg",
+              "h" : 1500,
+              "mime" : "image\/jpeg",
+              "sha256" : "bb88e7cd5b271c89",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 214,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/IMG_2400x1800_1.gif\" url=\"minis:\/\/attachments\/uploads\/IMG_2400x1800_1.gif\" size=\"2118884\" mod",
+              "sha8" : "9c11029e",
+              "tail" : "4\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "sent",
+              "sha8" : "7afbb334",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "responses" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 66,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/IMG_2400x1800.gif]",
+              "sha8" : "e0628300",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "image" : {
+              "base64Len" : 821468,
+              "bytes" : 616100,
+              "fmt" : "jpeg",
+              "h" : 1500,
+              "mime" : "image\/jpeg",
+              "sha256" : "bb88e7cd5b271c89",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 258,
+              "head" : "[The image shown above is also saved at \/var\/minis\/attachments\/uploads\/IMG_2400x1800.gif — this is that same image, not an additional one. Use the path only if ",
+              "sha8" : "79454110",
+              "tail" : "e-read it at full resolution, crop, OCR, inspect metadata).]"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 210,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/IMG_2400x1800.gif\" url=\"minis:\/\/attachments\/uploads\/IMG_2400x1800.gif\" size=\"2118884\" modifie",
+              "sha8" : "4ba796fe",
+              "tail" : "4\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 6,
+              "head" : "queued",
+              "sha8" : "d36be649",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 68,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/IMG_2400x1800_1.gif]",
+              "sha8" : "52c5688f",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "image" : {
+              "base64Len" : 821468,
+              "bytes" : 616100,
+              "fmt" : "jpeg",
+              "h" : 1500,
+              "mime" : "image\/jpeg",
+              "sha256" : "bb88e7cd5b271c89",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 260,
+              "head" : "[The image shown above is also saved at \/var\/minis\/attachments\/uploads\/IMG_2400x1800_1.gif — this is that same image, not an additional one. Use the path only i",
+              "sha8" : "a3680677",
+              "tail" : "e-read it at full resolution, crop, OCR, inspect metadata).]"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 214,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/IMG_2400x1800_1.gif\" url=\"minis:\/\/attachments\/uploads\/IMG_2400x1800_1.gif\" size=\"2118884\" mod",
+              "sha8" : "9c11029e",
+              "tail" : "4\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "sent",
+              "sha8" : "7afbb334",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ]
+  }
+}

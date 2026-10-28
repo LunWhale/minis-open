@@ -1,4 +1,5 @@
 import XCTest
+@testable import Minis
 
 /// Pure-logic coverage for Kimi Code OAuth: the refresh-race compare-before-delete
 /// backstop (mirrors ClaudeOAuthRefreshRaceTests) and the RFC 8628 device-flow

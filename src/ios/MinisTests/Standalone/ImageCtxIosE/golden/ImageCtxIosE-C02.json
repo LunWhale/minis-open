@@ -1,0 +1,166 @@
+{
+  "live" : {
+    "anthropic" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 200000,
+              "head" : "context budget image request provider summary anchor token stream tool context budget image.\nrequest provider summary anchor token stream tool context budget im",
+              "sha8" : "4dd5a79a",
+              "tail" : "am.\ntool context budget image request provider summary ancho"
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "antigravity" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 200000,
+              "head" : "context budget image request provider summary anchor token stream tool context budget image.\nrequest provider summary anchor token stream tool context budget im",
+              "sha8" : "4dd5a79a",
+              "tail" : "am.\ntool context budget image request provider summary ancho"
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "chat" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 200000,
+              "head" : "context budget image request provider summary anchor token stream tool context budget image.\nrequest provider summary anchor token stream tool context budget im",
+              "sha8" : "4dd5a79a",
+              "tail" : "am.\ntool context budget image request provider summary ancho"
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "gemini" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 200000,
+              "head" : "context budget image request provider summary anchor token stream tool context budget image.\nrequest provider summary anchor token stream tool context budget im",
+              "sha8" : "4dd5a79a",
+              "tail" : "am.\ntool context budget image request provider summary ancho"
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "responses" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 200000,
+              "head" : "context budget image request provider summary anchor token stream tool context budget image.\nrequest provider summary anchor token stream tool context budget im",
+              "sha8" : "4dd5a79a",
+              "tail" : "am.\ntool context budget image request provider summary ancho"
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ]
+  },
+  "restart" : {
+    "anthropic" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 200000,
+              "head" : "context budget image request provider summary anchor token stream tool context budget image.\nrequest provider summary anchor token stream tool context budget im",
+              "sha8" : "4dd5a79a",
+              "tail" : "am.\ntool context budget image request provider summary ancho"
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "antigravity" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 200000,
+              "head" : "context budget image request provider summary anchor token stream tool context budget image.\nrequest provider summary anchor token stream tool context budget im",
+              "sha8" : "4dd5a79a",
+              "tail" : "am.\ntool context budget image request provider summary ancho"
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "chat" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 200000,
+              "head" : "context budget image request provider summary anchor token stream tool context budget image.\nrequest provider summary anchor token stream tool context budget im",
+              "sha8" : "4dd5a79a",
+              "tail" : "am.\ntool context budget image request provider summary ancho"
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "gemini" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 200000,
+              "head" : "context budget image request provider summary anchor token stream tool context budget image.\nrequest provider summary anchor token stream tool context budget im",
+              "sha8" : "4dd5a79a",
+              "tail" : "am.\ntool context budget image request provider summary ancho"
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "responses" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 200000,
+              "head" : "context budget image request provider summary anchor token stream tool context budget image.\nrequest provider summary anchor token stream tool context budget im",
+              "sha8" : "4dd5a79a",
+              "tail" : "am.\ntool context budget image request provider summary ancho"
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ]
+  }
+}

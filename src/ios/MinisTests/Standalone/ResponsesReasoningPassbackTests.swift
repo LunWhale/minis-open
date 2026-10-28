@@ -28,6 +28,38 @@
 // stale copy.
 import Foundation
 
+/// The chat page's sources, read as one text: AIChatView.swift (state and
+/// `body`) first, then every other file under Views/Chat/AIChatView/ - the
+/// old single AIChatView.swift was split into them.
+func chatViewSource() -> String {
+    let ios = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let dir = ios.appendingPathComponent("Views/Chat/AIChatView")
+    let main = dir.appendingPathComponent("AIChatView.swift")
+    let rest = (FileManager.default.enumerator(at: dir, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? [])
+        .filter { $0.pathExtension == "swift" && $0.lastPathComponent != "AIChatView.swift" }
+        .sorted { $0.path < $1.path }
+    return ([main] + rest).compactMap { try? String(contentsOf: $0, encoding: .utf8) }.joined(separator: "\n")
+}
+
+/// The sources that used to be the single file Agent/Chat/ChatStore.swift -
+/// the actor plus the files it was split into - read as one text.
+func chatStoreSource() -> String {
+    let chat = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Agent/Chat")
+    let names = ["ChatStore", "ChatStore+Schema", "ChatStore+SessionCRUD", "ChatStore+SessionList",
+                 "ChatStore+Search", "ChatStore+SessionQueries", "ChatStore+Folders",
+                 "ChatStore+SessionDeletion", "ChatStore+StoredPreview", "ChatStore+Messages",
+                 "ChatStore+Media", "ChatStore+CompactMarkers", "ChatStore+Tombstones",
+                 "ChatStore+WebAppShortcuts", "ChatStore+Maintenance", "ChatStore+Helpers",
+                 "ChatStore+UsageStats", "ChatStoreModels", "ContentPart+ProviderConversion",
+                 "RawMessage+Conversion", "ChatStore+SyncDirty", "ChatStore+SyncRemoteSessions",
+                 "ChatStore+SyncRemoteRecords", "ChatStore+BackupRestore"]
+    return names.compactMap { try? String(contentsOf: chat.appendingPathComponent($0 + ".swift"), encoding: .utf8) }
+        .joined(separator: "\n")
+}
+
 var failures = 0
 func check(_ label: String, _ cond: Bool) {
     print(cond ? "  ✅ \(label)" : "  ❌ \(label) — expected true, got false")
@@ -321,7 +353,7 @@ do {
     let agent = source("Providers/OpenAI/OpenAIAgentProvider.swift")
     let proto = source("Providers/AgentProvider.swift")
     let row = source("Views/Chat/ChatMessageViews.swift")
-    let banner = source("Views/Chat/AIChatView.swift")
+    let banner = chatViewSource()
     if agent.isEmpty || proto.isEmpty || row.isEmpty || banner.isEmpty {
         print("  ⏭  sources not readable from \(#filePath)")
     } else {
@@ -506,7 +538,7 @@ do {
     checkEq("…and the upstream accepts it", upstreamRejection(input), nil)
 
     // Source wiring — the three points that must move together.
-    let store = source("Agent/Chat/ChatStore.swift")
+    let store = chatStoreSource()
     let agentP = source("Providers/AgentProvider.swift")
     let persist = source("Agent/Chat/AIChatViewModel+Persistence.swift")
     check("the column is created idempotently",

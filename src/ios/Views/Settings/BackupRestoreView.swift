@@ -45,6 +45,7 @@ struct BackupRestoreView: View {
     @State private var inspectTask: Task<Void, Never>?
     @State private var isWorking = false
     @State private var statusText = ""
+    @FocusState private var passphraseFocused: Bool
     @State private var errorText: String?
     @State private var report: BackupImporter.Report?
     @State private var showConfirm = false
@@ -111,7 +112,13 @@ struct BackupRestoreView: View {
             // rather than only after leaving and re-entering the screen.
             .onDisappear { remotes = RcloneRemoteStore.remotes }
         }
-        .confirmationDialog("Restore this backup?", isPresented: $showConfirm, titleVisibility: .visible) {
+        // [T-restore-confirm-alert] An alert, not a confirmationDialog. On
+        // iOS 26 a confirmation dialog presents as a POPOVER anchored to its
+        // source view, which here is the whole restore screen, so the question
+        // floated as a speech bubble over the middle of the category list,
+        // pointing at an unrelated row. A centred alert is the right shape for
+        // a single yes/no about the whole operation.
+        .alert("Restore this backup?", isPresented: $showConfirm) {
             Button("Restore") { Task { await runImport() } }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -461,8 +468,13 @@ struct BackupRestoreView: View {
 
     private var passphraseSection: some View {
         Section {
+            // [T-restore-lock-passphrase] Locked while the restore runs: the
+            // passphrase is already in use, and a focused field kept raising
+            // the keyboard over the progress line.
             SecureField("Passphrase", text: $passphrase)
                 .textContentType(.password)
+                .focused($passphraseFocused)
+                .disabled(isWorking)
         } header: {
             Text("Encryption")
         } footer: {
@@ -473,6 +485,9 @@ struct BackupRestoreView: View {
     private var actionSection: some View {
         Section {
             Button {
+                // [T-restore-lock-passphrase] Put the keyboard away before the
+                // confirmation, so it is not left up for the whole restore.
+                passphraseFocused = false
                 showConfirm = true
             } label: {
                 // [T-restore-primary-action] Centred icon + label, matching
@@ -773,8 +788,16 @@ struct BackupRestoreView: View {
         let size = ByteCountFormatter.string(fromByteCount: stat.bytes, countStyle: .file)
         switch c {
         case .chats:
+            // [T-restore-progress-localized] Counted through countLabel like
+            // every other category; this line was a bare English literal.
             if let messages = stat.messages, let files = stat.files {
-                return "\(messages) messages · \(files) files · \(size)"
+                let m = countLabel(messages,
+                                   one: AppLocalized("1 message"),
+                                   many: AppLocalized("%d messages"))
+                let f = countLabel(files,
+                                   one: AppLocalized("1 file"),
+                                   many: AppLocalized("%d files"))
+                return "\(m) · \(f) · \(size)"
             }
         case .skills:
             let skills = countLabel(stat.entries,
@@ -806,20 +829,14 @@ struct BackupRestoreView: View {
         default:
             break
         }
-        return "\(stat.entries) items · \(size)"
+        let items = countLabel(stat.entries,
+                               one: AppLocalized("1 item"),
+                               many: AppLocalized("%d items"))
+        return "\(items) · \(size)"
     }
 
     private func displayName(_ c: BackupCategory) -> String {
-        switch c {
-        case .chats: return AppLocalized("Chats")
-        case .sharedFiles: return AppLocalized("Shared Files")
-        case .skills: return AppLocalized("Skills")
-        case .memory: return AppLocalized("Memory & Soul")
-        case .providers: return AppLocalized("Providers")
-        case .mcpServers: return AppLocalized("MCP Servers")
-        case .voiceCorrections: return AppLocalized("Voice Corrections")
-        case .environmentVariables: return AppLocalized("Environment Variables")
-        }
+        c.localizedName
     }
 
     private func displayNameRaw(_ raw: String) -> String {
@@ -845,6 +862,10 @@ struct FolderPackageListView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var packages: [BackupDestinations.FoundPackage] = []
     @State private var loading = true
+    /// [T-restore-list-swipe-delete] Package awaiting delete confirmation —
+    /// the item itself, so the alert names it and a reload cannot retarget it.
+    @State private var pendingDelete: BackupDestinations.FoundPackage?
+    @State private var errorText: String?
 
     var body: some View {
         List {
@@ -900,6 +921,22 @@ struct FolderPackageListView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                // [T-restore-list-swipe-delete] Same gesture and safeguards as
+                // the destination detail screen: reveal, then a named
+                // confirmation; no full swipe, since the file is really gone.
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    Button(role: .destructive) {
+                        pendingDelete = pkg
+                    } label: {
+                        Label(AppLocalized("Delete"), systemImage: "trash")
+                    }
+                }
+            }
+
+            if let errorText {
+                Text(errorText)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
             }
             } footer: {
                 if !packages.isEmpty {
@@ -910,7 +947,39 @@ struct FolderPackageListView: View {
         .refreshable { await reload() }
         .navigationTitle(folder.name)
         .navigationBarTitleDisplayMode(.inline)
+        .alert(item: $pendingDelete) { pkg in
+            Alert(
+                title: Text(AppLocalized("Delete this backup file?")),
+                message: Text(String(
+                    format: AppLocalized("“%1$@” (%2$@) will be permanently deleted from this folder. There is no trash to recover it from, and any data only in this backup will be lost. This cannot be undone."),
+                    pkg.url.lastPathComponent,
+                    ByteCountFormatter.string(fromByteCount: pkg.size, countStyle: .file))),
+                primaryButton: .destructive(Text(AppLocalized("Delete Backup"))) {
+                    Task { await delete(pkg) }
+                },
+                secondaryButton: .cancel(Text(AppLocalized("Cancel")))
+            )
+        }
         .task { await reload() }
+    }
+
+    /// Through `MountedFolderCoordinator.remove`, like the destination detail
+    /// screen: the file may sit under a FileProvider mount where an
+    /// uncoordinated delete fails or races, and `remove` enforces the mount's
+    /// writability. Re-lists afterwards so the rows reflect the folder.
+    private func delete(_ pkg: BackupDestinations.FoundPackage) async {
+        errorText = nil
+        do {
+            let url = pkg.url
+            try await Task.detached(priority: .utility) {
+                try MountedFolderCoordinator.remove(at: url)
+            }.value
+        } catch {
+            // Surfaced, not swallowed: dropping the row on a failed delete
+            // would claim the file is gone while it is still there.
+            errorText = error.localizedDescription
+        }
+        await reload()
     }
 
     private func reload() async {
@@ -1053,10 +1122,33 @@ struct ServerPackageListView: View {
     @State private var downloadFraction: Double = 0
     /// Current transfer rate, formatted for display, and the time left.
     @State private var speedText = ""
-    /// [T-restore-download-confirm] Package awaiting the user's go-ahead.
-    /// Holds the package itself rather than a Bool so the alert can state its
-    /// size, and so a list reload cannot retarget the confirmation.
-    @State private var pendingDownload: RcloneTransfer.RemotePackage?
+    /// What a confirmation alert is waiting on: downloading a package or
+    /// deleting it. Holds the package itself rather than a Bool so the alert
+    /// can state its size, and so a list reload cannot retarget it.
+    ///
+    /// [T-restore-download-alert-shadowed] ONE alert for both. Each used to
+    /// have its own legacy `.alert(item:)`, chained on the same view, and
+    /// SwiftUI presents only the outer one of two such modifiers: once the
+    /// delete alert landed (10ca796fc) tapping a package set the download
+    /// state but no alert ever appeared, so no backup on a server could be
+    /// restored. A single alert driven by an enum cannot shadow itself.
+    private enum PendingConfirm: Identifiable {
+        /// [T-restore-download-confirm]
+        case download(RcloneTransfer.RemotePackage)
+        /// [T-restore-list-swipe-delete]
+        case delete(RcloneTransfer.RemotePackage)
+
+        var id: String {
+            switch self {
+            case .download(let pkg): return "download:" + pkg.id
+            case .delete(let pkg): return "delete:" + pkg.id
+            }
+        }
+    }
+    @State private var pendingConfirm: PendingConfirm?
+    /// [T-restore-download-pop-after-sheet] A finished download waiting for
+    /// the progress sheet to finish closing before it is handed on.
+    @State private var downloadedURL: URL?
     /// Set by Cancel; the transfer's poll loop reads it from a background
     /// thread.
     ///
@@ -1110,26 +1202,71 @@ struct ServerPackageListView: View {
         // was missing: a way out.
         .sheet(isPresented: Binding(
             get: { downloadingKey != nil },
-            set: { if !$0 { downloadingKey = nil } })) {
+            set: { if !$0 { downloadingKey = nil } }),
+            onDismiss: handOffDownload) {
             downloadSheet
         }
         // [T-restore-download-confirm] Says how big the download is before it
         // starts. Leads with the size because that is the decision — the name
         // is already on the row the user just tapped.
-        .alert(item: $pendingDownload) { pkg in
-            Alert(
-                title: Text(AppLocalized("Download this backup?")),
-                message: Text(String(
-                    format: AppLocalized("“%1$@” is %2$@. It will be downloaded to this iPhone before restoring."),
-                    pkg.displayName,
-                    ByteCountFormatter.string(fromByteCount: pkg.size, countStyle: .file))),
-                primaryButton: .default(Text(AppLocalized("Download"))) {
-                    download(pkg)
-                },
-                secondaryButton: .cancel(Text(AppLocalized("Cancel")))
-            )
+        .alert(item: $pendingConfirm) { confirm in
+            switch confirm {
+            case .download(let pkg):
+                return downloadAlert(pkg)
+            case .delete(let pkg):
+                return deleteAlert(pkg)
+            }
         }
         .task { await reload() }
+    }
+
+    private func downloadAlert(_ pkg: RcloneTransfer.RemotePackage) -> Alert {
+        Alert(
+            title: Text(AppLocalized("Download this backup?")),
+            message: Text(String(
+                format: AppLocalized("“%1$@” is %2$@. It will be downloaded to this iPhone before restoring."),
+                pkg.displayName,
+                ByteCountFormatter.string(fromByteCount: pkg.size, countStyle: .file))),
+            primaryButton: .default(Text(AppLocalized("Download"))) {
+                download(pkg)
+            },
+            secondaryButton: .cancel(Text(AppLocalized("Cancel")))
+        )
+    }
+
+    private func deleteAlert(_ pkg: RcloneTransfer.RemotePackage) -> Alert {
+        Alert(
+            title: Text(AppLocalized("Delete this backup file?")),
+            message: Text(String(
+                format: AppLocalized("“%1$@” (%2$@) will be permanently deleted from this server. There is no trash to recover it from, and any data only in this backup will be lost. This cannot be undone."),
+                pkg.displayName,
+                ByteCountFormatter.string(fromByteCount: pkg.size, countStyle: .file))),
+            primaryButton: .destructive(Text(AppLocalized("Delete Backup"))) {
+                Task { await delete(pkg) }
+            },
+            secondaryButton: .cancel(Text(AppLocalized("Cancel")))
+        )
+    }
+
+    /// [T-restore-list-swipe-delete] Delete by the entry's full path (its
+    /// key), so a package in a subfolder is addressed correctly, then re-list
+    /// the same folder so the rows reflect the server.
+    private func delete(_ pkg: RcloneTransfer.RemotePackage) async {
+        let r = remote
+        // [T-restore-list-sync-race] Awaited, as in reload() below.
+        await RcloneRemoteStore.syncToRcloneAndWait()
+        do {
+            try await Task.detached(priority: .utility) {
+                try RcloneTransfer.deletePackage(pkg, from: r)
+            }.value
+        } catch {
+            // Surfaced, not swallowed. reload() clears errorText, so it is
+            // set again after the re-list below.
+            await reload()
+            errorText = error.localizedDescription
+            return
+        }
+        await reload()
     }
 
     /// [T-restore-breadcrumb] The location bar: a back chevron, then the path
@@ -1278,7 +1415,7 @@ struct ServerPackageListView: View {
                         // that starts it looks exactly like the tap that opens
                         // a folder — on cellular or a metered connection that
                         // is an expensive thing to trigger by accident.
-                        pendingDownload = e.asPackage
+                        pendingConfirm = .download(e.asPackage)
                     } label: {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(e.name)
@@ -1291,6 +1428,18 @@ struct ServerPackageListView: View {
                         }
                     }
                     .disabled(downloadingKey != nil)
+                    // [T-restore-list-swipe-delete] Swipe to delete the file
+                    // on the server, as in the destination detail screen:
+                    // confirmed by name, no full swipe — SMB / WebDAV / SFTP
+                    // have no trash to undo it from.
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button(role: .destructive) {
+                            pendingConfirm = .delete(e.asPackage)
+                        } label: {
+                            Label(AppLocalized("Delete"), systemImage: "trash")
+                        }
+                        .disabled(downloadingKey != nil || loading)
+                    }
                 }
             }
 
@@ -1422,7 +1571,18 @@ struct ServerPackageListView: View {
         // this and this screen did not, so a remote that had been edited (or
         // added in this launch) could be listed against stale config — an
         // empty list or an auth error on a server that is perfectly fine.
-        RcloneRemoteStore.syncToRclone()
+        //
+        // [T-restore-list-sync-race] AWAITED. The fire-and-forget
+        // syncToRclone() only starts the write on a detached task, so the
+        // listing below raced it — and the write is not atomic per remote:
+        // rclone's config/create first DELETES the section, then sets type,
+        // user and pass one key at a time (fs/config/config.go CreateRemote).
+        // A listing that landed in that window read a HomeLab section with no
+        // password, and SMB answered "The attempted logon is invalid" for
+        // credentials that were correct; Up and back in again worked because
+        // the write had finished by then. Every folder change re-syncs, so
+        // this was hit while browsing, not just on first open.
+        await RcloneRemoteStore.syncToRcloneAndWait()
         do {
             // rclone RPCs are blocking — keep them off the main actor.
             let found = try await Task.detached(priority: .userInitiated) {
@@ -1478,9 +1638,10 @@ struct ServerPackageListView: View {
                         }
                     }
                 }.value
+                // [T-restore-download-pop-after-sheet] Close the sheet only;
+                // handOffDownload() pops and hands the file on once it is gone.
+                downloadedURL = dest
                 downloadingKey = nil
-                dismiss()
-                onPicked(dest)
             } catch is RcloneTransfer.TransferError where cancelFlag.value {
                 // User's own action — dismiss quietly rather than showing red.
                 downloadingKey = nil
@@ -1491,6 +1652,27 @@ struct ServerPackageListView: View {
                 Self.discardScratch(dest)
             }
         }
+    }
+
+    /// [T-restore-download-pop-after-sheet] Leave the browser and pass the
+    /// downloaded package to the restore screen, AFTER the progress sheet has
+    /// closed.
+    ///
+    /// This used to run in the same turn as the sheet's dismissal
+    /// (`downloadingKey = nil; dismiss(); onPicked(dest)`). The sheet belongs
+    /// to this view, so the pop was requested while its dismiss transition was
+    /// running, and UIKit drops a navigation pop issued during a presentation
+    /// transition: the download finished, the restore screen underneath began
+    /// reading the package, and the user was left on the folder listing with
+    /// no sign anything had happened. `onDismiss` runs after the sheet is gone.
+    ///
+    /// Cancel and failure also close the sheet but leave `downloadedURL` nil,
+    /// so they stay on the list as before.
+    private func handOffDownload() {
+        guard let url = downloadedURL else { return }
+        downloadedURL = nil
+        dismiss()
+        onPicked(url)
     }
 
     /// [T-restore-download-scratch-leak] Remove the whole per-download scratch

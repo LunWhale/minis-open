@@ -1,0 +1,3754 @@
+{
+ "_about": "FEAT-261024-06 (was FEAT-261024-04) / PAR-261023-01 section 3.3: shared cases for partitionWithUnread, MIRROR semantics. An unread chat keeps its own row in its place (Pinned / group / date bucket, with its red dot) and also gets a mirror row in the Unread section, id unread:<sessionId>. Both rows read one unread state; once it is gone the mirror row stays, read (readAt), below the unread rows, until a return to the foreground (or a cold start) finds it read more than 15 minutes ago, or the chat runs for 300 ms (FEAT-261025-01). readAt is optional, {id: readAt}; a read row has read=true; readCount counts them (at most 10, outside maxVisible). lifecycle cases replay events through UnreadRetention.reduce (unread, read, markAllRead, undo, runStart, runEnd, tick, foreground, coldStart) and expect the resulting unread, readAt and the partition's section with default options. No lifted list, no group counts. Defaults: search=false, enabled=true, maxVisible=5, collapsed=false, showAll=false. source is none | pinned | folder:<id> (the label shows that folder's current name). Times are any monotonic number. mirrored lists every chat the section mirrors, hidden and folded ones included.",
+ "cases": [
+  {
+   "id": "1",
+   "name": "no unread: no section",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "unread": {},
+   "expect": {
+    "section": null,
+    "mirrored": []
+   }
+  },
+  {
+   "id": "2",
+   "name": "plain unread chat: mirrored, its own row stays where it is",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "unread": {
+    "A": 100
+   },
+   "expect": {
+    "section": {
+     "rows": [
+      {
+       "id": "A",
+       "rowId": "unread:A",
+       "source": "none"
+      }
+     ],
+     "hiddenCount": 0,
+     "totalUnread": 1,
+     "readCount": 0,
+     "collapsed": false
+    },
+    "mirrored": [
+     "A"
+    ]
+   },
+   "note": "The partition never takes a chat out of its place; the list around the section is laid out as without it."
+  },
+  {
+   "id": "3",
+   "name": "unread in a group: mirror row labelled with the group",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "unread": {
+    "C": 100
+   },
+   "expect": {
+    "section": {
+     "rows": [
+      {
+       "id": "C",
+       "rowId": "unread:C",
+       "source": "folder:F1"
+      }
+     ],
+     "hiddenCount": 0,
+     "totalUnread": 1,
+     "readCount": 0,
+     "collapsed": false
+    },
+    "mirrored": [
+     "C"
+    ]
+   },
+   "note": "The group card keeps its own rule (dot while folded) and its members; the partition has no group counts."
+  },
+  {
+   "id": "4",
+   "name": "pinned unread: labelled Pinned",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "unread": {
+    "P": 100
+   },
+   "expect": {
+    "section": {
+     "rows": [
+      {
+       "id": "P",
+       "rowId": "unread:P",
+       "source": "pinned"
+      }
+     ],
+     "hiddenCount": 0,
+     "totalUnread": 1,
+     "readCount": 0,
+     "collapsed": false
+    },
+    "mirrored": [
+     "P"
+    ]
+   }
+  },
+  {
+   "id": "5",
+   "name": "pinned and in a group: the group wins",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    },
+    {
+     "id": "Q",
+     "updatedAt": 50,
+     "pinned": true,
+     "folderId": "F1"
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "unread": {
+    "Q": 100
+   },
+   "expect": {
+    "section": {
+     "rows": [
+      {
+       "id": "Q",
+       "rowId": "unread:Q",
+       "source": "folder:F1"
+      }
+     ],
+     "hiddenCount": 0,
+     "totalUnread": 1,
+     "readCount": 0,
+     "collapsed": false
+    },
+    "mirrored": [
+     "Q"
+    ]
+   }
+  },
+  {
+   "id": "6",
+   "name": "sub-agent chat is never mirrored",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    },
+    {
+     "id": "K",
+     "updatedAt": 60,
+     "parentId": "A"
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "unread": {
+    "K": 100
+   },
+   "expect": {
+    "section": null,
+    "mirrored": []
+   }
+  },
+  {
+   "id": "7",
+   "name": "order: unreadAt desc",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "unread": {
+    "A": 200,
+    "B": 300,
+    "C": 100
+   },
+   "expect": {
+    "section": {
+     "rows": [
+      {
+       "id": "B",
+       "rowId": "unread:B",
+       "source": "none"
+      },
+      {
+       "id": "A",
+       "rowId": "unread:A",
+       "source": "none"
+      },
+      {
+       "id": "C",
+       "rowId": "unread:C",
+       "source": "folder:F1"
+      }
+     ],
+     "hiddenCount": 0,
+     "totalUnread": 3,
+     "readCount": 0,
+     "collapsed": false
+    },
+    "mirrored": [
+     "A",
+     "B",
+     "C"
+    ]
+   }
+  },
+  {
+   "id": "8",
+   "name": "same unreadAt: updatedAt desc, then id",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "unread": {
+    "A": 100,
+    "B": 100,
+    "C": 100
+   },
+   "expect": {
+    "section": {
+     "rows": [
+      {
+       "id": "C",
+       "rowId": "unread:C",
+       "source": "folder:F1"
+      },
+      {
+       "id": "B",
+       "rowId": "unread:B",
+       "source": "none"
+      },
+      {
+       "id": "A",
+       "rowId": "unread:A",
+       "source": "none"
+      }
+     ],
+     "hiddenCount": 0,
+     "totalUnread": 3,
+     "readCount": 0,
+     "collapsed": false
+    },
+    "mirrored": [
+     "A",
+     "B",
+     "C"
+    ]
+   }
+  },
+  {
+   "id": "9",
+   "name": "truncated at maxVisible: the rest behind Show N More, still mirrored",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 0
+    },
+    {
+     "id": "B",
+     "updatedAt": 1
+    },
+    {
+     "id": "C",
+     "updatedAt": 2
+    },
+    {
+     "id": "D",
+     "updatedAt": 3
+    },
+    {
+     "id": "E",
+     "updatedAt": 4
+    },
+    {
+     "id": "F",
+     "updatedAt": 5
+    },
+    {
+     "id": "G",
+     "updatedAt": 6
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "unread": {
+    "A": 100,
+    "B": 101,
+    "C": 102,
+    "D": 103,
+    "E": 104,
+    "F": 105,
+    "G": 106
+   },
+   "expect": {
+    "section": {
+     "rows": [
+      {
+       "id": "G",
+       "rowId": "unread:G",
+       "source": "none"
+      },
+      {
+       "id": "F",
+       "rowId": "unread:F",
+       "source": "none"
+      },
+      {
+       "id": "E",
+       "rowId": "unread:E",
+       "source": "none"
+      },
+      {
+       "id": "D",
+       "rowId": "unread:D",
+       "source": "none"
+      },
+      {
+       "id": "C",
+       "rowId": "unread:C",
+       "source": "none"
+      }
+     ],
+     "hiddenCount": 2,
+     "totalUnread": 7,
+     "readCount": 0,
+     "collapsed": false
+    },
+    "mirrored": [
+     "A",
+     "B",
+     "C",
+     "D",
+     "E",
+     "F",
+     "G"
+    ]
+   }
+  },
+  {
+   "id": "10",
+   "name": "Show N More expanded",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 0
+    },
+    {
+     "id": "B",
+     "updatedAt": 1
+    },
+    {
+     "id": "C",
+     "updatedAt": 2
+    },
+    {
+     "id": "D",
+     "updatedAt": 3
+    },
+    {
+     "id": "E",
+     "updatedAt": 4
+    },
+    {
+     "id": "F",
+     "updatedAt": 5
+    },
+    {
+     "id": "G",
+     "updatedAt": 6
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "unread": {
+    "A": 100,
+    "B": 101,
+    "C": 102,
+    "D": 103,
+    "E": 104,
+    "F": 105,
+    "G": 106
+   },
+   "showAll": true,
+   "expect": {
+    "section": {
+     "rows": [
+      {
+       "id": "G",
+       "rowId": "unread:G",
+       "source": "none"
+      },
+      {
+       "id": "F",
+       "rowId": "unread:F",
+       "source": "none"
+      },
+      {
+       "id": "E",
+       "rowId": "unread:E",
+       "source": "none"
+      },
+      {
+       "id": "D",
+       "rowId": "unread:D",
+       "source": "none"
+      },
+      {
+       "id": "C",
+       "rowId": "unread:C",
+       "source": "none"
+      },
+      {
+       "id": "B",
+       "rowId": "unread:B",
+       "source": "none"
+      },
+      {
+       "id": "A",
+       "rowId": "unread:A",
+       "source": "none"
+      }
+     ],
+     "hiddenCount": 0,
+     "totalUnread": 7,
+     "readCount": 0,
+     "collapsed": false
+    },
+    "mirrored": [
+     "A",
+     "B",
+     "C",
+     "D",
+     "E",
+     "F",
+     "G"
+    ]
+   }
+  },
+  {
+   "id": "11",
+   "name": "maxVisible 3",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 0
+    },
+    {
+     "id": "B",
+     "updatedAt": 1
+    },
+    {
+     "id": "C",
+     "updatedAt": 2
+    },
+    {
+     "id": "D",
+     "updatedAt": 3
+    },
+    {
+     "id": "E",
+     "updatedAt": 4
+    },
+    {
+     "id": "F",
+     "updatedAt": 5
+    },
+    {
+     "id": "G",
+     "updatedAt": 6
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "unread": {
+    "A": 100,
+    "B": 101,
+    "C": 102,
+    "D": 103,
+    "E": 104,
+    "F": 105,
+    "G": 106
+   },
+   "maxVisible": 3,
+   "expect": {
+    "section": {
+     "rows": [
+      {
+       "id": "G",
+       "rowId": "unread:G",
+       "source": "none"
+      },
+      {
+       "id": "F",
+       "rowId": "unread:F",
+       "source": "none"
+      },
+      {
+       "id": "E",
+       "rowId": "unread:E",
+       "source": "none"
+      }
+     ],
+     "hiddenCount": 4,
+     "totalUnread": 7,
+     "readCount": 0,
+     "collapsed": false
+    },
+    "mirrored": [
+     "A",
+     "B",
+     "C",
+     "D",
+     "E",
+     "F",
+     "G"
+    ]
+   }
+  },
+  {
+   "id": "12",
+   "name": "collapsed: no mirror rows, header keeps the count",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "unread": {
+    "A": 100,
+    "B": 200
+   },
+   "collapsed": true,
+   "expect": {
+    "section": {
+     "rows": [],
+     "hiddenCount": 0,
+     "totalUnread": 2,
+     "readCount": 0,
+     "collapsed": true
+    },
+    "mirrored": [
+     "A",
+     "B"
+    ]
+   }
+  },
+  {
+   "id": "13",
+   "name": "collapsed and over the quota: no Show N More either",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 0
+    },
+    {
+     "id": "B",
+     "updatedAt": 1
+    },
+    {
+     "id": "C",
+     "updatedAt": 2
+    },
+    {
+     "id": "D",
+     "updatedAt": 3
+    },
+    {
+     "id": "E",
+     "updatedAt": 4
+    },
+    {
+     "id": "F",
+     "updatedAt": 5
+    },
+    {
+     "id": "G",
+     "updatedAt": 6
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "unread": {
+    "A": 100,
+    "B": 101,
+    "C": 102,
+    "D": 103,
+    "E": 104,
+    "F": 105,
+    "G": 106
+   },
+   "collapsed": true,
+   "expect": {
+    "section": {
+     "rows": [],
+     "hiddenCount": 0,
+     "totalUnread": 7,
+     "readCount": 0,
+     "collapsed": true
+    },
+    "mirrored": [
+     "A",
+     "B",
+     "C",
+     "D",
+     "E",
+     "F",
+     "G"
+    ]
+   }
+  },
+  {
+   "id": "14",
+   "name": "search hides the section; unread chats keep their dot in place",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "unread": {
+    "A": 100
+   },
+   "search": true,
+   "expect": {
+    "section": null,
+    "mirrored": []
+   }
+  },
+  {
+   "id": "15",
+   "name": "select mode hides the section (callers pass it as search)",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "unread": {
+    "A": 100
+   },
+   "search": true,
+   "expect": {
+    "section": null,
+    "mirrored": []
+   },
+   "note": "iOS passes searchActive = searching || selecting: one selectable row per chat."
+  },
+  {
+   "id": "16",
+   "name": "setting off: no section",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "unread": {
+    "A": 100
+   },
+   "enabled": false,
+   "expect": {
+    "section": null,
+    "mirrored": []
+   }
+  },
+  {
+   "id": "17",
+   "name": "read from either row and past its stay: no section",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "unread": {},
+   "expect": {
+    "section": null,
+    "mirrored": []
+   },
+   "note": "Before: unread {A}. Opening A from its own row or from the mirror row clears the same state; both dots go. The read row then stays (case 28) until a return past 15 minutes, or a run, drops its readAt (lifecycle R4, R12)."
+  },
+  {
+   "id": "18",
+   "name": "one of two read: only its mirror leaves",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "unread": {
+    "B": 200
+   },
+   "expect": {
+    "section": {
+     "rows": [
+      {
+       "id": "B",
+       "rowId": "unread:B",
+       "source": "none"
+      }
+     ],
+     "hiddenCount": 0,
+     "totalUnread": 1,
+     "readCount": 0,
+     "collapsed": false
+    },
+    "mirrored": [
+     "B"
+    ]
+   },
+   "note": "Before: unread {A:100, B:200}. A read and gone from readAt (past its stay). Nothing else moves."
+  },
+  {
+   "id": "19",
+   "name": "read the newest of six: the oldest comes out from behind Show N More",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 0
+    },
+    {
+     "id": "B",
+     "updatedAt": 1
+    },
+    {
+     "id": "C",
+     "updatedAt": 2
+    },
+    {
+     "id": "D",
+     "updatedAt": 3
+    },
+    {
+     "id": "E",
+     "updatedAt": 4
+    },
+    {
+     "id": "F",
+     "updatedAt": 5
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "unread": {
+    "A": 100,
+    "B": 101,
+    "C": 102,
+    "D": 103,
+    "E": 104
+   },
+   "expect": {
+    "section": {
+     "rows": [
+      {
+       "id": "E",
+       "rowId": "unread:E",
+       "source": "none"
+      },
+      {
+       "id": "D",
+       "rowId": "unread:D",
+       "source": "none"
+      },
+      {
+       "id": "C",
+       "rowId": "unread:C",
+       "source": "none"
+      },
+      {
+       "id": "B",
+       "rowId": "unread:B",
+       "source": "none"
+      },
+      {
+       "id": "A",
+       "rowId": "unread:A",
+       "source": "none"
+      }
+     ],
+     "hiddenCount": 0,
+     "totalUnread": 5,
+     "readCount": 0,
+     "collapsed": false
+    },
+    "mirrored": [
+     "A",
+     "B",
+     "C",
+     "D",
+     "E"
+    ]
+   },
+   "note": "Before: A..F unread, F..B on screen, A behind Show 1 More. F read: A comes into view (an insert, not an arrival)."
+  },
+  {
+   "id": "20",
+   "name": "Mark All as Read, past the stay: no section",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "unread": {},
+   "expect": {
+    "section": null,
+    "mirrored": []
+   },
+   "note": "Right after Mark All as Read every row stays, read (lifecycle R10)."
+  },
+  {
+   "id": "21",
+   "name": "Undo restores the old unread times, so the old order",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "unread": {
+    "A": 100,
+    "B": 200
+   },
+   "expect": {
+    "section": {
+     "rows": [
+      {
+       "id": "B",
+       "rowId": "unread:B",
+       "source": "none"
+      },
+      {
+       "id": "A",
+       "rowId": "unread:A",
+       "source": "none"
+      }
+     ],
+     "hiddenCount": 0,
+     "totalUnread": 2,
+     "readCount": 0,
+     "collapsed": false
+    },
+    "mirrored": [
+     "A",
+     "B"
+    ]
+   }
+  },
+  {
+   "id": "22",
+   "name": "a new reply to a chat already unread keeps its first unreadAt",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "unread": {
+    "A": 100,
+    "B": 200
+   },
+   "expect": {
+    "section": {
+     "rows": [
+      {
+       "id": "B",
+       "rowId": "unread:B",
+       "source": "none"
+      },
+      {
+       "id": "A",
+       "rowId": "unread:A",
+       "source": "none"
+      }
+     ],
+     "hiddenCount": 0,
+     "totalUnread": 2,
+     "readCount": 0,
+     "collapsed": false
+    },
+    "mirrored": [
+     "A",
+     "B"
+    ]
+   },
+   "note": "A got another reply at 300; the store keeps unreadAt 100, so A does not jump."
+  },
+  {
+   "id": "23",
+   "name": "ids no longer in the list are ignored",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "unread": {
+    "A": 100,
+    "GONE": 500
+   },
+   "expect": {
+    "section": {
+     "rows": [
+      {
+       "id": "A",
+       "rowId": "unread:A",
+       "source": "none"
+      }
+     ],
+     "hiddenCount": 0,
+     "totalUnread": 1,
+     "readCount": 0,
+     "collapsed": false
+    },
+    "mirrored": [
+     "A"
+    ]
+   }
+  },
+  {
+   "id": "24",
+   "name": "unknown group: pin or nothing",
+   "sessions": [
+    {
+     "id": "U",
+     "updatedAt": 1,
+     "pinned": true,
+     "folderId": "NOPE"
+    },
+    {
+     "id": "V",
+     "updatedAt": 2,
+     "folderId": "NOPE"
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "unread": {
+    "U": 200,
+    "V": 100
+   },
+   "expect": {
+    "section": {
+     "rows": [
+      {
+       "id": "U",
+       "rowId": "unread:U",
+       "source": "pinned"
+      },
+      {
+       "id": "V",
+       "rowId": "unread:V",
+       "source": "none"
+      }
+     ],
+     "hiddenCount": 0,
+     "totalUnread": 2,
+     "readCount": 0,
+     "collapsed": false
+    },
+    "mirrored": [
+     "U",
+     "V"
+    ]
+   }
+  },
+  {
+   "id": "25",
+   "name": "source label follows a rename (long names are cut by the view, not here)",
+   "sessions": [
+    {
+     "id": "L",
+     "updatedAt": 1,
+     "folderId": "F2"
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "unread": {
+    "L": 100
+   },
+   "expect": {
+    "section": {
+     "rows": [
+      {
+       "id": "L",
+       "rowId": "unread:L",
+       "source": "folder:F2"
+      }
+     ],
+     "hiddenCount": 0,
+     "totalUnread": 1,
+     "readCount": 0,
+     "collapsed": false
+    },
+    "mirrored": [
+     "L"
+    ]
+   }
+  },
+  {
+   "id": "26",
+   "name": "maxVisible below 1 shows one",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "unread": {
+    "A": 100,
+    "B": 200
+   },
+   "maxVisible": 0,
+   "expect": {
+    "section": {
+     "rows": [
+      {
+       "id": "B",
+       "rowId": "unread:B",
+       "source": "none"
+      }
+     ],
+     "hiddenCount": 1,
+     "totalUnread": 2,
+     "readCount": 0,
+     "collapsed": false
+    },
+    "mirrored": [
+     "A",
+     "B"
+    ]
+   }
+  },
+  {
+   "id": "27",
+   "name": "a duplicate session id is mirrored once",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 1
+    },
+    {
+     "id": "A",
+     "updatedAt": 2
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "unread": {
+    "A": 100
+   },
+   "expect": {
+    "section": {
+     "rows": [
+      {
+       "id": "A",
+       "rowId": "unread:A",
+       "source": "none"
+      }
+     ],
+     "hiddenCount": 0,
+     "totalUnread": 1,
+     "readCount": 0,
+     "collapsed": false
+    },
+    "mirrored": [
+     "A"
+    ]
+   }
+  },
+  {
+   "id": "28",
+   "name": "a read chat keeps its mirror row, read, below the unread ones",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "unread": {
+    "B": 200
+   },
+   "readAt": {
+    "A": 300
+   },
+   "expect": {
+    "section": {
+     "rows": [
+      {
+       "id": "B",
+       "rowId": "unread:B",
+       "source": "none"
+      },
+      {
+       "id": "A",
+       "rowId": "unread:A",
+       "source": "none",
+       "read": true
+      }
+     ],
+     "hiddenCount": 0,
+     "totalUnread": 1,
+     "readCount": 1,
+     "collapsed": false
+    },
+    "mirrored": [
+     "A",
+     "B"
+    ]
+   },
+   "note": "A was read at 300 (after B turned unread); it still sits below B: unread rows always come first."
+  },
+  {
+   "id": "29",
+   "name": "only read rows: the section stays, header count 0",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "unread": {},
+   "readAt": {
+    "A": 300
+   },
+   "expect": {
+    "section": {
+     "rows": [
+      {
+       "id": "A",
+       "rowId": "unread:A",
+       "source": "none",
+       "read": true
+      }
+     ],
+     "hiddenCount": 0,
+     "totalUnread": 0,
+     "readCount": 1,
+     "collapsed": false
+    },
+    "mirrored": [
+     "A"
+    ]
+   }
+  },
+  {
+   "id": "30",
+   "name": "read rows: most recently read first",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "unread": {
+    "C": 100
+   },
+   "readAt": {
+    "A": 300,
+    "B": 400
+   },
+   "expect": {
+    "section": {
+     "rows": [
+      {
+       "id": "C",
+       "rowId": "unread:C",
+       "source": "folder:F1"
+      },
+      {
+       "id": "B",
+       "rowId": "unread:B",
+       "source": "none",
+       "read": true
+      },
+      {
+       "id": "A",
+       "rowId": "unread:A",
+       "source": "none",
+       "read": true
+      }
+     ],
+     "hiddenCount": 0,
+     "totalUnread": 1,
+     "readCount": 2,
+     "collapsed": false
+    },
+    "mirrored": [
+     "A",
+     "B",
+     "C"
+    ]
+   }
+  },
+  {
+   "id": "31",
+   "name": "read rows do not count against the size; Show N More is unread rows only",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 0
+    },
+    {
+     "id": "B",
+     "updatedAt": 1
+    },
+    {
+     "id": "C",
+     "updatedAt": 2
+    },
+    {
+     "id": "D",
+     "updatedAt": 3
+    },
+    {
+     "id": "E",
+     "updatedAt": 4
+    },
+    {
+     "id": "F",
+     "updatedAt": 5
+    },
+    {
+     "id": "G",
+     "updatedAt": 6
+    },
+    {
+     "id": "H",
+     "updatedAt": 8
+    },
+    {
+     "id": "I",
+     "updatedAt": 9
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "unread": {
+    "A": 100,
+    "B": 101,
+    "C": 102,
+    "D": 103,
+    "E": 104,
+    "F": 105,
+    "G": 106
+   },
+   "readAt": {
+    "H": 500,
+    "I": 600
+   },
+   "expect": {
+    "section": {
+     "rows": [
+      {
+       "id": "G",
+       "rowId": "unread:G",
+       "source": "none"
+      },
+      {
+       "id": "F",
+       "rowId": "unread:F",
+       "source": "none"
+      },
+      {
+       "id": "E",
+       "rowId": "unread:E",
+       "source": "none"
+      },
+      {
+       "id": "D",
+       "rowId": "unread:D",
+       "source": "none"
+      },
+      {
+       "id": "C",
+       "rowId": "unread:C",
+       "source": "none"
+      },
+      {
+       "id": "I",
+       "rowId": "unread:I",
+       "source": "none",
+       "read": true
+      },
+      {
+       "id": "H",
+       "rowId": "unread:H",
+       "source": "none",
+       "read": true
+      }
+     ],
+     "hiddenCount": 2,
+     "totalUnread": 7,
+     "readCount": 2,
+     "collapsed": false
+    },
+    "mirrored": [
+     "A",
+     "B",
+     "C",
+     "D",
+     "E",
+     "F",
+     "G",
+     "H",
+     "I"
+    ]
+   }
+  },
+  {
+   "id": "32",
+   "name": "at most 10 read rows (the most recently read)",
+   "sessions": [
+    {
+     "id": "R00",
+     "updatedAt": 0
+    },
+    {
+     "id": "R01",
+     "updatedAt": 1
+    },
+    {
+     "id": "R02",
+     "updatedAt": 2
+    },
+    {
+     "id": "R03",
+     "updatedAt": 3
+    },
+    {
+     "id": "R04",
+     "updatedAt": 4
+    },
+    {
+     "id": "R05",
+     "updatedAt": 5
+    },
+    {
+     "id": "R06",
+     "updatedAt": 6
+    },
+    {
+     "id": "R07",
+     "updatedAt": 7
+    },
+    {
+     "id": "R08",
+     "updatedAt": 8
+    },
+    {
+     "id": "R09",
+     "updatedAt": 9
+    },
+    {
+     "id": "R10",
+     "updatedAt": 10
+    },
+    {
+     "id": "R11",
+     "updatedAt": 11
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "unread": {},
+   "readAt": {
+    "R00": 100,
+    "R01": 101,
+    "R02": 102,
+    "R03": 103,
+    "R04": 104,
+    "R05": 105,
+    "R06": 106,
+    "R07": 107,
+    "R08": 108,
+    "R09": 109,
+    "R10": 110,
+    "R11": 111
+   },
+   "expect": {
+    "section": {
+     "rows": [
+      {
+       "id": "R11",
+       "rowId": "unread:R11",
+       "source": "none",
+       "read": true
+      },
+      {
+       "id": "R10",
+       "rowId": "unread:R10",
+       "source": "none",
+       "read": true
+      },
+      {
+       "id": "R09",
+       "rowId": "unread:R09",
+       "source": "none",
+       "read": true
+      },
+      {
+       "id": "R08",
+       "rowId": "unread:R08",
+       "source": "none",
+       "read": true
+      },
+      {
+       "id": "R07",
+       "rowId": "unread:R07",
+       "source": "none",
+       "read": true
+      },
+      {
+       "id": "R06",
+       "rowId": "unread:R06",
+       "source": "none",
+       "read": true
+      },
+      {
+       "id": "R05",
+       "rowId": "unread:R05",
+       "source": "none",
+       "read": true
+      },
+      {
+       "id": "R04",
+       "rowId": "unread:R04",
+       "source": "none",
+       "read": true
+      },
+      {
+       "id": "R03",
+       "rowId": "unread:R03",
+       "source": "none",
+       "read": true
+      },
+      {
+       "id": "R02",
+       "rowId": "unread:R02",
+       "source": "none",
+       "read": true
+      }
+     ],
+     "hiddenCount": 0,
+     "totalUnread": 0,
+     "readCount": 10,
+     "collapsed": false
+    },
+    "mirrored": [
+     "R02",
+     "R03",
+     "R04",
+     "R05",
+     "R06",
+     "R07",
+     "R08",
+     "R09",
+     "R10",
+     "R11"
+    ]
+   }
+  },
+  {
+   "id": "33",
+   "name": "an id both unread and read is unread",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "unread": {
+    "A": 500
+   },
+   "readAt": {
+    "A": 300
+   },
+   "expect": {
+    "section": {
+     "rows": [
+      {
+       "id": "A",
+       "rowId": "unread:A",
+       "source": "none"
+      }
+     ],
+     "hiddenCount": 0,
+     "totalUnread": 1,
+     "readCount": 0,
+     "collapsed": false
+    },
+    "mirrored": [
+     "A"
+    ]
+   }
+  },
+  {
+   "id": "34",
+   "name": "collapsed: no rows, read ones counted apart",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "unread": {
+    "B": 200
+   },
+   "readAt": {
+    "A": 300
+   },
+   "collapsed": true,
+   "expect": {
+    "section": {
+     "rows": [],
+     "hiddenCount": 0,
+     "totalUnread": 1,
+     "readCount": 1,
+     "collapsed": true
+    },
+    "mirrored": [
+     "A",
+     "B"
+    ]
+   }
+  },
+  {
+   "id": "35",
+   "name": "search hides read rows too",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "unread": {},
+   "readAt": {
+    "A": 300
+   },
+   "search": true,
+   "expect": {
+    "section": null,
+    "mirrored": []
+   }
+  },
+  {
+   "id": "36",
+   "name": "setting off: no read rows either",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "unread": {},
+   "readAt": {
+    "A": 300
+   },
+   "enabled": false,
+   "expect": {
+    "section": null,
+    "mirrored": []
+   }
+  },
+  {
+   "id": "37",
+   "name": "a read sub-agent chat is never shown",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    },
+    {
+     "id": "K",
+     "updatedAt": 60,
+     "parentId": "A"
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "unread": {},
+   "readAt": {
+    "K": 300
+   },
+   "expect": {
+    "section": null,
+    "mirrored": []
+   }
+  },
+  {
+   "id": "38",
+   "name": "a read chat no longer in the list is ignored",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "unread": {},
+   "readAt": {
+    "A": 300,
+    "GONE": 400
+   },
+   "expect": {
+    "section": {
+     "rows": [
+      {
+       "id": "A",
+       "rowId": "unread:A",
+       "source": "none",
+       "read": true
+      }
+     ],
+     "hiddenCount": 0,
+     "totalUnread": 0,
+     "readCount": 1,
+     "collapsed": false
+    },
+    "mirrored": [
+     "A"
+    ]
+   }
+  },
+  {
+   "id": "39",
+   "name": "read rows keep their source label",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "unread": {},
+   "readAt": {
+    "C": 300,
+    "P": 400
+   },
+   "expect": {
+    "section": {
+     "rows": [
+      {
+       "id": "P",
+       "rowId": "unread:P",
+       "source": "pinned",
+       "read": true
+      },
+      {
+       "id": "C",
+       "rowId": "unread:C",
+       "source": "folder:F1",
+       "read": true
+      }
+     ],
+     "hiddenCount": 0,
+     "totalUnread": 0,
+     "readCount": 2,
+     "collapsed": false
+    },
+    "mirrored": [
+     "C",
+     "P"
+    ]
+   }
+  }
+ ],
+ "lifecycle": [
+  {
+   "id": "R1",
+   "name": "read: the row stays, read",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "events": [
+    {
+     "type": "unread",
+     "id": "A",
+     "at": 100
+    },
+    {
+     "type": "read",
+     "id": "A",
+     "at": 200
+    }
+   ],
+   "expect": {
+    "unread": {},
+    "readAt": {
+     "A": 200
+    },
+    "section": {
+     "rows": [
+      {
+       "id": "A",
+       "rowId": "unread:A",
+       "source": "none",
+       "read": true
+      }
+     ],
+     "hiddenCount": 0,
+     "totalUnread": 0,
+     "readCount": 1,
+     "collapsed": false
+    }
+   }
+  },
+  {
+   "id": "R2",
+   "name": "in the foreground it never expires, however long",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "events": [
+    {
+     "type": "unread",
+     "id": "A",
+     "at": 100
+    },
+    {
+     "type": "read",
+     "id": "A",
+     "at": 200
+    },
+    {
+     "type": "tick",
+     "at": 3800
+    }
+   ],
+   "expect": {
+    "unread": {},
+    "readAt": {
+     "A": 200
+    },
+    "section": {
+     "rows": [
+      {
+       "id": "A",
+       "rowId": "unread:A",
+       "source": "none",
+       "read": true
+      }
+     ],
+     "hiddenCount": 0,
+     "totalUnread": 0,
+     "readCount": 1,
+     "collapsed": false
+    }
+   },
+   "note": "No timer: an hour in the foreground still shows the read row."
+  },
+  {
+   "id": "R3",
+   "name": "a return to the foreground within 15 minutes keeps it",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "events": [
+    {
+     "type": "unread",
+     "id": "A",
+     "at": 100
+    },
+    {
+     "type": "read",
+     "id": "A",
+     "at": 200
+    },
+    {
+     "type": "foreground",
+     "at": 800,
+     "retention": 900
+    }
+   ],
+   "expect": {
+    "unread": {},
+    "readAt": {
+     "A": 200
+    },
+    "section": {
+     "rows": [
+      {
+       "id": "A",
+       "rowId": "unread:A",
+       "source": "none",
+       "read": true
+      }
+     ],
+     "hiddenCount": 0,
+     "totalUnread": 0,
+     "readCount": 1,
+     "collapsed": false
+    }
+   }
+  },
+  {
+   "id": "R4",
+   "name": "a return past 15 minutes: it leaves",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "events": [
+    {
+     "type": "unread",
+     "id": "A",
+     "at": 100
+    },
+    {
+     "type": "read",
+     "id": "A",
+     "at": 200
+    },
+    {
+     "type": "foreground",
+     "at": 1101,
+     "retention": 900
+    }
+   ],
+   "expect": {
+    "unread": {},
+    "readAt": {},
+    "section": null
+   }
+  },
+  {
+   "id": "R5",
+   "name": "one return, two read rows: the old one leaves, the recent one waits for the next",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "events": [
+    {
+     "type": "unread",
+     "id": "A",
+     "at": 50
+    },
+    {
+     "type": "unread",
+     "id": "B",
+     "at": 60
+    },
+    {
+     "type": "read",
+     "id": "A",
+     "at": 100
+    },
+    {
+     "type": "read",
+     "id": "B",
+     "at": 500
+    },
+    {
+     "type": "foreground",
+     "at": 1050,
+     "retention": 900
+    }
+   ],
+   "expect": {
+    "unread": {},
+    "readAt": {
+     "B": 500
+    },
+    "section": {
+     "rows": [
+      {
+       "id": "B",
+       "rowId": "unread:B",
+       "source": "none",
+       "read": true
+      }
+     ],
+     "hiddenCount": 0,
+     "totalUnread": 0,
+     "readCount": 1,
+     "collapsed": false
+    }
+   }
+  },
+  {
+   "id": "R6",
+   "name": "cold start within 15 minutes: still shown (no entrance animation)",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "events": [
+    {
+     "type": "unread",
+     "id": "A",
+     "at": 100
+    },
+    {
+     "type": "read",
+     "id": "A",
+     "at": 200
+    },
+    {
+     "type": "coldStart",
+     "at": 500,
+     "retention": 900
+    }
+   ],
+   "expect": {
+    "unread": {},
+    "readAt": {
+     "A": 200
+    },
+    "section": {
+     "rows": [
+      {
+       "id": "A",
+       "rowId": "unread:A",
+       "source": "none",
+       "read": true
+      }
+     ],
+     "hiddenCount": 0,
+     "totalUnread": 0,
+     "readCount": 1,
+     "collapsed": false
+    }
+   }
+  },
+  {
+   "id": "R7",
+   "name": "cold start past 15 minutes: not shown",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "events": [
+    {
+     "type": "unread",
+     "id": "A",
+     "at": 100
+    },
+    {
+     "type": "read",
+     "id": "A",
+     "at": 200
+    },
+    {
+     "type": "coldStart",
+     "at": 1101,
+     "retention": 900
+    }
+   ],
+   "expect": {
+    "unread": {},
+    "readAt": {},
+    "section": null
+   }
+  },
+  {
+   "id": "R8",
+   "name": "unread again while kept: unread row again, new unreadAt, back on top",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "events": [
+    {
+     "type": "unread",
+     "id": "B",
+     "at": 150
+    },
+    {
+     "type": "unread",
+     "id": "A",
+     "at": 100
+    },
+    {
+     "type": "read",
+     "id": "A",
+     "at": 200
+    },
+    {
+     "type": "unread",
+     "id": "A",
+     "at": 300
+    }
+   ],
+   "expect": {
+    "unread": {
+     "A": 300,
+     "B": 150
+    },
+    "readAt": {},
+    "section": {
+     "rows": [
+      {
+       "id": "A",
+       "rowId": "unread:A",
+       "source": "none"
+      },
+      {
+       "id": "B",
+       "rowId": "unread:B",
+       "source": "none"
+      }
+     ],
+     "hiddenCount": 0,
+     "totalUnread": 2,
+     "readCount": 0,
+     "collapsed": false
+    }
+   }
+  },
+  {
+   "id": "R9",
+   "name": "opening a kept chat again does not extend its stay",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "events": [
+    {
+     "type": "unread",
+     "id": "A",
+     "at": 100
+    },
+    {
+     "type": "read",
+     "id": "A",
+     "at": 200
+    },
+    {
+     "type": "read",
+     "id": "A",
+     "at": 700
+    },
+    {
+     "type": "foreground",
+     "at": 1150,
+     "retention": 900
+    }
+   ],
+   "expect": {
+    "unread": {},
+    "readAt": {},
+    "section": null
+   },
+   "note": "The second read is a no-op (the chat is not unread); the stay still counts from 200."
+  },
+  {
+   "id": "R10",
+   "name": "Mark All as Read: every row stays, read",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "events": [
+    {
+     "type": "unread",
+     "id": "A",
+     "at": 100
+    },
+    {
+     "type": "unread",
+     "id": "B",
+     "at": 200
+    },
+    {
+     "type": "markAllRead",
+     "at": 300
+    }
+   ],
+   "expect": {
+    "unread": {},
+    "readAt": {
+     "A": 300,
+     "B": 300
+    },
+    "section": {
+     "rows": [
+      {
+       "id": "B",
+       "rowId": "unread:B",
+       "source": "none",
+       "read": true
+      },
+      {
+       "id": "A",
+       "rowId": "unread:A",
+       "source": "none",
+       "read": true
+      }
+     ],
+     "hiddenCount": 0,
+     "totalUnread": 0,
+     "readCount": 2,
+     "collapsed": false
+    }
+   },
+   "note": "Same readAt: updatedAt desc (B 20 > A 10), as for unread rows."
+  },
+  {
+   "id": "R11",
+   "name": "Undo: back to unread with the old times, no read rows",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "events": [
+    {
+     "type": "unread",
+     "id": "A",
+     "at": 100
+    },
+    {
+     "type": "unread",
+     "id": "B",
+     "at": 200
+    },
+    {
+     "type": "markAllRead",
+     "at": 300
+    },
+    {
+     "type": "undo"
+    }
+   ],
+   "expect": {
+    "unread": {
+     "A": 100,
+     "B": 200
+    },
+    "readAt": {},
+    "section": {
+     "rows": [
+      {
+       "id": "B",
+       "rowId": "unread:B",
+       "source": "none"
+      },
+      {
+       "id": "A",
+       "rowId": "unread:A",
+       "source": "none"
+      }
+     ],
+     "hiddenCount": 0,
+     "totalUnread": 2,
+     "readCount": 0,
+     "collapsed": false
+    }
+   }
+  },
+  {
+   "id": "R12",
+   "name": "kept chat starts running: it leaves after the 300 ms debounce",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "events": [
+    {
+     "type": "unread",
+     "id": "A",
+     "at": 100
+    },
+    {
+     "type": "read",
+     "id": "A",
+     "at": 200
+    },
+    {
+     "type": "runStart",
+     "id": "A",
+     "at": 300
+    },
+    {
+     "type": "tick",
+     "at": 300.3
+    }
+   ],
+   "expect": {
+    "unread": {},
+    "readAt": {},
+    "section": null
+   },
+   "note": "Its own row stays where it is."
+  },
+  {
+   "id": "R13",
+   "name": "a running blip shorter than the debounce: it stays",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "events": [
+    {
+     "type": "unread",
+     "id": "A",
+     "at": 100
+    },
+    {
+     "type": "read",
+     "id": "A",
+     "at": 200
+    },
+    {
+     "type": "runStart",
+     "id": "A",
+     "at": 300
+    },
+    {
+     "type": "runEnd",
+     "id": "A",
+     "at": 300.2
+    },
+    {
+     "type": "tick",
+     "at": 300.5
+    }
+   ],
+   "expect": {
+    "unread": {},
+    "readAt": {
+     "A": 200
+    },
+    "section": {
+     "rows": [
+      {
+       "id": "A",
+       "rowId": "unread:A",
+       "source": "none",
+       "read": true
+      }
+     ],
+     "hiddenCount": 0,
+     "totalUnread": 0,
+     "readCount": 1,
+     "collapsed": false
+    }
+   }
+  },
+  {
+   "id": "R14",
+   "name": "still within the debounce: it stays",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "events": [
+    {
+     "type": "unread",
+     "id": "A",
+     "at": 100
+    },
+    {
+     "type": "read",
+     "id": "A",
+     "at": 200
+    },
+    {
+     "type": "runStart",
+     "id": "A",
+     "at": 300
+    },
+    {
+     "type": "tick",
+     "at": 300.1
+    }
+   ],
+   "expect": {
+    "unread": {},
+    "readAt": {
+     "A": 200
+    },
+    "section": {
+     "rows": [
+      {
+       "id": "A",
+       "rowId": "unread:A",
+       "source": "none",
+       "read": true
+      }
+     ],
+     "hiddenCount": 0,
+     "totalUnread": 0,
+     "readCount": 1,
+     "collapsed": false
+    }
+   }
+  },
+  {
+   "id": "R15",
+   "name": "the run ends with a new reply: unread, back in as an unread row",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "events": [
+    {
+     "type": "unread",
+     "id": "A",
+     "at": 100
+    },
+    {
+     "type": "read",
+     "id": "A",
+     "at": 200
+    },
+    {
+     "type": "runStart",
+     "id": "A",
+     "at": 300
+    },
+    {
+     "type": "tick",
+     "at": 300.3
+    },
+    {
+     "type": "runEnd",
+     "id": "A",
+     "at": 400
+    },
+    {
+     "type": "unread",
+     "id": "A",
+     "at": 400
+    }
+   ],
+   "expect": {
+    "unread": {
+     "A": 400
+    },
+    "readAt": {},
+    "section": {
+     "rows": [
+      {
+       "id": "A",
+       "rowId": "unread:A",
+       "source": "none"
+      }
+     ],
+     "hiddenCount": 0,
+     "totalUnread": 1,
+     "readCount": 0,
+     "collapsed": false
+    }
+   }
+  },
+  {
+   "id": "R16",
+   "name": "an unread chat that starts running keeps its row",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "events": [
+    {
+     "type": "unread",
+     "id": "A",
+     "at": 100
+    },
+    {
+     "type": "runStart",
+     "id": "A",
+     "at": 200
+    },
+    {
+     "type": "tick",
+     "at": 205
+    }
+   ],
+   "expect": {
+    "unread": {
+     "A": 100
+    },
+    "readAt": {},
+    "section": {
+     "rows": [
+      {
+       "id": "A",
+       "rowId": "unread:A",
+       "source": "none"
+      }
+     ],
+     "hiddenCount": 0,
+     "totalUnread": 1,
+     "readCount": 0,
+     "collapsed": false
+    }
+   }
+  },
+  {
+   "id": "R17",
+   "name": "already running when read: the debounce counts from the read",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "events": [
+    {
+     "type": "unread",
+     "id": "A",
+     "at": 100
+    },
+    {
+     "type": "runStart",
+     "id": "A",
+     "at": 150
+    },
+    {
+     "type": "read",
+     "id": "A",
+     "at": 200
+    },
+    {
+     "type": "tick",
+     "at": 200.2
+    }
+   ],
+   "expect": {
+    "unread": {},
+    "readAt": {
+     "A": 200
+    },
+    "section": {
+     "rows": [
+      {
+       "id": "A",
+       "rowId": "unread:A",
+       "source": "none",
+       "read": true
+      }
+     ],
+     "hiddenCount": 0,
+     "totalUnread": 0,
+     "readCount": 1,
+     "collapsed": false
+    }
+   },
+   "note": "Then a tick at 200.3 releases it (R12)."
+  },
+  {
+   "id": "R18",
+   "name": "a run that ended before the return does not matter; the return judges by readAt",
+   "sessions": [
+    {
+     "id": "A",
+     "updatedAt": 10
+    },
+    {
+     "id": "B",
+     "updatedAt": 20
+    },
+    {
+     "id": "C",
+     "updatedAt": 30,
+     "folderId": "F1"
+    },
+    {
+     "id": "P",
+     "updatedAt": 40,
+     "pinned": true
+    }
+   ],
+   "folders": [
+    {
+     "id": "F1",
+     "name": "Work"
+    },
+    {
+     "id": "F2",
+     "name": "A very long group name"
+    }
+   ],
+   "events": [
+    {
+     "type": "unread",
+     "id": "A",
+     "at": 100
+    },
+    {
+     "type": "read",
+     "id": "A",
+     "at": 200
+    },
+    {
+     "type": "runStart",
+     "id": "A",
+     "at": 300
+    },
+    {
+     "type": "runEnd",
+     "id": "A",
+     "at": 300.1
+    },
+    {
+     "type": "foreground",
+     "at": 800,
+     "retention": 900
+    }
+   ],
+   "expect": {
+    "unread": {},
+    "readAt": {
+     "A": 200
+    },
+    "section": {
+     "rows": [
+      {
+       "id": "A",
+       "rowId": "unread:A",
+       "source": "none",
+       "read": true
+      }
+     ],
+     "hiddenCount": 0,
+     "totalUnread": 0,
+     "readCount": 1,
+     "collapsed": false
+    }
+   }
+  }
+ ]
+}

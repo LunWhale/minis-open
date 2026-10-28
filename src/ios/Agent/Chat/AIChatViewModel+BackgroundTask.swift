@@ -31,6 +31,19 @@ extension AIChatViewModel {
         return userIdx + 1
     }
 
+    /// [T-sched-notif-in-place] The scheduled task whose firing opened the
+    /// current turn (see `currentTurnStartIndex`), or nil for a turn the user,
+    /// a Shortcut or a sub agent started.
+    static func scheduledJobIdOpeningCurrentTurn(in history: [AgentMessage]) -> String? {
+        let start = currentTurnStartIndex(in: history)
+        guard start > 0, start <= history.count else { return nil }
+        let texts = history[start - 1].parts.compactMap { part -> String? in
+            if case .text(let t) = part { return t }
+            return nil
+        }
+        return BackgroundTaskNotificationID.scheduledJobId(inTurnTexts: texts)
+    }
+
     // MARK: - Background Task
 
     func beginBackgroundProcessing() {
@@ -53,7 +66,48 @@ extension AIChatViewModel {
             // `delay:` tool waits (and any in-flight command) even though the
             // app was in no danger of termination. Instead, just re-arm a fresh
             // finite task to reset the clock and let the agent loop continue.
-            if BackgroundKeepAliveManager.shared.enhancedBackgroundEffective {
+            // [T-bka-continued-processing] An iOS 26 continued-processing task
+            // holds the process while it runs, but backgroundTimeRemaining
+            // still counts down and these finite tasks still expire. Re-arming
+            // one with seconds left (the branch below, which assumes silent
+            // audio makes the time unlimited) got the app killed by
+            // RunningBoard for an assertion it could not end in time
+            // (0x2182BAD2). End it promptly and keep the loop running.
+            // [T-bka-audio-dead-expiry] One decision for the three exits below.
+            // "Keep-alive is on in Settings" used to be enough to re-arm; on
+            // 2026-10-09 the audio had been dead for 30 s (a phone call), the
+            // handler fired with 4 s left, logged "silent-audio keep-alive is
+            // active — re-arming, NOT cancelling", and the app was killed 4 s
+            // later still holding the new task. Re-arm only while the audio
+            // really plays; otherwise suspend, which the user can resume.
+            let keepAlive = BackgroundKeepAliveManager.shared
+            let expiryAction = BGTaskExpiryPolicy.decide(
+                continuedTaskRunning: keepAlive.continuedTaskRunning,
+                keepAliveConfigured: keepAlive.enhancedBackgroundEffective,
+                silentAudioPlaying: keepAlive.silentAudioIsPlaying)
+            if expiryAction == .endOnly {
+                logger.info("[Background] Finite task expiring while a continued-processing task holds the app — ending it, loop keeps running")
+                let expiringId = self.backgroundTaskID
+                self.backgroundTaskID = .invalid
+                if expiringId != .invalid {
+                    UIApplication.shared.endBackgroundTask(expiringId)
+                    AIChatViewModel.noteBackgroundTaskEnded()
+                }
+                // [T-bka-continued-fallback] If the continued task ends first
+                // (expired, or Stop on its card), take a fresh finite task so
+                // this handler runs again without the continued branch: it
+                // then re-arms under silent audio, or suspends the loop to
+                // resume in the foreground - rather than the app being frozen
+                // mid-request with no task held.
+                let sid = self.sessionId
+                BackgroundKeepAliveManager.shared.onContinuedTaskEndedMidRun { [weak self] in
+                    guard let self, let sid, SessionActivityTracker.shared.activeSessions.contains(sid) else { return }
+                    logger.info("[Background] Continued task ended mid-run — taking a fresh finite task")
+                    self.beginBackgroundProcessing()
+                }
+                return
+            }
+            if expiryAction == .rearm {
                 logger.info("[Background] Finite task expiring but silent-audio keep-alive is active — re-arming, NOT cancelling")
                 // End only the expiring task id (no completion notification),
                 // then immediately request a new one. Order matters: capture the
@@ -71,9 +125,17 @@ extension AIChatViewModel {
             // app. Suspend instead of cancelling: kill the running shell command
             // so the OS doesn't terminate us, but keep the Task alive so we can
             // resume when foregrounded.
-            logger.warning("[Background] Task expiring (no keep-alive) — suspending agent loop")
+            // Keep-alive on in Settings but its audio is not playing: say so,
+            // and give the audio one more start for whatever runs after this.
+            let audioLost = keepAlive.enhancedBackgroundEffective
+            if audioLost {
+                logger.warning("[Background] Task expiring and keep-alive audio is NOT playing (interrupted and not restored) — suspending agent loop instead of re-arming")
+                keepAlive.reviveSilentAudioIfDead(source: "bgTaskExpiry")
+            } else {
+                logger.warning("[Background] Task expiring (no keep-alive) — suspending agent loop")
+            }
             self.backgroundSuspended = true
-            if !BackgroundKeepAliveManager.shared.enhancedBackgroundEffective {
+            if !keepAlive.enhancedBackgroundEffective || audioLost {
                 BackgroundInterruptionTracker.shared.recordInterruption()
                 // [T-session-paused-badge-active-false-positive] The PAUSED badge
                 // is now driven solely by `canResume` (see AIChatViewModel's
@@ -92,6 +154,8 @@ extension AIChatViewModel {
                     for block in msg.blocks {
                         switch block.toolStatus {
                         case .streaming, .running:
+                            // A real suspension outranks "ran slowly".
+                            ContinuedRunHintStore.blockIds.remove(block.id)
                             block.wasBackgroundSuspended = true
                         default:
                             break
@@ -101,7 +165,10 @@ extension AIChatViewModel {
             }
             self.stopCurrentCommand()
             // Must end the background task to avoid termination.
-            self.endBackgroundProcessing()
+            // [T-bgnotif-outcome] The loop has NOT finished: it is suspended
+            // (retrying, or waiting on a dead network) and resumes in the
+            // foreground. Say so instead of "completed".
+            self.endBackgroundProcessing(backgroundTimeExpired: true)
         }
         // [T-ios-bgkeepalive-diag] Only count a grant the OS actually gave
         // us: beginBackgroundTask returns .invalid when the request is refused,
@@ -116,7 +183,26 @@ extension AIChatViewModel {
         startBackgroundStatusTimer()
     }
 
-    func endBackgroundProcessing() {
+    /// [T-bgnotif-outcome] This turn's last assistant row in `messages`.
+    ///
+    /// A thrown loop error is attached to the last ASSISTANT row because a
+    /// queued user row or a status row can follow it, so `messages.last` is
+    /// not where the error lives. Rows before the last user message the user
+    /// actually sent (queued rows excluded) belong to earlier turns and never
+    /// count.
+    func currentTurnAssistantMessage() -> ChatMessage? {
+        let rows = messages
+        let idx = BackgroundTurnOutcome.currentTurnAssistantIndex(
+            count: rows.count,
+            isSentUser: { rows[$0].role == .user && !rows[$0].isQueued },
+            isAssistant: { rows[$0].role == .assistant })
+        return idx.map { rows[$0] }
+    }
+
+    /// - Parameter backgroundTimeExpired: [T-bgnotif-outcome] true only from
+    ///   the background-task expiration handler, which ends the grant while
+    ///   the loop is still suspended mid-run.
+    func endBackgroundProcessing(backgroundTimeExpired: Bool = false) {
         // [T-ios-session-unread-badge / T-ios-unread-dot-reappears] Mark unread
         // when this session finished off-screen and produced NEW content. The
         // red dot means "this session finished and you haven't opened it yet".
@@ -170,14 +256,41 @@ extension AIChatViewModel {
         // the notification arrives, not "Responding · streaming".
         do {
             let sid = sessionId ?? ""
-            let wasBackground = UIApplication.shared.applicationState != .active
-            let hasError = messages.last?.error != nil || errorMessage != nil
+            // [T-mac-dock-badge] "Away" includes a Mac where another app is in
+            // front - UIKit still reports .active there.
+            let wasBackground = BackgroundKeepAliveManager.shared.userIsAway
+            // [T-bgnotif-outcome] What the turn really ended as. This used to be
+            // `messages.last?.error != nil || errorMessage != nil` alone, so a
+            // turn cut off by the background-time expiry, a context-full stop
+            // (systemInfo row, no error) or an error sitting on an assistant row
+            // with a queued/status row after it all notified "✅ completed".
+            let turnError = currentTurnAssistantMessage()?.error
+            let outcome = BackgroundTurnOutcome.decide(
+                backgroundTimeExpired: backgroundTimeExpired,
+                turnError: turnError,
+                errorMessage: errorMessage,
+                canResume: canResume,
+                userStopped: userDidCancel)
+            let hasError = outcome == .failed
+            logger.info("[BackgroundNotification] outcome=\(outcome) expired=\(backgroundTimeExpired) turnError=\(turnError != nil) errorMessage=\(self.errorMessage != nil) canResume=\(self.canResume) userStopped=\(self.userDidCancel)")
             let responseSummary: String = {
                 // [T-bgnotif-current-turn] GH#263. Only THIS turn's replies are
                 // candidates. The search used to span the whole history, so a
                 // turn that failed with no text fell back to the PREVIOUS
                 // turn's reply — a lock-screen banner showing a complete answer
                 // while the bubble said "Model returned an empty response".
+                // [T-bgnotif-outcome] An interrupted turn says so; any partial
+                // text would read as the answer.
+                if outcome == .interrupted {
+                    logger.info("[BackgroundNotification] source=interrupted")
+                    return AppLocalized("Task paused. Open the session to continue.")
+                }
+                // A failed turn leads with why it failed.
+                if hasError, let err = (turnError ?? errorMessage)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines), !err.isEmpty {
+                    logger.info("[BackgroundNotification] source=turn-error")
+                    return String(err.prefix(200))
+                }
                 let turnStart = Self.currentTurnStartIndex(in: agentHistory)
                 let allAssistantTurns = agentHistory[min(turnStart, agentHistory.count)...].filter { $0.role == .assistant }
                 logger.verbose("[BackgroundNotification] building responseSummary from agentHistory: totalMsgs=\(agentHistory.count) turnStart=\(turnStart) assistantTurns=\(allAssistantTurns.count) wasBackground=\(wasBackground) hasError=\(hasError)")
@@ -243,13 +356,6 @@ extension AIChatViewModel {
                     logger.info("[BackgroundNotification] source=any-text-turn(agentHistory) first20=\(String(t.prefix(20)).debugDescription)")
                     return String(t.prefix(200))
                 }
-                // No text this turn. A failed turn says why (the title already
-                // carries ❌) instead of claiming completion.
-                if hasError, let err = (messages.last?.error ?? errorMessage)?
-                    .trimmingCharacters(in: .whitespacesAndNewlines), !err.isEmpty {
-                    logger.info("[BackgroundNotification] source=turn-error")
-                    return String(err.prefix(200))
-                }
                 // No usable assistant text. If the only thing this turn produced
                 // was an internal bridge, the task did not finish — it was
                 // interrupted by a queued user message — so say that in the
@@ -290,27 +396,46 @@ extension AIChatViewModel {
             // Live Activity finish, badge counting, and endBackgroundTask all
             // still run below.
             let suppressGenericNotification = suppressGeneralCompletionNotification
+            // [T-sched-notif-in-place] Read with the history now, before the Task:
+            // a run opened by a scheduled firing updates that task's notification.
+            let scheduledJobId = Self.scheduledJobIdOpeningCurrentTurn(in: agentHistory)
             suppressGeneralCompletionNotification = false
             if suppressGenericNotification {
                 logger.info("[BackgroundNotification] suppressed — a Shortcuts intent owns this run's notification")
             }
-            // [T-scheduled-bka-keepalive] Sessions waiting on a timer they
-            // armed count as active here too.
+            // [T-scheduled-active-session] Every ACTIVE conversation counts
+            // here, including one only waiting on its scheduled follow-up or
+            // its sub agents.
             //
             // `finishActivity` tears the Live Activity down entirely and is the
-            // visible "everything is done" state. Doing that while this or
-            // another conversation still owns a scheduled job says the work is
-            // over when it is only waiting — and it removes the very surface
-            // that shows the pending timer. `markSessionCompleted` is the right
-            // call in that case: this run finished, the activity stays for what
-            // is still outstanding.
-            let awaitingScheduled = AgentJobRegistry.shared.sessionsAwaitingScheduledFire
-            let otherActive = SessionActivityTracker.shared.activeSessions
-                .union(awaitingScheduled)
+            // visible "everything is done" state. Doing that while another
+            // conversation is still active says the work is over when it is
+            // only waiting. `markSessionCompleted` is the right call in that
+            // case: this run finished, the activity stays for what is still
+            // outstanding.
+            //
+            // [T-live-activity-scheduled] This conversation itself may still be
+            // waiting for its next scheduled run. Excluding it as "this run"
+            // finished the whole activity after every fire of a single loop,
+            // and the gap then showed an empty activity. Its card turns into
+            // the waiting card instead (no "completed" mark: it is not done).
+            let keptBySchedule = !sid.isEmpty && SessionActivityTracker.shared.scheduledSessions.contains(sid)
+            let otherActive = SessionActivityTracker.shared.busySessions
                 .filter { $0 != sid }
-            logger.info("[BKA][BGTask] otherActive=\(otherActive.count) ids=[\(otherActive.map { $0.prefix(8) }.joined(separator: ","))] before Task")
+            logger.info("[BKA][BGTask] otherActive=\(otherActive.count) ids=[\(otherActive.map { $0.prefix(8) }.joined(separator: ","))] keptBySchedule=\(keptBySchedule) before Task")
             Task {
-                if otherActive.isEmpty {
+                if keptBySchedule {
+                    BackgroundKeepAliveManager.shared.updateLiveActivityIfNeeded(source: "scheduledRunEnded")
+                } else if outcome == .interrupted {
+                    // [T-bgnotif-outcome] Not done, so never the green
+                    // "completed" resting state: end the activity when nothing
+                    // else runs, else re-sync it to what is still live.
+                    if otherActive.isEmpty {
+                        AgentLiveActivityManager.shared.endActivity()
+                    } else {
+                        BackgroundKeepAliveManager.shared.updateLiveActivityIfNeeded(source: "turnInterrupted")
+                    }
+                } else if otherActive.isEmpty {
                     await AgentLiveActivityManager.shared.finishActivity(
                         lastMessages: sid.isEmpty ? [:] : [sid: responseSummary]
                     )
@@ -329,7 +454,8 @@ extension AIChatViewModel {
                 }
                 if !suppressGenericNotification {
                     BackgroundKeepAliveManager.shared.postBackgroundTaskNotification(
-                        sessionTitle: sessionTitle, responseSummary: responseSummary, sessionId: sid, isError: hasError, wasBackground: wasBackground
+                        sessionTitle: sessionTitle, responseSummary: responseSummary, sessionId: sid, outcome: outcome, wasBackground: wasBackground,
+                        scheduledJobId: scheduledJobId
                     )
                 }
                 await MainActor.run {
@@ -403,6 +529,7 @@ extension AIChatViewModel {
         case .readImageTool: toolName = "read_image"
         case .memoryTool: toolName = "memory"
         case .delegateTool: toolName = SubAgentDefinition.toolName
+        case .userAskTool: toolName = UserAskTool.name
         case .info: toolName = "info"
         }
 
@@ -590,25 +717,19 @@ extension AIChatViewModel {
         if let result = try? await browserTabPool.execute(action: screenshotInput, owner: sessionId),
            let b64 = result.base64Image,
            let data = Data(base64Encoded: b64) {
-            // Persist the takeover screenshot the same way browser_use
-            // does so request-level budget elision can point the model
-            // back at it via read_image.
+            // [T-image-real-seams] File write + message: takeoverScreenshotMessage.
             let timestamp = Int(Date().timeIntervalSince1970)
-            let screenshotFilename = "takeover_\(timestamp).jpg"
-            let sid = sessionId ?? "unknown"
-            let persistDir = Self.minisBrowserPersistentDir(for: sid)
-            try? FileManager.default.createDirectory(at: persistDir, withIntermediateDirectories: true)
-            let persistPath = persistDir.appendingPathComponent(screenshotFilename)
-            try? data.write(to: persistPath)
-            let linuxPath = "\(Self.minisBrowserLinuxDir)/\(screenshotFilename)"
-
-            // Inject a user message with the takeover screenshot so the model sees the current state
-            let takeoverNote = "[Browser takeover] The user manually operated the browser. Here is a screenshot of the current browser state after their interaction."
-            let msg = AgentMessage(role: .user, parts: [
-                .text(takeoverNote),
-                .imageData(data: data, mimeType: "image/jpeg", linuxPath: linuxPath)
-            ])
+            let msg = Self.takeoverScreenshotMessage(data, sessionId: sessionId, timestamp: timestamp)
+            // [T-image-gate #412] Stored like the loop's other app-injected
+            // rows, so after a restart the model still has the screenshot it
+            // was shown (the stored image is the gate's output, so the bytes
+            // match). It renders nothing on reload: the note is a
+            // <system-reminder> and the image is not a picked attachment.
+            let idx = agentHistory.count
             agentHistory.append(msg)
+            if let pid = await persistAgentMessage(msg), idx < agentHistory.count {
+                agentHistory[idx].dbMessageId = pid
+            }
         }
     }
 
@@ -694,7 +815,17 @@ extension AIChatViewModel {
         // here because runningCommandPids was empty. Bail only when NONE apply,
         // so random taps don't poison the flag for a future real invocation.
         let browserLoading = browserTabPool.hasLoadingTab
-        guard !runningCommandPids.isEmpty || toolDelayWaitActive || browserLoading else { return }
+        // [T-shell-stop-abandon] Ask the coordinator too: `runningCommandPids`
+        // is one slot that concurrent tools overwrite and the first Stop
+        // clears, so a command still stuck after that first tap left every
+        // further tap a silent no-op.
+        let shellRunning = (fsSessionId ?? sessionId).map {
+            ISHExecutionCoordinator.hasStoppableCommand(sessionId: $0, ownerId: sessionId)
+        } ?? false
+        guard !runningCommandPids.isEmpty || shellRunning || toolDelayWaitActive || browserLoading else {
+            logger.info("⏹️ stopCurrentCommand — nothing to stop sid=\(self.sessionId?.prefix(8) ?? "nil")")
+            return
+        }
         commandCancelledByUser = true
         // Stop any in-flight browser page loads. stopLoading() resolves the
         // manager's navigationContinuation, so the awaited browserTabPool
@@ -706,7 +837,7 @@ extension AIChatViewModel {
         // Stop ALL currently running shells — concurrent tool execution
         // can have many in flight at once and a stop tap should cancel
         // the entire batch. [T-concurrent-tools 2026-05-25]
-        if !runningCommandPids.isEmpty {
+        if !runningCommandPids.isEmpty || shellRunning {
             // [T-shell-stop-blocked-by-actor] SYNCHRONOUS and nonisolated —
             // deliberately not `Task { await …stopCurrentCommand() }`.
             //
@@ -732,13 +863,23 @@ extension AIChatViewModel {
             // coordinator files in-flight pids under THAT id — so a child that
             // scoped the kill to its own sessionId found 0 pids and its tool
             // never stopped.
+            //
+            // [T-shell-stop-owner] …and within that workspace, only the
+            // commands THIS session issued. Parent and every sibling agent
+            // share the workspace key, so the unfiltered kill took their
+            // running commands down too — field-reproduced: stopping one agent
+            // killed a sibling's `sleep 90` (exit 15), and that sibling then
+            // reported "done" on a task it never finished.
             if let sid = fsSessionId ?? sessionId {
-                killed = ISHExecutionCoordinator.stopAllNonisolated(sessionId: sid)
+                killed = ISHExecutionCoordinator.stopAllNonisolated(sessionId: sid, ownerId: sessionId)
             } else {
                 logger.warning("⏹️ stopCurrentCommand — no sessionId on vm=\(self.vmInstanceId); nothing to scope the kill to")
                 killed = 0
             }
-            logger.info("⏹️ stopCurrentCommand — signalled \(killed) shell pid(s) sid=\(self.sessionId?.prefix(8) ?? "nil")")
+            // [T-shell-stop-abandon] …and a command that has not exited
+            // `stopAbandonGrace` later gets its result anyway, so the tool
+            // ends even when the process is stuck in host I/O.
+            logger.info("⏹️ stopCurrentCommand — signalled \(killed) shell command(s) sid=\(self.sessionId?.prefix(8) ?? "nil"); abandon after \(ISHExecutionCoordinator.stopAbandonGrace)s if still running")
         }
         runningCommandPids.removeAll()
         commandStartTime = nil
@@ -764,3 +905,87 @@ extension AIChatViewModel {
     }
 
 }
+
+// MARK: - Browser takeover screenshot [T-image-real-seams]
+
+// BEGIN TakeoverScreenshotMessage
+extension AIChatViewModel {
+    /// The user message injected after a browser takeover: the screenshot is
+    /// written next to browser_use's own (`browser/takeover_<timestamp>.jpg`,
+    /// the original, for viewing and read_image) and carried as `.imageData` -
+    /// [T-image-gate] ModelImageGate's output, like browser_use's image (it
+    /// used to go out at full size). The caller stores the message (P-i4), so
+    /// the note is a <system-reminder>: the stored row renders nothing on
+    /// reload, as `isUserBubbleEntry` already treats it.
+    static func takeoverScreenshotMessage(_ data: Data, sessionId: String?, timestamp: Int) -> AgentMessage {
+        // Persist the takeover screenshot the same way browser_use
+        // does so request-level budget elision can point the model
+        // back at it via read_image.
+        let screenshotFilename = "takeover_\(timestamp).jpg"
+        let sid = sessionId ?? "unknown"
+        let persistDir = Self.minisBrowserPersistentDir(for: sid)
+        try? FileManager.default.createDirectory(at: persistDir, withIntermediateDirectories: true)
+        let persistPath = persistDir.appendingPathComponent(screenshotFilename)
+        try? data.write(to: persistPath)
+        let linuxPath = "\(Self.minisBrowserLinuxDir)/\(screenshotFilename)"
+
+        // Inject a user message with the takeover screenshot so the model sees the current state
+        let takeoverNote = "<system-reminder>[Browser takeover] The user manually operated the browser. Here is a screenshot of the current browser state after their interaction.</system-reminder>"
+        let gated = ModelImageGate.prepare(data, maxBytes: Self.rawBytesForBase64Budget(Self.kPerImageMaxBytes))
+        return AgentMessage(role: .user, parts: [
+            .text(takeoverNote),
+            .imageData(data: gated.data ?? data, mimeType: gated.mimeType ?? "image/jpeg", linuxPath: linuxPath)
+        ])
+    }
+}
+// END TakeoverScreenshotMessage
+
+// BEGIN BackgroundTurnOutcome
+/// [T-bgnotif-outcome] How a turn ended, for its background notification and
+/// Live Activity.
+enum BackgroundTurnOutcome: Equatable, CustomStringConvertible {
+    /// Reached its normal end.
+    case completed
+    /// Ended with an error on this turn's reply, or a turn-level error.
+    case failed
+    /// Did not finish and can be continued: background time ran out, it is
+    /// resumable (`canResume`), or the user stopped it.
+    case interrupted
+
+    var description: String {
+        switch self {
+        case .completed: return "completed"
+        case .failed: return "failed"
+        case .interrupted: return "interrupted"
+        }
+    }
+
+    /// Expiry wins over everything: the loop is still mid-run, so any error
+    /// seen now may yet be retried away. Then a stated error, so a reply that
+    /// failed (and is resumable too) is reported with its reason. Then the
+    /// resumable / stopped states.
+    static func decide(backgroundTimeExpired: Bool, turnError: String?, errorMessage: String?,
+                       canResume: Bool, userStopped: Bool) -> BackgroundTurnOutcome {
+        if backgroundTimeExpired { return .interrupted }
+        if hasText(turnError) || hasText(errorMessage) { return .failed }
+        if canResume || userStopped { return .interrupted }
+        return .completed
+    }
+
+    /// Index of the current turn's last assistant row: the last assistant
+    /// after the last row the user actually sent. Rows after it that are not
+    /// assistants (queued user rows, status rows) are skipped, not treated as
+    /// the end of the turn. With no sent row, the whole list is the turn.
+    static func currentTurnAssistantIndex(count: Int, isSentUser: (Int) -> Bool,
+                                          isAssistant: (Int) -> Bool) -> Int? {
+        guard count > 0 else { return nil }
+        let start = (0..<count).last(where: isSentUser).map { $0 + 1 } ?? 0
+        guard start < count else { return nil }
+        return (start..<count).last(where: isAssistant)
+    }
+
+    private static func hasText(_ s: String?) -> Bool {
+        !(s?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+    }
+}
+// END BackgroundTurnOutcome

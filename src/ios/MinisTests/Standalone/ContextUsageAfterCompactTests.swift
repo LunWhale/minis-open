@@ -23,6 +23,37 @@
 
 import Foundation
 
+/// The chat page's sources, read as one text: AIChatView.swift (state and
+/// `body`) first, then every other file under Views/Chat/AIChatView/ - the
+/// old single AIChatView.swift was split into them.
+func chatViewSource() -> String {
+    let ios = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let dir = ios.appendingPathComponent("Views/Chat/AIChatView")
+    let main = dir.appendingPathComponent("AIChatView.swift")
+    let rest = (FileManager.default.enumerator(at: dir, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? [])
+        .filter { $0.pathExtension == "swift" && $0.lastPathComponent != "AIChatView.swift" }
+        .sorted { $0.path < $1.path }
+    return ([main] + rest).compactMap { try? String(contentsOf: $0, encoding: .utf8) }.joined(separator: "\n")
+}
+
+/// The sources that used to be the single file Agent/Chat/AIChatViewModel.swift -
+/// the class body plus the AIChatViewModel+<Concern>.swift files it was split
+/// into (the older extension files are NOT included) - read as one text.
+func chatViewModelSource() -> String {
+    let chat = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Agent/Chat")
+    let names = ["AIChatViewModel", "AIChatViewModel+Lifecycle", "AIChatViewModel+ContextUsage",
+                 "AIChatViewModel+StreamingUI", "AIChatViewModel+Speech", "AIChatViewModel+AutoPlayAudio",
+                 "AIChatViewModel+SystemPrompt", "AIChatViewModel+Send", "AIChatViewModel+Rerun",
+                 "AIChatViewModel+EditMessage", "AIChatViewModel+Cancel", "AIChatViewModel+PromptQueue",
+                 "AIChatViewModel+DebugDumps", "AIChatViewModel+TurnCompletion", "AIChatViewModel+AgentLoop",
+                 "AIChatViewModel+ThinkingLevel", "LLMProviderError"]
+    return names.compactMap { try? String(contentsOf: chat.appendingPathComponent($0 + ".swift"), encoding: .utf8) }
+        .joined(separator: "\n")
+}
+
 var failures = 0
 func check(_ label: String, _ actual: Bool, _ expected: Bool = true) {
     if actual == expected { print("  ✅ \(label)") }
@@ -111,7 +142,7 @@ let root = URL(fileURLWithPath: #filePath)
 func source(_ rel: String) -> String {
     (try? String(contentsOf: root.appendingPathComponent(rel), encoding: .utf8)) ?? ""
 }
-let vm = source("Agent/Chat/AIChatViewModel.swift")
+let vm = chatViewModelSource()
 let compaction = source("Agent/Chat/AIChatViewModel+Compaction.swift")
 let announceBody: String = {
     guard let a = vm.range(of: "func announceContextUsageAfterCompaction() {"),
@@ -128,7 +159,7 @@ check("announce marks the current report as superseded",
 check("announce publishes the measured size", announceBody.contains("publishMeasuredContextUsage()"))
 check("announce issues a new hint generation",
       announceBody.contains("contextUsageHintGeneration += 1")
-        && announceBody.contains("contextUsageHint = ContextUsageHint.make(usage: usage, generation: contextUsageHintGeneration)"))
+        && announceBody.contains("contextUsageHint = ContextUsageHint.make(usage: usage, generation: contextUsageHintGeneration,"))
 check("announce resets the tier baseline", announceBody.contains("_ = contextTierTracker.observe(usage.tier, now: now)"))
 check("announce does not markFired (the next loop-end line must not be deduplicated)",
       !announceBody.contains("markFired("))
@@ -136,7 +167,7 @@ check("publishContextUsage prefers the measurement for a superseded report",
       vm.contains("if liveContextTokens == nil, cachedLatestMarker != nil, let reported,\n           reported.id == usageReportSupersededByCompaction || reported.isCompactedHistory {"))
 check("…only when the measurement is positive", vm.contains("if measured > 0 { used = measured }"))
 check("the glow reads contextUsage's tier",
-      source("Views/Chat/AIChatView.swift").contains("ComposerContextGlow(tier: vm.contextUsage?.tier ?? .normal)"))
+      chatViewSource().contains("ComposerContextGlow(tier: vm.contextUsage?.tier ?? .normal)"))
 
 print("")
 if failures == 0 { print("✅ ALL PASSED") } else { print("❌ \(failures) FAILURE(S)"); exit(1) }

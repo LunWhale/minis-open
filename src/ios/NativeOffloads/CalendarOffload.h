@@ -19,5 +19,7 @@ int calendar_cmd_remind(int argc, char **argv, int stdout_fd, int stderr_fd, BOO
 int calendar_cmd_update_reminder(int argc, char **argv, int stdout_fd, BOOL compact, BOOL quiet);
 int calendar_cmd_complete_reminder(int argc, char **argv, int stdout_fd, BOOL compact, BOOL quiet);
 int calendar_cmd_delete_reminder(int argc, char **argv, int stdout_fd, BOOL compact, BOOL quiet);
+int calendar_cmd_reminder_lists(int argc, char **argv, int stdout_fd, BOOL compact, BOOL quiet);   // [T-issue282-list-id]
+int calendar_cmd_read_reminder(int argc, char **argv, int stdout_fd, BOOL compact, BOOL quiet);    // [T-issue282-read-by-id]
 
 #endif /* CalendarOffload_h */

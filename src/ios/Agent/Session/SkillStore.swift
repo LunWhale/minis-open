@@ -11,9 +11,11 @@
 import Foundation
 import SQLite3
 import Compression
+import zlib
 
 // MARK: - Skill Model
 
+// BEGIN SkillImportSource
 enum SkillImportSource: Codable, Equatable {
     case url(String)
     case file       // imported via file picker / paste
@@ -40,7 +42,19 @@ enum SkillImportSource: Codable, Equatable {
         }
         return .file
     }
+
+    /// [T-skill-copy-source-url] The source URL as the long-press "Copy Source
+    /// URL" action copies it, or nil when there is nothing worth copying.
+    /// Only URL-installed skills qualify; file / bundled / session skills have
+    /// no source, and a blank stored URL (a bare "url:" row) shows no action
+    /// rather than putting an empty string on the clipboard.
+    var copyableURL: String? {
+        guard case .url(let raw) = self else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
 }
+// END SkillImportSource
 
 struct Skill: Identifiable {
     let id: String
@@ -426,8 +440,18 @@ Do not create extraneous files: README.md, INSTALLATION_GUIDE.md, CHANGELOG.md, 
         var body: String = ""
     }
 
-    static func parse(skillMD content: String) -> ParsedSkillMD {
+    static func parse(skillMD rawContent: String) -> ParsedSkillMD {
         var result = ParsedSkillMD()
+        // Normalize line endings before splitting. A SKILL.md written on
+        // Windows uses CRLF (classic Mac editors bare CR); splitting on "\n"
+        // alone left a trailing "\r" on every line, and `.whitespaces` does not
+        // contain CR, so the closing "---\r" never matched and the skill
+        // imported as "Untitled Skill". A leading UTF-8 BOM (Notepad) likewise
+        // hid the opening fence.
+        var content = rawContent
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+        if content.first == "\u{FEFF}" { content.removeFirst() }
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
 
         let lines = content.components(separatedBy: "\n")
@@ -1387,7 +1411,9 @@ Do not create extraneous files: README.md, INSTALLATION_GUIDE.md, CHANGELOG.md, 
             let omitted = enabled.filter { s in !selected.contains(where: { $0.id == s.id }) }
             let maxUndisclosed = 100 - selected.count
             let undisclosedNames = omitted.prefix(maxUndisclosed).map(\.name).joined(separator: ", ")
-            fragment += "\n\n\(omitted.count) more skills not shown above: \(undisclosedNames). List /var/minis/skills/ or grep to search all."
+            // [T-prompt-search-neutral] Names no search tool: "or grep to search all"
+            // was a direct instruction that outweighed the rg guidance.
+            fragment += "\n\n\(omitted.count) more skills not shown above: \(undisclosedNames). List or search /var/minis/skills/ to find the rest."
         }
 
         return fragment
@@ -2124,70 +2150,30 @@ extension SkillStore {
         return true
     }
 
-    /// Build a ZIP archive of the skill directory for CloudSync.
-    /// Includes SKILL.md and all bundled files, excluding package manager dirs.
-    /// Returns nil if the skill directory doesn't exist or has no files.
-    func buildSkillZipData(_ skillId: String) -> Data? {
-        let syncLogger = AppLogger(category: "SkillSync")
-        let skillDir = skillsDir.appendingPathComponent(skillId)
-        guard fm.fileExists(atPath: skillDir.path) else {
-            syncLogger.info("[ZIP] '\(skillId)' directory missing — cannot build ZIP")
-            return nil
-        }
+    /// [T-skill-zip-off-main] The skill's files as a ZIP on disk, for CloudSync:
+    /// SKILL.md and all bundled files, excluding package manager dirs. nil if
+    /// the skill directory doesn't exist or has no files.
+    ///
+    /// Never runs on the main thread. It used to: both sync engines called the
+    /// builder inside `MainActor.run`, and for a 5 MB skill that was reading
+    /// 106 files, a bit-by-bit CRC over every byte and assembling the archive -
+    /// 2.4 to 2.7 s with no frame drawn, each time a sync batch carried the
+    /// skill (once when a task ended and released the push, then again every
+    /// ~13 s while CloudKit kept failing the batch). Now the work is on a
+    /// background task, the CRC is zlib's, and an unchanged skill reuses the
+    /// file built last time (see SkillZipPackager).
+    nonisolated static func skillZipFile(skillId: String, skillDir: URL) async -> URL? {
+        await Task.detached(priority: .utility) {
+            SkillZipPackager.shared.zipFile(
+                skillId: skillId, skillDir: skillDir,
+                isExcludedDir: { SkillStore.isExcludedDir($0) },
+                log: { AppLogger(category: "SkillSync").info($0) })
+        }.value
+    }
 
-        var files: [(relativePath: String, data: Data)] = []
-        var skippedDirs: [String] = []
-
-        guard let enumerator = fm.enumerator(
-            at: skillDir,
-            includingPropertiesForKeys: [.isRegularFileKey],
-            options: [.skipsHiddenFiles]
-        ) else { return nil }
-
-        let dirComponents = skillDir.standardizedFileURL.pathComponents
-
-        for case let fileURL as URL in enumerator {
-            let lastComponent = fileURL.lastPathComponent
-            if Self.isExcludedDir(lastComponent) {
-                enumerator.skipDescendants()
-                skippedDirs.append(lastComponent)
-                continue
-            }
-
-            let isRegular = (try? fileURL.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile ?? false
-            guard isRegular else { continue }
-
-            let fileComponents = fileURL.standardizedFileURL.pathComponents
-            guard fileComponents.count > dirComponents.count else { continue }
-            let rel = fileComponents[dirComponents.count...].joined(separator: "/")
-
-            guard let data = try? Data(contentsOf: fileURL) else { continue }
-            files.append((relativePath: rel, data: data))
-        }
-
-        if !skippedDirs.isEmpty {
-            syncLogger.info("[ZIP] '\(skillId)' excluded dirs: \(skippedDirs.joined(separator: ", "))")
-        }
-
-        guard !files.isEmpty else {
-            syncLogger.info("[ZIP] '\(skillId)' no files found — returning nil")
-            return nil
-        }
-
-        // Sort so SKILL.md comes first
-        files.sort { a, b in
-            if a.relativePath == "SKILL.md" { return true }
-            if b.relativePath == "SKILL.md" { return false }
-            return a.relativePath < b.relativePath
-        }
-
-        let totalBytes = files.reduce(0) { $0 + $1.data.count }
-        let fileList = files.map { "\($0.relativePath) (\($0.data.count)B)" }.joined(separator: ", ")
-        syncLogger.info("[ZIP] '\(skillId)' packing \(files.count) files (\(totalBytes) bytes raw): \(fileList)")
-
-        let zipData = Self.buildZipArchive(files: files)
-        syncLogger.info("[ZIP] '\(skillId)' ZIP built: \(zipData.count) bytes")
-        return zipData
+    /// SKILL.md of the skill at `skillDir`, readable off the main thread.
+    nonisolated static func readSkillContent(in skillDir: URL) -> String? {
+        try? String(contentsOf: skillDir.appendingPathComponent("SKILL.md"), encoding: .utf8)
     }
 
     /// Import a skill from iCloud sync, unpacking bundled files from a ZIP asset.
@@ -2328,13 +2314,172 @@ extension SkillStore {
             RootfsManager.shared.removeFakefsPath(linuxPath)
         }
     }
+}
 
-    // MARK: - Minimal ZIP Writer
+// BEGIN SkillZipPackaging
+// [T-skill-zip-off-main] Self-contained on purpose (Foundation + zlib, the
+// exclusion rule and the logger passed in): MinisTests/Standalone/
+// SkillZipPackagingTests compiles this block as it ships.
+
+/// Packs a skill directory into a ZIP file for CloudSync, off the main thread.
+///
+/// Built once per content: the file is kept in `cacheDirectory` together with
+/// a fingerprint of what went into it (every included file's path, size and
+/// modification time). A later request with the same fingerprint returns the
+/// same file without reading anything - a sync batch that fails and is retried
+/// no longer packs the skill again. The modification time is the signal the
+/// sync's own dirty scanner uses to decide a skill changed at all.
+final class SkillZipPackager: @unchecked Sendable {
+    static let shared = SkillZipPackager(
+        cacheDirectory: FileManager.default.temporaryDirectory
+            .appendingPathComponent("skill-zip", isDirectory: true))
+
+    /// One file that goes into the archive.
+    struct Entry {
+        let relativePath: String
+        let url: URL
+        let size: Int
+        let modified: Date
+    }
+
+    private let cacheDirectory: URL
+    private let lock = NSLock()
+    /// skillId -> what the file in `cacheDirectory` was built from.
+    private var built: [String: (fingerprint: String, size: Int)] = [:]
+
+    init(cacheDirectory: URL) {
+        self.cacheDirectory = cacheDirectory
+    }
+
+    /// The regular files under `skillDir` that are synced, SKILL.md first and
+    /// the rest by path, plus the names of the directories left out.
+    static func listFiles(in skillDir: URL, isExcludedDir: (String) -> Bool) -> (entries: [Entry], skippedDirs: [String]) {
+        let keys: [URLResourceKey] = [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey]
+        guard let enumerator = FileManager.default.enumerator(
+            at: skillDir, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]
+        ) else { return ([], []) }
+
+        let dirComponents = skillDir.standardizedFileURL.pathComponents
+        var entries: [Entry] = []
+        var skippedDirs: [String] = []
+        for case let fileURL as URL in enumerator {
+            let lastComponent = fileURL.lastPathComponent
+            if isExcludedDir(lastComponent) {
+                enumerator.skipDescendants()
+                skippedDirs.append(lastComponent)
+                continue
+            }
+            let values = try? fileURL.resourceValues(forKeys: Set(keys))
+            guard values?.isRegularFile == true else { continue }
+
+            let fileComponents = fileURL.standardizedFileURL.pathComponents
+            guard fileComponents.count > dirComponents.count else { continue }
+            let rel = fileComponents[dirComponents.count...].joined(separator: "/")
+            entries.append(Entry(relativePath: rel, url: fileURL,
+                                 size: values?.fileSize ?? -1,
+                                 modified: values?.contentModificationDate ?? .distantPast))
+        }
+        // Sort so SKILL.md comes first
+        entries.sort { a, b in
+            if a.relativePath == "SKILL.md" { return true }
+            if b.relativePath == "SKILL.md" { return false }
+            return a.relativePath < b.relativePath
+        }
+        return (entries, skippedDirs)
+    }
+
+    /// Changes when a file is added, removed, renamed, resized or rewritten.
+    static func fingerprint(of entries: [Entry]) -> String {
+        entries.map {
+            "\($0.relativePath)|\($0.size)|\($0.modified.timeIntervalSinceReferenceDate.bitPattern)"
+        }.joined(separator: "\n")
+    }
+
+    /// The skill's ZIP file, built or reused. nil when the directory is
+    /// missing, holds no files, or the file could not be written.
+    func zipFile(skillId: String, skillDir: URL,
+                 isExcludedDir: (String) -> Bool, log: (String) -> Void) -> URL? {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: skillDir.path) else {
+            log("[ZIP] '\(skillId)' directory missing — cannot build ZIP")
+            return nil
+        }
+        let started = Date()
+        let (entries, skippedDirs) = Self.listFiles(in: skillDir, isExcludedDir: isExcludedDir)
+        if !skippedDirs.isEmpty {
+            log("[ZIP] '\(skillId)' excluded dirs: \(skippedDirs.joined(separator: ", "))")
+        }
+        guard !entries.isEmpty else {
+            log("[ZIP] '\(skillId)' no files found — returning nil")
+            return nil
+        }
+
+        let destination = cacheDirectory.appendingPathComponent("\(skillId).zip")
+        let fingerprint = Self.fingerprint(of: entries)
+        lock.lock()
+        let previous = built[skillId]
+        lock.unlock()
+        // Reuse only a file that is still there at the size it was written:
+        // the temporary directory can be emptied under us.
+        if let previous, previous.fingerprint == fingerprint,
+           let onDisk = (try? fm.attributesOfItem(atPath: destination.path))?[.size] as? Int,
+           onDisk == previous.size {
+            log("[ZIP] '\(skillId)' unchanged since the last build — reusing \(onDisk) bytes (\(entries.count) files)")
+            return destination
+        }
+
+        var files: [(relativePath: String, data: Data)] = []
+        files.reserveCapacity(entries.count)
+        // A file that vanished or changed between the listing and the read
+        // makes the fingerprint describe something else than what was packed:
+        // the archive is still sent, but not remembered.
+        var matchesListing = true
+        for entry in entries {
+            guard let data = try? Data(contentsOf: entry.url) else {
+                matchesListing = false
+                continue
+            }
+            if data.count != entry.size { matchesListing = false }
+            files.append((relativePath: entry.relativePath, data: data))
+        }
+        guard !files.isEmpty else {
+            log("[ZIP] '\(skillId)' no files found — returning nil")
+            return nil
+        }
+
+        let totalBytes = files.reduce(0) { $0 + $1.data.count }
+        let fileList = files.map { "\($0.relativePath) (\($0.data.count)B)" }.joined(separator: ", ")
+        log("[ZIP] '\(skillId)' packing \(files.count) files (\(totalBytes) bytes raw): \(fileList)")
+
+        let zipData = Self.buildZipArchive(files: files)
+        do {
+            try fm.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
+            // Atomic: an upload still reading the previous file keeps a whole one.
+            try zipData.write(to: destination, options: .atomic)
+        } catch {
+            log("[ZIP] '\(skillId)' could not write the ZIP: \(error.localizedDescription)")
+            lock.lock()
+            built[skillId] = nil
+            lock.unlock()
+            return nil
+        }
+        lock.lock()
+        built[skillId] = matchesListing ? (fingerprint, zipData.count) : nil
+        lock.unlock()
+        let ms = Int(Date().timeIntervalSince(started) * 1000)
+        log("[ZIP] '\(skillId)' ZIP built: \(zipData.count) bytes in \(ms)ms")
+        return destination
+    }
+
+    // MARK: Minimal ZIP writer
 
     /// Build a ZIP archive in memory from a list of (relativePath, data) pairs.
     /// Uses Store method (no compression) for simplicity and speed.
     static func buildZipArchive(files: [(relativePath: String, data: Data)]) -> Data {
         var archive = Data()
+        // Headers are 30 + 46 bytes per file plus the name twice; reserving
+        // up front saves regrowing a multi-megabyte buffer file by file.
+        archive.reserveCapacity(files.reduce(22) { $0 + $1.data.count + 76 + 2 * $1.relativePath.utf8.count })
         var centralDirectory = Data()
         var offset: UInt32 = 0
 
@@ -2346,45 +2491,46 @@ extension SkillStore {
 
             // Local file header
             var local = Data()
-            local.appendU32(0x04034B50)           // signature
-            local.appendU16(20)                   // version needed
-            local.appendU16(0)                    // flags
-            local.appendU16(0)                    // method: Store
-            local.appendU16(0)                    // mod time
-            local.appendU16(0)                    // mod date
-            local.appendU32(crc)                  // CRC-32
-            local.appendU32(fileSize)             // compressed size
-            local.appendU32(fileSize)             // uncompressed size
-            local.appendU16(nameLen)              // file name length
-            local.appendU16(0)                    // extra field length
+            local.appendU32(0x04034B50) // signature
+            local.appendU16(20)          // version needed
+            local.appendU16(0)           // flags
+            local.appendU16(0)           // method: Store
+            local.appendU16(0)           // mod time
+            local.appendU16(0)           // mod date
+            local.appendU32(crc)         // CRC-32
+            local.appendU32(fileSize)    // compressed size
+            local.appendU32(fileSize)    // uncompressed size
+            local.appendU16(nameLen)     // file name length
+            local.appendU16(0)           // extra field length
             local.append(nameData)
-            local.append(file.data)
 
             // Central directory entry
             var cd = Data()
-            cd.appendU32(0x02014B50)              // signature
-            cd.appendU16(20)                      // version made by
-            cd.appendU16(20)                      // version needed
-            cd.appendU16(0)                       // flags
-            cd.appendU16(0)                       // method: Store
-            cd.appendU16(0)                       // mod time
-            cd.appendU16(0)                       // mod date
-            cd.appendU32(crc)                     // CRC-32
-            cd.appendU32(fileSize)                // compressed size
-            cd.appendU32(fileSize)                // uncompressed size
-            cd.appendU16(nameLen)                 // file name length
-            cd.appendU16(0)                       // extra field length
-            cd.appendU16(0)                       // comment length
-            cd.appendU16(0)                       // disk number start
-            cd.appendU16(0)                       // internal attributes
-            cd.appendU32(0)                       // external attributes
-            cd.appendU32(offset)                  // local header offset
-
+            cd.appendU32(0x02014B50)     // signature
+            cd.appendU16(20)             // version made by
+            cd.appendU16(20)             // version needed
+            cd.appendU16(0)              // flags
+            cd.appendU16(0)              // method: Store
+            cd.appendU16(0)              // mod time
+            cd.appendU16(0)              // mod date
+            cd.appendU32(crc)            // CRC-32
+            cd.appendU32(fileSize)       // compressed size
+            cd.appendU32(fileSize)       // uncompressed size
+            cd.appendU16(nameLen)        // file name length
+            cd.appendU16(0)              // extra field length
+            cd.appendU16(0)              // comment length
+            cd.appendU16(0)              // disk number start
+            cd.appendU16(0)              // internal attributes
+            cd.appendU32(0)              // external attributes
+            cd.appendU32(offset)         // local header offset
             cd.append(nameData)
 
+            // The file's bytes go straight into the archive (they used to be
+            // copied into the header buffer first, then into the archive).
             archive.append(local)
+            archive.append(file.data)
             centralDirectory.append(cd)
-            offset += UInt32(local.count)
+            offset += UInt32(local.count) + fileSize
         }
 
         let cdOffset = offset
@@ -2393,29 +2539,31 @@ extension SkillStore {
 
         // End of central directory
         var eocd = Data()
-        eocd.appendU32(0x06054B50)               // signature
-        eocd.appendU16(0)                        // disk number
-        eocd.appendU16(0)                        // disk with CD
-        eocd.appendU16(UInt16(files.count))      // entries on disk
-        eocd.appendU16(UInt16(files.count))      // total entries
-        eocd.appendU32(cdSize)                   // CD size
-        eocd.appendU32(cdOffset)                 // CD offset
-        eocd.appendU16(0)                        // comment length
+        eocd.appendU32(0x06054B50)           // signature
+        eocd.appendU16(0)                     // disk number
+        eocd.appendU16(0)                     // disk with CD
+        eocd.appendU16(UInt16(files.count))   // entries on disk
+        eocd.appendU16(UInt16(files.count))   // total entries
+        eocd.appendU32(cdSize)                // CD size
+        eocd.appendU32(cdOffset)              // CD offset
+        eocd.appendU16(0)                     // comment length
         archive.append(eocd)
 
         return archive
     }
 
-    /// CRC-32 (ISO 3309 / ITU-T V.42)
-    private static func crc32(_ data: Data) -> UInt32 {
-        var crc: UInt32 = 0xFFFFFFFF
-        for byte in data {
-            crc ^= UInt32(byte)
-            for _ in 0..<8 {
-                crc = (crc >> 1) ^ (crc & 1 != 0 ? 0xEDB88320 : 0)
-            }
+    /// CRC-32 (ISO 3309 / ITU-T V.42), by zlib.
+    ///
+    /// Was a Swift loop doing eight shift-and-xor steps per byte - 40 million
+    /// steps for a 5 MB skill, and most of the 2.5 s the main thread lost.
+    /// zlib's is the same polynomial and the same value. Qualified as
+    /// `zlib.crc32` because this type's own `crc32(_:)` would otherwise win.
+    static func crc32(_ data: Data) -> UInt32 {
+        guard !data.isEmpty else { return 0 }
+        return data.withUnsafeBytes { buf -> UInt32 in
+            guard let base = buf.bindMemory(to: Bytef.self).baseAddress else { return 0 }
+            return UInt32(truncatingIfNeeded: zlib.crc32(0, base, uInt(buf.count)))
         }
-        return crc ^ 0xFFFFFFFF
     }
 }
 
@@ -2429,6 +2577,7 @@ private extension Data {
         append(Data(bytes: &v, count: 4))
     }
 }
+// END SkillZipPackaging
 
 // MARK: - Minimal ZIP Reader (in-memory)
 

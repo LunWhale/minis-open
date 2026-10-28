@@ -127,6 +127,9 @@ final class AgentJob: Identifiable {
     private(set) var firedCount = 0
     /// Remaining fires for `.loop(count:)`; nil = unbounded / not a loop.
     var remaining: Int?
+    /// [T-sched-pill-count] Runs dropped with "Skip next run". They count
+    /// against a loop's `remaining`, so the pill's "2/30" counts them too.
+    var skippedCount = 0
     /// The Swift task driving the trigger (timer sleep) or awaiting the run.
     var task: Task<Void, Never>?
     /// Identifier of the insurance notification (P2), for cancellation.
@@ -159,8 +162,21 @@ final class AgentJob: Identifiable {
     var isEnabled = true
     /// Next planned fire for timer triggers; nil for event triggers.
     var nextFireAt: Date?
+    /// [T-sched-run-now] A fire of this job has been claimed and has not
+    /// returned yet. Set and cleared only by ScheduledJobRunner's claim
+    /// (`claimFire` / the end of `fire`), which the armed timer and "Run now"
+    /// both go through, so the two can never fire the same run twice.
+    var fireInFlight = false
+    /// [T-sched-run-now] The cron slot the current fire consumes. Equal to the
+    /// fire time for a timer fire; earlier than its slot for "Run now", so the
+    /// following run is searched from the slot, not from now.
+    var firingSlot: Date?
     /// `--model <entry_id>` override for `.new` targets.
     var modelEntryId: String?
+    /// [T-scheduled-preset-tool] `--command` / `--tool-args`: a tool call run as
+    /// the first step of every fire, so the model only has to read its output.
+    /// nil for every job without the flag — those fire exactly as before.
+    var presetToolCall: ScheduledPresetToolCall?
     /// [T-scheduled-session-ownership] The conversation this job was CREATED
     /// from — distinct from `target.parentSessionId`, which only exists for
     /// `.childOfCurrent` and means "the parent of the child session".
@@ -222,6 +238,7 @@ final class AgentJob: Identifiable {
         firedCount += 1
         if let sessionId { runSessionId = sessionId }
         if let r = remaining { remaining = max(0, r - 1) }
+        appendFireLog(sessionId: sessionId, ok: nil)
     }
 
     fileprivate func recordFire(sessionId: String?, ok: Bool) {
@@ -230,6 +247,28 @@ final class AgentJob: Identifiable {
         if let sessionId { runSessionId = sessionId }
         if let r = remaining { remaining = max(0, r - 1) }
         startedAt = startedAt ?? Date()
+        appendFireLog(sessionId: sessionId, ok: ok)
+    }
+
+    /// [T-scheduled-task-detail] One entry per fire, for the task's detail
+    /// page. In memory only, like the job itself. It is the only record of a
+    /// `rerun` fire (which writes no envelope message) and of a delivery that
+    /// failed; fires that did write an envelope are also found in the chat
+    /// store, and the page merges both. Bounded so an unbounded loop that runs
+    /// for days cannot grow it without limit.
+    struct FireLogEntry: Equatable {
+        let index: Int
+        let at: Date
+        let sessionId: String?
+        /// nil = handed to a child run whose outcome is not known yet.
+        let ok: Bool?
+    }
+    private(set) var fireLog: [FireLogEntry] = []
+    static let fireLogLimit = 500
+
+    private func appendFireLog(sessionId: String?, ok: Bool?) {
+        fireLog.append(FireLogEntry(index: firedCount, at: Date(), sessionId: sessionId, ok: ok))
+        if fireLog.count > Self.fireLogLimit { fireLog.removeFirst(fireLog.count - Self.fireLogLimit) }
     }
 
     fileprivate func markFinished(_ final: AgentJobState, result: String?) {
@@ -270,11 +309,19 @@ final class AgentJob: Identifiable {
 final class AgentJobRegistry: ObservableObject {
     static let shared = AgentJobRegistry()
 
-    /// Hard cap on concurrently running child-session jobs (design §4.3).
-    /// Helpers do not take `SessionConcurrencyManager` slots — a parent that
-    /// is awaiting its helper holds one, so routing helpers through the same
-    /// pool of 5 could deadlock every parent behind its own children.
-    static let maxConcurrentChildJobs = 3
+    /// [T-limits-per-parent] Cap on child-session jobs (sub agents: delegate_task
+    /// runs and scheduled child-of-current fires) running at once, PER PARENT
+    /// conversation (design §4.3; the value lives in `ConcurrencyLimits`). Each
+    /// parent has its own allowance, so one busy conversation can no longer
+    /// make every other conversation's delegations queue.
+    ///
+    /// Child runs do not take `SessionConcurrencyManager` slots - the agent
+    /// loop gate exempts any vm with a `helperConfig`
+    /// (`AIChatViewModel.acquireSessionSlot`). A parent awaiting its helper
+    /// already holds one, so routing helpers through the same pool could leave
+    /// every parent waiting behind its own children. (Before this change the
+    /// comment here said the same, but the child's `send()` took a slot anyway.)
+    static var maxChildJobsPerParent: Int { ConcurrencyLimits.childJobsPerParent }
 
     /// [T-sub-agents-queue] Delegations that arrived while all slots were busy.
     ///
@@ -290,6 +337,7 @@ final class AgentJobRegistry: ObservableObject {
     /// wait can be long, and re-running the whole entry point re-resolves the
     /// sub agent definition, the model group and every limit against the state
     /// that is true when it actually starts.
+    // BEGIN PerParentQueue
     struct QueuedDelegation {
         let parentSessionId: String
         let args: [String: Any]
@@ -297,7 +345,9 @@ final class AgentJobRegistry: ObservableObject {
         let queuedAt = Date()
     }
 
-    private(set) var queuedDelegations: [QueuedDelegation] = []
+    private(set) var queuedDelegations: [QueuedDelegation] = [] {
+        didSet { jobsDidChange() }   // [T-scheduled-active-session] parents with queued work are busy
+    }
 
     /// [T-sub-agents-queue-orphan] Is this tool call still in the queue?
     ///
@@ -306,6 +356,15 @@ final class AgentJobRegistry: ObservableObject {
     /// can never start. The UI asks this to tell a live wait from that
     /// orphaned state, the same way a `running` block is checked against the
     /// job list.
+    /// [T-subagent-link-survives-reload] The child session of the live job
+    /// that a parent's delegate block (by tool_use id) started, if any.
+    func childSessionId(forToolUseId toolUseId: String) -> String? {
+        jobs.values
+            .filter { if case .childOfCurrent(_, let t) = $0.target { return t == toolUseId }; return false }
+            .filter { $0.state == .running || $0.state == .pending }
+            .compactMap(\.runSessionId).first
+    }
+
     func isQueued(toolUseId: String) -> Bool {
         queuedDelegations.contains { $0.toolUseId == toolUseId }
     }
@@ -318,21 +377,25 @@ final class AgentJobRegistry: ObservableObject {
     /// Cap on the backlog, so a model that fires off a dozen delegations in one
     /// turn cannot leave a queue that outlives the user's interest in it.
     ///
-    /// With `maxConcurrentChildJobs` at 3, this puts the ceiling on how many
-    /// delegations can be pending at one instant at 13. Past that a delegation
-    /// is REFUSED rather than queued, and the refusal says so explicitly so
-    /// the model re-delegates later instead of assuming it was accepted.
-    static let maxQueuedDelegations = 10
+    /// [T-limits-per-parent] Per parent, like the running cap: one
+    /// conversation's backlog cannot fill the queue for the others. With 3
+    /// running and 10 queued, a parent can have at most 13 delegations pending
+    /// at one instant. Past that a delegation is REFUSED rather than queued,
+    /// and the refusal says so explicitly so the model re-delegates later
+    /// instead of assuming it was accepted.
+    static var maxQueuedDelegationsPerParent: Int { ConcurrencyLimits.queuedDelegationsPerParent }
 
     func enqueueDelegation(_ item: QueuedDelegation) -> Bool {
-        guard queuedDelegations.count < Self.maxQueuedDelegations else {
-            logger.warning("[Jobs] delegation queue full (\(Self.maxQueuedDelegations)) — refusing \(item.toolUseId.prefix(12))")
+        let waiting = queuedCount(parent: item.parentSessionId)
+        guard waiting < Self.maxQueuedDelegationsPerParent else {
+            logger.warning("[Jobs] delegation queue full for parent \(item.parentSessionId.prefix(8)) (\(Self.maxQueuedDelegationsPerParent)) — refusing \(item.toolUseId.prefix(12))")
             return false
         }
         queuedDelegations.append(item)
-        logger.info("[Jobs] QUEUED delegation tool=\(item.toolUseId.prefix(12)) depth=\(self.queuedDelegations.count)")
+        logger.info("[Jobs] QUEUED delegation tool=\(item.toolUseId.prefix(12)) parent=\(item.parentSessionId.prefix(8)) depth=\(waiting + 1) total=\(self.queuedDelegations.count)")
         return true
     }
+    // END PerParentQueue
 
     /// Drop anything queued for `parentSessionId` (session deleted, user stop).
     func dropQueuedDelegations(parent parentSessionId: String, reason: String) {
@@ -369,7 +432,13 @@ final class AgentJobRegistry: ObservableObject {
         activityObserver = NotificationCenter.default.addObserver(
             forName: .sessionDidUpdate, object: nil, queue: .main
         ) { [weak self] _ in
-            Task { @MainActor [weak self] in self?.drainIfStalled() }
+            Task { @MainActor [weak self] in
+                self?.drainIfStalled()
+                // [T-scheduled-active-session] `parentsWithActiveChildren` drops
+                // a job once it `looksStuck`, which is time-based and has no
+                // event of its own; any session activity re-derives it.
+                self?.jobsDidChange()
+            }
         }
     }
 
@@ -390,6 +459,7 @@ final class AgentJobRegistry: ObservableObject {
                            trigger: trigger, target: target, prompt: prompt, then: resolvedThen)
         jobs[job.id] = job
         logger.info("[Jobs] REGISTER \(job.logLabel) then=\(String(describing: resolvedThen))")
+        jobsDidChange()
         return job
     }
 
@@ -422,6 +492,7 @@ final class AgentJobRegistry: ObservableObject {
             JobInsuranceNotification.cancel(jobId: jobId)
         }
         logger.info("[Jobs] \(enabled ? "ENABLE" : "DISABLE") \(job.logLabel)")
+        jobsDidChange()
     }
 
     /// Drop a job entirely (after cancel).
@@ -429,6 +500,7 @@ final class AgentJobRegistry: ObservableObject {
         jobs[jobId]?.task?.cancel()
         jobs[jobId] = nil
         JobInsuranceNotification.cancel(jobId: jobId)
+        jobsDidChange()
     }
 
     /// CLI / RPC projection of a job — field names match Android's
@@ -460,6 +532,9 @@ final class AgentJobRegistry: ObservableObject {
         if let id = job.modelIdentity { d["modelIdentity"] = id.payload() }
         if let ok = job.lastFireOk { d["lastFireOk"] = ok }
         if let p = job.prompt { d["prompt"] = String(p.prefix(200)) }
+        // [T-scheduled-preset-tool] Only when set, like `thinking` above. Key
+        // shared with Android's `list` output.
+        if let preset = job.presetToolCall { d["prefillTool"] = preset.summary }
         return d
     }
 
@@ -517,11 +592,52 @@ final class AgentJobRegistry: ObservableObject {
     static let stuckAfter: TimeInterval =
         TimeInterval(AIChatViewModel.helperMaxMinutes * 60) + AIChatViewModel.helperWrapUpGraceSeconds + 300
 
+    // BEGIN PerParentAdmission
+    /// Child jobs running across every parent - diagnostics only; admission
+    /// is per parent.
     var runningChildJobCount: Int {
         jobs.values.filter { $0.target.isChildOfCurrent && $0.state == .running }.count
     }
 
-    var canStartChildJob: Bool { runningChildJobCount < Self.maxConcurrentChildJobs }
+    /// [T-limits-per-parent] Child jobs running for one parent.
+    func runningChildJobCount(parent parentSessionId: String) -> Int {
+        jobs.values.filter { $0.target.parentSessionId == parentSessionId && $0.state == .running }.count
+    }
+
+    /// [T-limits-per-parent] Starts that have been admitted but are not
+    /// `.running` yet, keyed by a caller token (the delegation's tool_use id,
+    /// or `sched:<jobId>` for a scheduled fire) -> parent session id.
+    ///
+    /// Admission and `markRunning` are separated by awaits (creating the child
+    /// session, loading it), so counting only `.running` jobs let a second
+    /// start slip into a slot the first had already taken. A reservation holds
+    /// the slot across that gap; it is released once the job is running (it is
+    /// then counted twice for a moment, which only ever under-admits) or the
+    /// start failed.
+    private(set) var childStartReservations: [String: String] = [:]
+
+    func reserveChildStart(key: String, parent parentSessionId: String) {
+        childStartReservations[key] = parentSessionId
+    }
+
+    /// Release a reservation; a freed reservation may let a queued delegation
+    /// start, so the queue is drained after it.
+    func releaseChildStart(key: String) {
+        guard childStartReservations.removeValue(forKey: key) != nil else { return }
+        drainQueuedDelegations()
+    }
+
+    /// Free child slots of `parent`, not counting the reservation `key` holds
+    /// (the caller's own, when it is the start that reservation was made for).
+    func freeChildSlots(parent parentSessionId: String, excludingReservation key: String? = nil) -> Int {
+        let reserved = childStartReservations.filter { $0.value == parentSessionId && $0.key != key }.count
+        return Self.maxChildJobsPerParent - runningChildJobCount(parent: parentSessionId) - reserved
+    }
+
+    func canStartChildJob(parent parentSessionId: String, excludingReservation key: String? = nil) -> Bool {
+        freeChildSlots(parent: parentSessionId, excludingReservation: key) > 0
+    }
+    // END PerParentAdmission
 
     // MARK: - Lifecycle
 
@@ -531,6 +647,7 @@ final class AgentJobRegistry: ObservableObject {
         job.markRunning(sessionId: sessionId)
         if let sid = sessionId { jobBySession[sid] = jobId }
         logger.info("[Jobs] RUNNING \(job.logLabel) session=\(sessionId?.prefix(8) ?? "nil") fired=\(job.firedCount)")
+        jobsDidChange()
     }
 
     /// Close a job with its final state. Runs `then` for successful
@@ -601,6 +718,7 @@ final class AgentJobRegistry: ObservableObject {
         drainQueuedDelegations()
         // Terminal jobs stay listable until the parent is gone; a loop job
         // with fires left is re-armed by its producer, not here.
+        jobsDidChange()
     }
 
     /// [T-sub-agents-queue] Start queued delegations while slots are free.
@@ -619,38 +737,59 @@ final class AgentJobRegistry: ObservableObject {
     /// because nothing else ever re-checks. Cheap enough to call often — it
     /// returns immediately unless there is both a free slot and something
     /// queued.
+    // BEGIN PerParentDrain
     func drainIfStalled() {
-        guard !queuedDelegations.isEmpty, canStartChildJob else { return }
+        guard queuedDelegations.contains(where: { canStartChildJob(parent: $0.parentSessionId) }) else { return }
         logger.warning("[Jobs] queue stalled with a free slot (\(self.queuedDelegations.count) waiting) — draining")
         drainQueuedDelegations()
     }
 
+    /// [T-limits-per-parent] Start every queued delegation whose parent has a
+    /// free slot, oldest first.
+    ///
+    /// The queue holds several parents' work, each with its own allowance, so
+    /// this does not stop at the first item that cannot start: a parent that
+    /// is full keeps only its OWN items waiting, while later items of other
+    /// parents start (no head-of-line blocking). Each started item reserves its
+    /// slot until it is running, so the same pass cannot over-admit one parent.
     func drainQueuedDelegations() {
-        while canStartChildJob, let next = queuedDelegations.first {
-            queuedDelegations.removeFirst()
+        var remaining: [QueuedDelegation] = []
+        var started: [(QueuedDelegation, AIChatViewModel)] = []
+        for item in queuedDelegations {
+            guard canStartChildJob(parent: item.parentSessionId) else {
+                remaining.append(item)
+                continue
+            }
             // The parent's VM may be gone (session deleted while this waited);
             // whether the session row still exists is checked inside the Task,
             // since that lookup is actor-isolated.
-            guard let parent = ViewModelCache.shared.get(for: next.parentSessionId) else {
-                logger.warning("[Jobs] queued delegation dropped — parent \(next.parentSessionId.prefix(8)) is gone")
+            guard let parent = ViewModelCache.shared.get(for: item.parentSessionId) else {
+                logger.warning("[Jobs] queued delegation dropped — parent \(item.parentSessionId.prefix(8)) is gone")
                 continue
             }
-            var args = next.args
+            reserveChildStart(key: item.toolUseId, parent: item.parentSessionId)
+            started.append((item, parent))
+        }
+        guard !started.isEmpty || remaining.count != queuedDelegations.count else { return }
+        queuedDelegations = remaining
+        for (item, parent) in started {
+            var args = item.args
             args["wait"] = false
-            let item = next
-            logger.info("[Jobs] STARTING queued delegation tool=\(item.toolUseId.prefix(12)) waited=\(Int(Date().timeIntervalSince(item.queuedAt)))s")
+            logger.info("[Jobs] STARTING queued delegation tool=\(item.toolUseId.prefix(12)) parent=\(item.parentSessionId.prefix(8)) waited=\(Int(Date().timeIntervalSince(item.queuedAt)))s")
             Task { @MainActor in
+                // The reservation is held until the start has either registered
+                // its job as running or failed; then it is released (and the
+                // queue drained again for whatever that frees).
+                defer { self.releaseChildStart(key: item.toolUseId) }
                 guard await ChatStore.shared.sessionExists(id: item.parentSessionId) else {
                     logger.warning("[Jobs] queued delegation dropped — session \(item.parentSessionId.prefix(8)) no longer exists")
                     return
                 }
                 _ = await parent.executeDelegateTaskQueued(args: args, toolUseId: item.toolUseId)
             }
-            // One per freed slot: the Task above only occupies it once it has
-            // registered, so stop here and let the next finish() drain again.
-            break
         }
     }
+    // END PerParentDrain
 
     /// Cancel one job (by id) — cancels its task and, for a running child
     /// session, the child's loop.
@@ -703,26 +842,71 @@ final class AgentJobRegistry: ObservableObject {
         !liveScheduledJobs(createdBy: sessionId).isEmpty
     }
 
-    /// [T-scheduled-bka-keepalive] Sessions that own a timer still due to fire.
+    /// [T-scheduled-active-session] Conversations a scheduled job keeps ACTIVE
+    /// between its fires: they are not finished, they are waiting to be woken.
     ///
-    /// A conversation that armed a scheduled job is NOT finished when its turn
-    /// ends — it is waiting to be woken. `SessionActivityTracker.activeSessions`
-    /// cannot express that: it means "streaming or running tools right now" and
-    /// clears the moment the turn completes, which is exactly when a scheduled
-    /// job starts waiting.
+    /// Only a job that comes back into the conversation it was created in
+    /// counts — `--target follow-up` aimed at its own creator — because only
+    /// then is "this chat is still working" true from the user's side. A job
+    /// made outside any conversation, or one that lands in a new chat or a
+    /// different one, makes no chat active. An `.onCompletion` job counts only
+    /// while its upstream job still exists and is unfinished; otherwise it is
+    /// waiting for something that will never happen.
     ///
-    /// BackgroundKeepAliveManager unions this with the tracker's set so such a
-    /// conversation keeps its background allowance. Without it the app is free
-    /// to be suspended, and since firing is driven by an in-process
-    /// `Task`/sleep (ScheduledJobRunner), a suspended process simply never
-    /// fires the timer.
-    var sessionsAwaitingScheduledFire: Set<String> {
-        var out: Set<String> = []
-        for job in jobs.values
-        where job.trigger != .immediate
-            && (job.state == .pending || job.state == .running)
-            && job.isEnabled {
-            if let sid = job.creatorSessionId { out.insert(sid) }
+    /// Fed to `SessionActivityTracker` by `jobsDidChange()`; everything that
+    /// treats a conversation as active — background keep-alive, the composer's
+    /// Stop button, the list spinner, the app badge — reads it from there.
+    // BEGIN sessionsKeptActiveBySchedule
+    /// The conversation `job` keeps active, or nil — THE rule, used for both
+    /// the tracker's `scheduledSessions` and the chat banner's jobs
+    /// ([T-scheduled-banner]), so the two can never disagree.
+    func sessionKeptActive(by job: AgentJob) -> String? {
+        guard job.isEnabled, job.state == .pending || job.state == .running,
+              case .followUp(let sid) = job.target, job.creatorSessionId == sid else { return nil }
+        switch job.trigger {
+        case .immediate:
+            return nil
+        case .onCompletion(let upstreamId):
+            guard let up = jobs[upstreamId], up.state == .pending || up.state == .running else { return nil }
+        case .once, .loop, .cron:
+            break
+        }
+        return sid
+    }
+
+    var sessionsKeptActiveBySchedule: Set<String> {
+        Set(jobs.values.compactMap { sessionKeptActive(by: $0) })
+    }
+    // END sessionsKeptActiveBySchedule
+
+    /// [T-scheduled-active-session] Push the job-derived active sessions to the
+    /// tracker. Called after EVERY change that can move a job in or out of
+    /// them — registration, arming (which runs after the creator is set),
+    /// running, finishing / cancelling, enable / disable, removal, pruning,
+    /// and the delegation queue — because a job is a class mutated in place:
+    /// `$jobs` only publishes on insert / remove, so nothing downstream would
+    /// otherwise see a timer end. Cheap (a pass over a small map); the tracker
+    /// publishes only when a set actually changes.
+    func jobsDidChange() {
+        SessionActivityTracker.shared.setJobSessions(scheduled: sessionsKeptActiveBySchedule,
+                                                     delegating: parentsWithActiveChildren)
+        // [T-scheduled-banner] The chat's top banner shows the next of these.
+        let byChat = activeScheduleJobIdsByChat
+        if byChat != activeScheduleJobIdsBySession { activeScheduleJobIdsBySession = byChat }
+    }
+
+    /// [T-scheduled-banner] The jobs keeping each conversation active
+    /// (`sessionKeptActive(by:)` — the very jobs behind `scheduledSessions`),
+    /// grouped by that conversation. Published from `jobsDidChange()` only
+    /// when the grouping changes, so the chat banner appears and disappears
+    /// with them without polling; the banner reads each job's next fire time
+    /// itself, once a second.
+    @Published private(set) var activeScheduleJobIdsBySession: [String: Set<String>] = [:]
+
+    private var activeScheduleJobIdsByChat: [String: Set<String>] {
+        var out: [String: Set<String>] = [:]
+        for job in jobs.values {
+            if let sid = sessionKeptActive(by: job) { out[sid, default: []].insert(job.id) }
         }
         return out
     }
@@ -742,10 +926,12 @@ final class AgentJobRegistry: ObservableObject {
     /// that its timer was cancelled rather than silently stop hearing from it
     /// (`silent` exists for the opposite case — tearing a job down without
     /// disturbing a conversation).
+    /// `silent: true` is for tearing down a DELETED conversation: there is
+    /// nobody left to tell, so no cancellation callback is delivered.
     @discardableResult
-    func cancelScheduled(createdBy sessionId: String, reason: String) -> Int {
+    func cancelScheduled(createdBy sessionId: String, reason: String, silent: Bool = false) -> Int {
         let live = liveScheduledJobs(createdBy: sessionId)
-        for job in live { cancel(jobId: job.id, reason: reason, silent: false) }
+        for job in live { cancel(jobId: job.id, reason: reason, silent: silent) }
         if !live.isEmpty {
             logger.info("[Jobs] cancelled \(live.count) scheduled job(s) created by \(sessionId.prefix(8)): \(reason)")
         }
@@ -790,6 +976,27 @@ final class AgentJobRegistry: ObservableObject {
             if let parent = job.target.parentSessionId { return parent }
         }
         return nil
+    }
+
+    /// [T-subagent-stop-from-own-page] The user's Stop on a sub agent, from
+    /// its card in the parent OR its own page. Mute the parent turn first (a
+    /// sibling already finishing delivers through the loop or the job
+    /// callback, and both check the flag), then cancel the whole sibling set
+    /// silently — see `cancelSiblings`. Returns how many jobs it stopped; 0
+    /// means no live job backs this child (e.g. a run from an earlier process).
+    ///
+    /// The child's own page used to call the child's `cancel()` directly,
+    /// which leaves the job's callback armed: the backstop observer finished
+    /// the job as "cancelled" and woke the parent with it, and the parent
+    /// could re-delegate the task the user had just stopped (field-reproduced
+    /// on iPhone 11, 2026-09-26).
+    @discardableResult
+    func stopSubAgentByUser(childSessionId: String, reason: String) -> Int {
+        if let parent = parentSession(ofChild: childSessionId),
+           let parentVM = ViewModelCache.shared.get(for: parent) {
+            parentVM.muteDelegationResults(reason: reason)
+        }
+        return cancelSiblings(ofChild: childSessionId, reason: reason)
     }
 
     /// [T-stop-sibling-subagent] Stop every sub agent of the turn that
@@ -855,6 +1062,7 @@ final class AgentJobRegistry: ObservableObject {
         for (id, job) in jobs where job.state != .running && job.state != .pending {
             if (job.finishedAt ?? job.createdAt) < cutoff { jobs[id] = nil }
         }
+        jobsDidChange()
     }
 
     // MARK: - Loop end → job end
@@ -870,7 +1078,13 @@ final class AgentJobRegistry: ObservableObject {
             guard let self, let job = self.jobs[jobId], job.state == .running else { return }
             let vm = ViewModelCache.shared.get(for: sessionId)
             let cancelled = vm?.userDidCancel ?? false
-            self.finish(jobId, state: cancelled ? .cancelled : .done, result: text)
+            // [T-subagent-timeout-reason] A helper the runner stopped for its
+            // budget also has userDidCancel set (same cancel()). This observer
+            // can run before the runner's own finish(.timeout), so it has to
+            // name that ending itself or the job closes as `cancelled`.
+            let state: AgentJobState = vm?.helperStoppedForTimeout == true ? .timeout
+                : (cancelled ? .cancelled : .done)
+            self.finish(jobId, state: state, result: text)
         }
     }
 
@@ -892,8 +1106,15 @@ final class AgentJobRegistry: ObservableObject {
         // crashed, cut off). Fall back to the last thing the agent actually
         // said, clearly labelled, rather than returning nothing.
         guard let earlier = assistants.dropLast().reversed().map(text(of:)).first(where: { !$0.isEmpty }) else { return nil }
-        return "(The agent did not write a final answer; this is its last message before the run ended.)\n" + earlier
+        return noFinalAnswerLabel + "\n" + earlier
     }
+
+    /// The label `lastAssistantText` puts in front of an earlier line when the
+    /// run left no final answer. [T-subagent-termination] Recognised by
+    /// `AIChatViewModel.isFinalAnswer`, so such a run is not reported as
+    /// `completed` just because the fallback text is non-empty.
+    nonisolated static let noFinalAnswerLabel =
+        "(The agent did not write a final answer; this is its last message before the run ended.)"
 
     // MARK: - then
 
@@ -902,13 +1123,33 @@ final class AgentJobRegistry: ObservableObject {
         case .none:
             // Wait mode: this job returns through its own tool result, so
             // there is nothing to deliver here.
+            // [T-subagent-termination] A background run whose callback was
+            // dropped by a silent cancel (the user stopped the parent's agents)
+            // was recorded `pending` by its completion hook - it never will be
+            // delivered, so say so instead of leaving it pending forever.
+            if let sid = job.runSessionId,
+               let t = SubAgentTerminationStore.shared.record(for: sid),
+               t.jobId == job.id, t.delivery == .pending {
+                SubAgentTerminationStore.shared.setDelivery(
+                    sessionId: sid, .failed, detail: "withheld: the user stopped the parent's agents")
+            }
             return
         case .followUpParent(let template):
             guard let parent = job.target.parentSessionId else { return }
             // [T-agent-wrapup-turn] Never hand the parent an empty result:
             // say what happened so it re-delegates instead of digging.
+            // [T-subagent-termination] A delegate run's termination record (if
+            // it has one) names WHY there is no answer and what the last tool
+            // did; other jobs keep the generic note.
+            let termination = job.runSessionId
+                .flatMap { SubAgentTerminationStore.shared.record(for: $0) }
+                .flatMap { $0.jobId == job.id ? $0 : nil }
+            let childSid = termination?.sessionId
             let result: String = {
                 let r = job.resultText ?? ""
+                if let termination, termination.isTerminal {
+                    return AIChatViewModel.helperResultText(r, termination: termination)
+                }
                 return r.isEmpty ? AIChatViewModel.emptyResultNote(status: job.state.rawValue) : r
             }()
             let text: String
@@ -945,6 +1186,9 @@ final class AgentJobRegistry: ObservableObject {
                 // under an id that no longer exists.
                 guard await ChatStore.shared.sessionExists(id: parent) else {
                     logger.warning("[Jobs] then.followUpParent \(job.id.prefix(8)) dropped — parent \(parent.prefix(8)) no longer exists")
+                    if let childSid {
+                        SubAgentTerminationStore.shared.setDelivery(sessionId: childSid, .failed, detail: "parent session no longer exists")
+                    }
                     return
                 }
                 let (vm, fresh) = ViewModelCache.shared.getOrCreate(for: parent)
@@ -958,9 +1202,20 @@ final class AgentJobRegistry: ObservableObject {
                 // asynchronous, so the stop can arrive in between.
                 guard !vm.delegationResultsAreMuted else {
                     logger.info("[Jobs] then.followUpParent \(job.id.prefix(8)) dropped — parent \(parent.prefix(8)) was stopped by the user")
+                    if let childSid {
+                        SubAgentTerminationStore.shared.setDelivery(sessionId: childSid, .failed, detail: "parent was stopped by the user")
+                    }
                     return
                 }
                 let outcome = vm.submitProgrammaticPrompt(payload, origin: .job(jobId: job.id), silent: true)
+                if let childSid {
+                    switch outcome {
+                    case .sent: SubAgentTerminationStore.shared.setDelivery(sessionId: childSid, .delivered)
+                    case .queued: SubAgentTerminationStore.shared.setDelivery(sessionId: childSid, .queued,
+                                                                             detail: "waiting behind the parent's running turn")
+                    case .rejected(let reason): SubAgentTerminationStore.shared.setDelivery(sessionId: childSid, .failed, detail: reason)
+                    }
+                }
                 logger.info("[Jobs] then.followUpParent \(job.id.prefix(8)) → parent \(parent.prefix(8)) outcome=\(String(describing: outcome))")
             }
         }

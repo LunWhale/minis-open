@@ -23,6 +23,38 @@ func checkEq<T: Equatable>(_ label: String, _ a: T, _ b: T) {
 
 // MARK: - Reproduced from OpenAIModelsAPI.parseCodexModels
 
+// [T-codex-client-0159] The visibility + reasoning helpers, BYTE-IDENTICAL with
+// OpenAIModelsAPI.swift (guarded in [5]).
+enum OpenAIModelsAPI {
+    // BEGIN codexCatalogVisibility
+    /// `visibility` values that keep a catalogue entry out of the picker. The
+    /// backend's real values are "list" and "hide"; "hide" marks internal
+    /// entries such as gpt-reserve and codex-auto-review. The other spellings
+    /// are kept from the earlier tolerant parser. Same set as Android's
+    /// `CodexModelsApi.HIDDEN_VISIBILITIES`.
+    static let hiddenCodexVisibilities: Set<String> = ["hide", "hidden", "internal", "none"]
+
+    static func isListedInCodexCatalog(_ item: [String: Any]) -> Bool {
+        if let visibility = (item["visibility"] as? String)?.lowercased(),
+           hiddenCodexVisibilities.contains(visibility) {
+            return false
+        }
+        for flag in ["is_visible", "visible", "enabled", "available"] {
+            if let v = item[flag] as? Bool, v == false { return false }
+        }
+        return true
+    }
+
+    /// Reasoning support as the catalogue states it: the real payload carries
+    /// `supported_reasoning_levels` (a non-empty list for reasoning models), not
+    /// `supports_reasoning`. nil when the entry says nothing either way.
+    static func codexCatalogSupportsReasoning(_ item: [String: Any]) -> Bool? {
+        if let levels = item["supported_reasoning_levels"] as? [Any] { return !levels.isEmpty }
+        return (item["supports_reasoning"] as? Bool) ?? (item["reasoning"] as? Bool)
+    }
+    // END codexCatalogVisibility
+}
+
 struct M: Equatable {
     var id: String; var displayName: String
     var contextWindow: Int?; var maxOutputTokens: Int?; var supportsReasoning: Bool?
@@ -39,11 +71,7 @@ func parseCodexModels(_ data: Data) -> [M] {
     return items.compactMap { item -> M? in
         guard let id = (item["id"] as? String) ?? (item["slug"] as? String) ?? (item["model"] as? String),
               !id.isEmpty else { return nil }
-        if let v = (item["visibility"] as? String)?.lowercased(),
-           v == "hidden" || v == "internal" || v == "none" { return nil }
-        for flag in ["is_visible", "visible", "enabled", "available"] {
-            if let b = item[flag] as? Bool, b == false { return nil }
-        }
+        guard OpenAIModelsAPI.isListedInCodexCatalog(item) else { return nil }
         let display = (item["display_name"] as? String) ?? (item["displayName"] as? String)
             ?? (item["name"] as? String) ?? id
         var m = M(id: id, displayName: display, contextWindow: nil, maxOutputTokens: nil, supportsReasoning: nil)
@@ -51,7 +79,7 @@ func parseCodexModels(_ data: Data) -> [M] {
             ?? ((item["limit"] as? [String: Any])?["context"] as? Int)
         m.maxOutputTokens = (item["max_output_tokens"] as? Int) ?? (item["maxOutputTokens"] as? Int)
             ?? ((item["limit"] as? [String: Any])?["output"] as? Int)
-        m.supportsReasoning = (item["supports_reasoning"] as? Bool) ?? (item["reasoning"] as? Bool)
+        m.supportsReasoning = OpenAIModelsAPI.codexCatalogSupportsReasoning(item)
         return m
     }
 }
@@ -91,6 +119,35 @@ let mixed = json("""
 """)
 let vis = parseCodexModels(mixed).map(\.id)
 checkEq("only visible entries survive", vis, ["visible-one", "still-visible"])
+
+// [T-codex-client-0159] The backend's real values are "list" / "hide".
+let realVis = json("""
+{"models":[
+  {"slug":"gpt-6.1-sol","visibility":"list"},
+  {"slug":"gpt-reserve","visibility":"hide"},
+  {"slug":"codex-auto-review","visibility":"HIDE"},
+  {"slug":"gpt-5.5","visibility":"list"}
+]}
+""")
+checkEq("REGRESSION: \"hide\" entries (gpt-reserve, codex-auto-review) are dropped, \"list\" kept",
+        parseCodexModels(realVis).map(\.id), ["gpt-6.1-sol", "gpt-5.5"])
+
+print("\n[2b] A real-shaped gpt-6.1-sol catalogue entry")
+// Field names as in CLIProxyAPI's codex_client_models.json (c8a2bfe8f); values
+// trimmed to the ones the parser reads.
+let sol61 = json("""
+{"models":[{"slug":"gpt-6.1-sol","display_name":"GPT 6.1 Sol","visibility":"list",
+  "context_window":272000,"minimal_client_version":"0.153.0",
+  "supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"},{"effort":"high"},{"effort":"xhigh"},{"effort":"max"}],
+  "service_tiers":[{"id":"priority","name":"Fast"}]}]}
+""")
+let s61 = parseCodexModels(sol61)
+checkEq("parsed from slug", s61.first?.id, "gpt-6.1-sol")
+checkEq("context window from the catalogue", s61.first?.contextWindow, 272000)
+checkEq("REGRESSION: supported_reasoning_levels → supportsReasoning true (was nil → effort collapsed to \"low\")",
+        s61.first?.supportsReasoning, true)
+checkEq("an empty level list → false", parseCodexModels(json("[{\"id\":\"x\",\"supported_reasoning_levels\":[]}]")).first?.supportsReasoning, false)
+checkEq("no reasoning field at all → nil (left to models.dev)", parseCodexModels(json("[{\"id\":\"x\"}]")).first?.supportsReasoning, nil)
 
 print("\n[3] Shape tolerance — an undocumented endpoint may move keys")
 checkEq("bare array", parseCodexModels(json("[{\"id\":\"a\"}]")).count, 1)
@@ -299,7 +356,9 @@ if api.isEmpty {
     // `minimal_client_version` — 0.153.0 for gpt-6-astra, 0.155.0 for
     // gpt-6-sol / gpt-6-luna [T-gpt6-sol-luna]. The field is a floor, so the
     // highest requirement wins.
-    check("client version is at least 0.155.x", provider.contains("codexClientVersion = \"0.155."))
+    // [T-codex-client-0159] 0.159.0 — CLIProxyAPI c8a2bfe8f raised its catalogue
+    // fetcher to this in the commit that added gpt-6.1-sol.
+    check("client version is 0.159.0", provider.contains("static let codexClientVersion = \"0.159.0\""))
 
     // [4c] drift guards — the tier ladder's SHAPE, not just its helpers.
     check("tier 1 returns the UNION, not the raw discovered list",
@@ -313,8 +372,46 @@ if api.isEmpty {
           api.contains("endpoint returned no usable models — falling back"))
     check("a non-auth failure falls back to the last-known-good key",
           api.contains("OpenAIModelsCache.load(credential: lastKnownGoodKey(instanceId: instanceId"))
-    check("the last-known-good key is token-independent",
-          api.contains("\"codex-oauth-last|\\(instanceId)|\\(accountId ?? \"-\")\""))
+    // [T-codex-client-0159] …and version-dependent, so a catalogue fetched under
+    // the previous client version is never served as the current one.
+    check("the last-known-good key is token-independent and keyed on the client version",
+          api.contains("\"codex-oauth-last|\\(instanceId)|\\(accountId ?? \"-\")|\\(OpenAIProvider.codexClientVersion)\""))
+    check("the tier-1 cache key is keyed on the client version too",
+          api.contains("let cacheKey = \"codex-oauth|\\(accountId ?? \"-\")|\\(OpenAIProvider.codexClientVersion)|"))
+    let fetchFn: String = {
+        guard let a = api.range(of: "private static func fetchCodexBackendModels("),
+              let b = api.range(of: "static let hiddenCodexVisibilities", range: a.upperBound..<api.endIndex) else { return "" }
+        return String(api[a.lowerBound..<b.lowerBound])
+    }()
+    check("discovery sends CLIProxyAPI's header set (client_version query, Accept, Authorization, Originator, UA, Account-Id)",
+          fetchFn.contains("codex/models?client_version=\\(version)") && fetchFn.contains("\"Accept\"")
+          && fetchFn.contains("\"Authorization\"") && fetchFn.contains("\"Originator\"")
+          && fetchFn.contains("\"User-Agent\"") && fetchFn.contains("\"Chatgpt-Account-Id\""))
+    check("…and not the inference-only Version / Openai-Beta headers",
+          !fetchFn.contains("forHTTPHeaderField: \"Version\"") && !fetchFn.contains("forHTTPHeaderField: \"Openai-Beta\""))
+    check("discovery logs the listed ids (ids only)",
+          fetchFn.contains("listed \\(models.count) model ids: \\(models.map(\\.id).joined(separator: \",\"))"))
+    let helper = { (s: String) -> String in
+        guard let a = s.range(of: "// BEGIN codexCatalogVisibility"), let b = s.range(of: "// END codexCatalogVisibility") else { return "" }
+        return String(s[a.lowerBound..<b.upperBound])
+    }
+    let me = (try? String(contentsOf: URL(fileURLWithPath: #filePath), encoding: .utf8)) ?? ""
+    check("the ported visibility/reasoning helpers are byte-identical with the shipping source",
+          !helper(api).isEmpty && helper(api) == helper(me))
+    // iOS / Android must hide the same entries.
+    let androidApi = source("../android/app/src/main/java/com/openminis/app/provider/openai/CodexModelsApi.kt")
+    let androidSet = androidApi.range(of: "HIDDEN_VISIBILITIES = setOf(").map { r -> Set<String> in
+        let tail = androidApi[r.upperBound...]
+        let body = tail[..<(tail.firstIndex(of: ")") ?? tail.endIndex)]
+        return Set(body.split(separator: ",").map { $0.trimmingCharacters(in: CharacterSet(charactersIn: " \"\n")) })
+    } ?? []
+    check("iOS hidden visibilities == Android HIDDEN_VISIBILITIES (\(androidSet.sorted()))",
+          !androidSet.isEmpty && androidSet == OpenAIModelsAPI.hiddenCodexVisibilities)
+    let store = source("Providers/ProviderConfigStore.swift")
+    check("an app update with a new client version refreshes once without waiting out the window",
+          store.contains("let versionChanged = UserDefaults.standard.string(forKey: versionKey) != OpenAIProvider.codexClientVersion")
+          && store.contains("if !versionChanged, let lastRefresh, Date().timeIntervalSince(lastRefresh) < Self.modelsRefreshWindow {")
+          && store.contains("UserDefaults.standard.set(OpenAIProvider.codexClientVersion, forKey: versionKey)"))
     check("the union'd list is what gets cached under BOTH keys", {
         guard let r = api.range(of: "let models = appendBuiltInImageModels(to: discovered)") else { return false }
         let after = String(api[r.upperBound...]).prefix(700)

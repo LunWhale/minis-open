@@ -123,7 +123,9 @@ check("summary candidates are sliced from the turn start",
 check("no whole-history candidate list remains",
       !bg.contains("let allAssistantTurns = agentHistory.filter { $0.role == .assistant }"))
 check("a failed turn's error becomes the body before the generic fallbacks",
-      bg.contains("if hasError, let err = (messages.last?.error ?? errorMessage)?")
+      // [T-bgnotif-outcome] The error now comes from this turn's reply
+      // (currentTurnAssistantMessage), not messages.last.
+      bg.contains("if hasError, let err = (turnError ?? errorMessage)?")
         && (bg.range(of: "source=turn-error")?.lowerBound ?? bg.endIndex)
             < (bg.range(of: "source=fallback-interrupted")?.lowerBound ?? bg.startIndex))
 

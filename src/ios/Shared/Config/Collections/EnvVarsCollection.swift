@@ -30,6 +30,7 @@ struct EnvVarsCollection: ConfigCollection {
         return [
             createdAtField(for: id),
             noteField(for: id),
+            enabledField(for: id),
             // Hidden guard: an agent attempting to read or write the
             // value gets a precise permission_denied.
             HiddenField(
@@ -52,6 +53,25 @@ struct EnvVarsCollection: ConfigCollection {
         EnvVarStore.shared.delete(id: e.id)
     }
 
+    // MARK: [T-config-readable] Readable descriptions
+    //
+    // Only the variable NAME ever appears; there is no code path here that can
+    // reach a value (values live in Keychain and minis-config never reads them).
+
+    let readableSubjectFormat = "Environment variable $%1$@ – %2$@"
+
+    func entityLabel(id: String) -> String? {
+        entry(id)?.key
+    }
+
+    /// `add` is refused (a value is required); nothing to describe.
+    func readableForAdd(_ payload: RedactedConfigValue) -> [ReadableLine] { [] }
+
+    func readableForRemove(id: String) -> [ReadableLine] {
+        guard let e = entry(id) else { return [] }
+        return [ReadableLine("Delete environment variable $%@ (its value is removed from Keychain)", [.text(e.key)])]
+    }
+
     private func entry(_ key: String) -> EnvVarEntry? {
         EnvVarStore.shared.entries.first { $0.key == key }
     }
@@ -69,6 +89,30 @@ struct EnvVarsCollection: ConfigCollection {
         )
     }
 
+    /// [T-envvar-disable] Sensitive: enabling a variable puts its secret
+    /// back into every shell the agent runs, so a write goes through the
+    /// user's confirmation sheet ("Enabled" / "Disabled (environment
+    /// variable)" are localized; the latter reads 已禁用 in zh-Hans).
+    private func enabledField(for key: String) -> ConfigField {
+        ClosureField(
+            path: "envvars.\(key).enabled",
+            displayName: "Enabled",
+            description: "Whether the variable is put into the shell / process environment. A disabled variable keeps its value and note, is still masked in output, and a $$NAME reference to it resolves to an empty value (with a warning).",
+            valueSchema: .bool,
+            risk: .sensitive, revertable: true,
+            readable: ConfigReadable(.bool(on: "Enabled", off: "Disabled (environment variable)")),
+            reader: { [self] in
+                guard let e = entry(key) else { return .null }
+                return .bool(EnvVarStore.shared.isEnabled(id: e.id))
+            },
+            writer: { [self] v in
+                guard case .bool(let b) = v else { throw ConfigError.typeMismatch(expected: "bool") }
+                guard let e = entry(key) else { throw ConfigError.unknownPath("envvars.\(key)") }
+                EnvVarStore.shared.setEnabled(id: e.id, b)
+            }
+        )
+    }
+
     private func noteField(for key: String) -> ConfigField {
         ClosureField(
             path: "envvars.\(key).note",
@@ -76,6 +120,7 @@ struct EnvVarsCollection: ConfigCollection {
             description: "Free-form description (not secret). Empty string clears it.",
             valueSchema: .string(maxLength: 500),
             risk: .normal, revertable: true,
+            readable: ConfigReadable(.text(preview: 60)),
             reader: { [self] in
                 guard let e = entry(key) else { return .null }
                 return .string(e.note)

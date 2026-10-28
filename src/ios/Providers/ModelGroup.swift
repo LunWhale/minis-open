@@ -98,3 +98,166 @@ struct ModelGroup: Identifiable, Codable, Hashable {
         removedMembers = try container.decodeIfPresent([String: Date].self, forKey: .removedMembers) ?? [:]
     }
 }
+
+// BEGIN GroupOrderDiff
+// [T-group-order-log] Self-contained on purpose (Foundation only):
+// MinisTests/Standalone/GroupOrderLogTests compiles this block as it ships.
+
+/// What happened to a group's member list between two states.
+///
+/// A fallback group tries its members in order, so the order IS the priority.
+/// Users reported it changing by itself ("1 used to be before 2, now 2 is
+/// first") and reading the code did not settle who does it. These are the
+/// read-only comparisons behind the `[GroupOrder]` log lines: nothing here, or
+/// anywhere it is called from, changes a merge rule, a timestamp or an order.
+enum GroupOrderDiff {
+    struct Summary: Equatable {
+        /// The members both lists hold come in a different relative order.
+        var reordered: Bool
+        /// In `after` only / in `before` only, in list order.
+        var added: [String]
+        var removed: [String]
+        /// Every added member sits after every member that was already there.
+        var addedOnlyAtTail: Bool
+
+        var isUnchanged: Bool { !reordered && added.isEmpty && removed.isEmpty }
+        /// `reorder` when the surviving members changed places, `members` when
+        /// only the set changed, `none` otherwise.
+        var change: String { reordered ? "reorder" : (added.isEmpty && removed.isEmpty ? "none" : "members") }
+    }
+
+    /// True when the members present in BOTH lists appear in a different
+    /// relative order. Appending, inserting or removing members is not a
+    /// reorder as long as the ones that stay keep their order.
+    static func relativeOrderChanged(before: [String], after: [String]) -> Bool {
+        guard before != after else { return false }
+        let afterSet = Set(after), beforeSet = Set(before)
+        return firstOccurrences(before.filter { afterSet.contains($0) })
+            != firstOccurrences(after.filter { beforeSet.contains($0) })
+    }
+
+    static func summary(before: [String], after: [String]) -> Summary {
+        guard before != after else {
+            return Summary(reordered: false, added: [], removed: [], addedOnlyAtTail: false)
+        }
+        let afterSet = Set(after), beforeSet = Set(before)
+        let added = firstOccurrences(after.filter { !beforeSet.contains($0) })
+        let removed = firstOccurrences(before.filter { !afterSet.contains($0) })
+        var onlyAtTail = false
+        if !added.isEmpty {
+            let lastKept = after.lastIndex { beforeSet.contains($0) } ?? -1
+            let firstAdded = after.firstIndex { !beforeSet.contains($0) } ?? after.count
+            onlyAtTail = firstAdded > lastKept
+        }
+        return Summary(reordered: relativeOrderChanged(before: before, after: after),
+                       added: added, removed: removed, addedOnlyAtTail: onlyAtTail)
+    }
+
+    private static func firstOccurrences(_ ids: [String]) -> [String] {
+        var seen = Set<String>()
+        return ids.filter { seen.insert($0).inserted }
+    }
+
+    /// A member id short enough for a log line and free of anything secret.
+    /// Ids are `<instanceUUID>/<modelId>` (ModelEntry.compositeKey): the first
+    /// 8 characters of the instance id, then the model id. A legacy bare uuid
+    /// is cut to 8. Model ids are names, but a custom one is typed by the
+    /// user, so anything shaped like a URL or carrying credentials is masked.
+    static func shortId(_ entryId: String) -> String {
+        guard let slash = entryId.firstIndex(of: "/") else { return String(entryId.prefix(8)) }
+        let instance = entryId[..<slash].prefix(8)
+        let model = String(entryId[entryId.index(after: slash)...])
+        if model.contains("://") || model.contains("@") || model.contains("?") || model.contains("=") {
+            return "\(instance)/<masked>"
+        }
+        return "\(instance)/\(model.prefix(48))"
+    }
+
+    /// `[a, b, c]`, at most 24 members.
+    static func describe(_ ids: [String]) -> String {
+        let shown = ids.prefix(24).map(shortId).joined(separator: ", ")
+        return ids.count > 24 ? "[\(shown), …+\(ids.count - 24)]" : "[\(shown)]"
+    }
+
+    /// `ab12cd34(Name)`.
+    static func groupTag(id: String, name: String) -> String {
+        "\(id.prefix(8))(\(name.prefix(32)))"
+    }
+
+    /// The line for one group, or nil when its member list did not change in
+    /// order or membership. `reason` is one of the fixed, greppable values.
+    static func line(reason: String, groupId: String, name: String,
+                     before: [String], after: [String], detail: String = "") -> (text: String, summary: Summary)? {
+        let s = summary(before: before, after: after)
+        guard !s.isUnchanged else { return nil }
+        var text = "reason=\(reason) change=\(s.change) group=\(groupTag(id: groupId, name: name))"
+            + " before=\(describe(before)) after=\(describe(after))"
+        if !s.added.isEmpty { text += " added=\(describe(s.added)) addedAtTail=\(s.addedOnlyAtTail)" }
+        if !s.removed.isEmpty { text += " removed=\(describe(s.removed))" }
+        if !detail.isEmpty { text += " \(detail)" }
+        return (text, s)
+    }
+}
+// END GroupOrderDiff
+
+/// [T-group-order-log] Writes the `[GroupOrder]` lines. AppLogger goes through
+/// NSLog into the daily log file in Release builds too (info and warning are
+/// not compiled out; only debug is).
+///
+/// Quiet by construction: a call whose two lists are equal returns after one
+/// array comparison, so the callers - every path that can rewrite a group's
+/// members - cost nothing on an ordinary save.
+enum GroupOrderLog {
+    private static let logger = AppLogger(category: "GroupOrder")
+
+    /// Log one group if its member order or membership changed. A reorder is
+    /// logged at warning when `warnOnReorder` is set (the paths nobody asked
+    /// for: sync, merges, pruning), otherwise at info; a membership-only
+    /// change is always info.
+    @discardableResult
+    static func note(reason: String, groupId: String, name: String,
+                     before: [String], after: [String],
+                     warnOnReorder: Bool = false,
+                     detail: @autoclosure () -> String = "") -> GroupOrderDiff.Summary? {
+        guard before != after,
+              let line = GroupOrderDiff.line(reason: reason, groupId: groupId, name: name,
+                                             before: before, after: after, detail: detail())
+        else { return nil }
+        emit(line.text, warning: warnOnReorder && line.summary.reordered)
+        return line.summary
+    }
+
+    /// The same for every group present in both lists (matched by id).
+    static func noteAll(reason: String, before: [ModelGroup], after: [ModelGroup],
+                        warnOnReorder: Bool = true,
+                        detail: @autoclosure () -> String = "") {
+        guard before != after else { return }
+        let prior = Dictionary(before.map { ($0.id, $0.memberEntryIds) }, uniquingKeysWith: { a, _ in a })
+        for group in after {
+            guard let was = prior[group.id], was != group.memberEntryIds else { continue }
+            note(reason: reason, groupId: group.id, name: group.name,
+                 before: was, after: group.memberEntryIds,
+                 warnOnReorder: warnOnReorder, detail: detail())
+        }
+    }
+
+    /// A timestamp as local wall-clock time plus the raw epoch seconds the
+    /// merge compares, e.g. `10-05T21:43:17.120(1791207797.120)`.
+    static func stamp(_ epoch: Double?) -> String {
+        guard let epoch else { return "-" }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "MM-dd'T'HH:mm:ss.SSS"
+        return "\(f.string(from: Date(timeIntervalSince1970: epoch)))(\(String(format: "%.3f", epoch)))"
+    }
+
+    /// A line built by the caller (the sync and database paths, which have
+    /// more to say than before / after).
+    static func emit(_ text: String, warning: Bool = false) {
+        if warning {
+            logger.warning("[GroupOrder] \(text)")
+        } else {
+            logger.info("[GroupOrder] \(text)")
+        }
+    }
+}

@@ -1,4 +1,5 @@
 import XCTest
+@testable import Minis
 
 /// [T-oauth-refresh-race-classify] Tests for the structured refresh-error
 /// classifier that replaced the naive `msg.contains("400") || ...` substring

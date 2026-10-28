@@ -346,11 +346,17 @@ final class BrowserTabPool: ObservableObject {
     @Published var selectedTabId: Int = 0 {
         didSet { rebindLoadingObservation() }
     }
+    /// The GLOBAL default profile (Browser Settings / minis-config), as this
+    /// pool last read it from UserDefaults. It decides what a tab is CREATED
+    /// with; it does not describe the tabs that are already open - each tab
+    /// keeps the profile it was created or last switched with, in its own
+    /// `BrowserUseManager.currentProfile`. See `syncGlobalDefaultsFromStore()`.
     @Published var userAgentProfile: UserAgentProfile = .mobileSafari
     @Published var customUserAgentString: String = ""
 
     /// Global custom viewport. Zero means "use the UA profile default".
-    /// Persisted across launches via UserDefaults. Session-level overrides
+    /// Persisted across launches via UserDefaults, and like the profile above
+    /// only a default for tabs created later. Session-level overrides
     /// live in `sessionViewportWidth`/`sessionViewportHeight`.
     @Published var customViewportWidth: Int = 0
     @Published var customViewportHeight: Int = 0
@@ -421,17 +427,9 @@ final class BrowserTabPool: ObservableObject {
     }
 
     init() {
-        // Restore persisted UA preference
-        if let raw = UserDefaults.standard.string(forKey: Self.uaProfileKey),
-           let profile = UserAgentProfile(rawValue: raw) {
-            userAgentProfile = profile
-        }
-        if let custom = UserDefaults.standard.string(forKey: Self.uaCustomStringKey) {
-            customUserAgentString = custom
-        }
-        // Restore global custom viewport (0 = not set → fall back to UA).
-        customViewportWidth = UserDefaults.standard.integer(forKey: Self.viewportWidthKey)
-        customViewportHeight = UserDefaults.standard.integer(forKey: Self.viewportHeightKey)
+        // Restore the persisted UA preference and global custom viewport
+        // (0 = not set → fall back to UA).
+        syncGlobalDefaultsFromStore()
         startIdleTimer()
         BrowserTabPoolRegistry.shared.register(self)
         #if DEBUG
@@ -584,6 +582,9 @@ final class BrowserTabPool: ObservableObject {
             return nil
         }
         let nextId = (tabs.map(\.id).max() ?? -1) + 1
+        // A popup is a new tab like any other: it starts from the global
+        // default as it stands now, not from what this pool read at init.
+        syncGlobalDefaultsFromStore()
         let ua = resolvedUserAgentString()
         let vp = resolvedViewportSize()
         let manager = BrowserUseManager(profile: userAgentProfile, customString: ua,
@@ -845,6 +846,13 @@ final class BrowserTabPool: ObservableObject {
             break
         }
 
+        // set_user_agent with a missing or unknown profile is an error, said
+        // before any tab is picked or created. It used to fall back to mobile
+        // Safari silently, so `user_agent: "desktop"` switched to MOBILE.
+        if input.action == .setUserAgent, input.userAgent == nil {
+            return .error(UserAgentProfile.invalidArgumentMessage(raw: input.userAgentRaw))
+        }
+
         // Determine which tab to target.
         // Always go through ensureDefaultTab() when no tabs exist, even if
         // the model explicitly sends tab_id: 0 (which makes input.tabId non-nil).
@@ -997,15 +1005,6 @@ final class BrowserTabPool: ObservableObject {
             }
         }
 
-        // Sync user-agent changes through the pool so all tabs + future tabs update.
-        // Agent-driven switches are temporary — don't persist to UserDefaults.
-        if input.action == .setUserAgent {
-            let profile = input.userAgent ?? .mobileSafari
-            setUserAgentProfile(profile, persist: false)
-            let vp = profile.viewportSize
-            return BrowserActionResult(text: "Switched to \(profile.rawValue) (\(vp.width)x\(vp.height))")
-        }
-
         // Session-scoped viewport override. --reset clears, otherwise set.
         if input.action == .setViewport {
             if input.viewportReset == true {
@@ -1053,6 +1052,13 @@ final class BrowserTabPool: ObservableObject {
         // Capture the manager reference before await — the tabs array may mutate
         // (e.g. closeTab / idle reclaim / registry preempt) while we're suspended.
         let manager = tabs[liveIdx].manager
+
+        // set_user_agent switches THIS tab and nothing else. Done here, inside
+        // the tab's serial slot, so the WebView is not swapped under another
+        // action that is still running on the same tab.
+        if input.action == .setUserAgent, let profile = input.userAgent {
+            return setUserAgent(profile, onTab: targetId, manager: manager)
+        }
         let managerStart = CFAbsoluteTimeGetCurrent()
         logger.info("[PoolTiming] manager_execute_start elapsed=\(Int((managerStart - poolStart) * 1000))ms tab=\(targetId) action=\(input.action.rawValue)")
         let result: BrowserActionResult
@@ -1498,6 +1504,7 @@ final class BrowserTabPool: ObservableObject {
 
     /// Create a BrowserUseManager wired to this pool.
     private func makeManager() -> BrowserUseManager {
+        syncGlobalDefaultsFromStore()
         let ua = resolvedUserAgentString()
         let vp = resolvedViewportSize()
         let manager = BrowserUseManager(profile: userAgentProfile, customString: ua,
@@ -1538,13 +1545,45 @@ final class BrowserTabPool: ObservableObject {
     /// Resolved viewport for new WKWebViews and `desktopViewportScript` width.
     /// Priority: session override > global custom > UA profile default.
     func resolvedViewportSize() -> (width: Int, height: Int) {
+        resolvedViewportSize(for: userAgentProfile)
+    }
+
+    /// The same priority for a tab whose own profile is `profile` - a tab can
+    /// differ from the global default after `set_user_agent`, or because the
+    /// default changed after the tab was opened.
+    func resolvedViewportSize(for profile: UserAgentProfile) -> (width: Int, height: Int) {
         if sessionViewportWidth > 0 && sessionViewportHeight > 0 {
             return (sessionViewportWidth, sessionViewportHeight)
         }
         if customViewportWidth > 0 && customViewportHeight > 0 {
             return (customViewportWidth, customViewportHeight)
         }
-        return userAgentProfile.viewportSize
+        return profile.viewportSize
+    }
+
+    /// Bring this pool's copy of the GLOBAL browser defaults (UA profile,
+    /// custom UA string, global custom viewport) up to what UserDefaults holds
+    /// now. Called before every tab is created, never to change a tab that is
+    /// already open.
+    ///
+    /// Each chat owns a pool, and a pool used to read these keys once, in
+    /// `init`. Browser Settings edits the home screen's own pool and
+    /// minis-config writes UserDefaults directly, so a chat that was already
+    /// in memory kept opening tabs with the profile it had read at creation -
+    /// "the browser is set to desktop but the session is still mobile"
+    /// (ISS-033) - until the app was relaunched.
+    func syncGlobalDefaultsFromStore() {
+        let defaults = UserDefaults.standard
+        let profile = defaults.string(forKey: Self.uaProfileKey).flatMap(UserAgentProfile.init) ?? .mobileSafari
+        let custom = defaults.string(forKey: Self.uaCustomStringKey) ?? ""
+        let width = defaults.integer(forKey: Self.viewportWidthKey)
+        let height = defaults.integer(forKey: Self.viewportHeightKey)
+        // Assign only on change: these are @Published and every open browser
+        // panel observes the pool.
+        if userAgentProfile != profile { userAgentProfile = profile }
+        if customUserAgentString != custom { customUserAgentString = custom }
+        if customViewportWidth != width { customViewportWidth = width }
+        if customViewportHeight != height { customViewportHeight = height }
     }
 
     /// Whether a custom viewport (global or session) is currently active.
@@ -1553,15 +1592,15 @@ final class BrowserTabPool: ObservableObject {
             || (customViewportWidth > 0 && customViewportHeight > 0)
     }
 
-    /// Set the global custom viewport. Persists to UserDefaults and rebuilds
-    /// all existing tab WebViews so UI-visible tabs pick up the new size
-    /// immediately. Pass width=height=0 to clear.
+    /// Set the global custom viewport (Browser Settings). Persists to
+    /// UserDefaults as the default for tabs opened from now on, in every chat.
+    /// Tabs that are already open keep the size they have. Pass
+    /// width=height=0 to clear.
     func setGlobalViewport(width: Int, height: Int) {
         customViewportWidth = max(0, width)
         customViewportHeight = max(0, height)
         UserDefaults.standard.set(customViewportWidth, forKey: Self.viewportWidthKey)
         UserDefaults.standard.set(customViewportHeight, forKey: Self.viewportHeightKey)
-        applyViewportToAllTabs()
     }
 
     /// Set a session-scoped viewport override. Persisted alongside the
@@ -1583,40 +1622,66 @@ final class BrowserTabPool: ObservableObject {
         persistURLs()
     }
 
-    /// Re-apply the current resolved viewport to every live tab's manager.
+    /// Re-apply the session viewport (set or just cleared) to every live tab.
+    /// Each tab keeps its OWN profile and UA string; only its size changes, and
+    /// with no session override it falls back to the global custom viewport as
+    /// it stands now, then to its own profile's default.
     private func applyViewportToAllTabs() {
-        let vp = resolvedViewportSize()
-        let ua = resolvedUserAgentString()
+        syncGlobalDefaultsFromStore()
         for tab in tabs {
+            let profile = tab.manager.currentProfile
+            let vp = resolvedViewportSize(for: profile)
             tab.manager.setViewport(width: vp.width, height: vp.height,
-                                    profile: userAgentProfile, customUA: ua)
+                                    profile: profile, customUA: tab.manager.effectiveUserAgent)
         }
     }
 
-    /// Switch user-agent profile for all existing tabs and future ones.
-    /// - Parameter persist: When `true` (default), saves to UserDefaults as the new default.
-    ///   Pass `false` for temporary agent-driven switches that should not outlive the session.
-    func setUserAgentProfile(_ profile: UserAgentProfile, persist: Bool = true) {
+    /// Browser Settings: make `profile` the global default and persist it.
+    /// Every pool reads it back when it next creates a tab
+    /// (`syncGlobalDefaultsFromStore`), so it applies to new tabs in every
+    /// chat, old or new. Tabs that are already open are left exactly as they
+    /// are - same UA, same viewport, same loaded page.
+    func setUserAgentProfile(_ profile: UserAgentProfile) {
         userAgentProfile = profile
-        if persist {
-            UserDefaults.standard.set(profile.rawValue, forKey: Self.uaProfileKey)
-            // Always persist the latest custom string so edits made while already
-            // on the custom profile survive across launches.
-            UserDefaults.standard.set(customUserAgentString, forKey: Self.uaCustomStringKey)
+        UserDefaults.standard.set(profile.rawValue, forKey: Self.uaProfileKey)
+        // Always persist the latest custom string so edits made while already
+        // on the custom profile survive across launches.
+        UserDefaults.standard.set(customUserAgentString, forKey: Self.uaCustomStringKey)
+    }
+
+    /// `set_user_agent`: switch ONE tab to `profile`. Nothing is persisted and
+    /// neither the global default nor any other tab changes; the tab goes back
+    /// to the global default when it is rebuilt (closed and reopened, reclaimed
+    /// while idle, replaced after a crash or timeout).
+    private func setUserAgent(_ profile: UserAgentProfile, onTab tabId: Int,
+                              manager: BrowserUseManager) -> BrowserActionResult {
+        // The custom string and the global viewport are global settings too.
+        syncGlobalDefaultsFromStore()
+        let ua: String?
+        if profile == .custom {
+            guard !customUserAgentString.isEmpty else {
+                return .error("set_user_agent: no custom user agent is set in Browser Settings. Use desktop_safari or mobile_safari. Nothing was changed.")
+            }
+            ua = customUserAgentString
+        } else {
+            ua = profile.userAgentString
         }
-        let ua = resolvedUserAgentString()
-        // Resolve the new viewport via the same precedence the rest of the
-        // pool uses (session > global > profile default). Without this, a
-        // mobile→desktop UA flip kept the old 390×844 frame, so
-        // `screenshot()`'s `WKSnapshotConfiguration.rect = (0, 0, 390, 844)`
-        // captured only the left half of pages that laid out at desktop
-        // width — the user-visible "screenshot is cropped" bug.
-        let vp = resolvedViewportSize()
-        for tab in tabs {
-            tab.manager.setUserAgent(profile: profile, customString: ua)
-            tab.manager.setViewport(width: vp.width, height: vp.height,
-                                    profile: profile, customUA: ua)
-        }
+        // The viewport is recomputed for the NEW profile (session > global >
+        // profile default) and applied in the same rebuild. Switching the UA
+        // alone kept the old 390×844 frame, so `screenshot()`'s
+        // `WKSnapshotConfiguration.rect = (0, 0, 390, 844)` captured only the
+        // left half of a page laid out at desktop width - the "screenshot is
+        // cropped" bug. `setViewport` sets profile, UA and size together and
+        // rebuilds the WebView once.
+        let vp = resolvedViewportSize(for: profile)
+        manager.setViewport(width: vp.width, height: vp.height, profile: profile, customUA: ua)
+        // The panel's title icon follows the selected tab's profile, which
+        // lives on the manager; tell the pool's observers it may have changed.
+        objectWillChange.send()
+        logger.info("set_user_agent tab=\(tabId) profile=\(profile.rawValue) viewport=\(vp.width)x\(vp.height) globalDefault=\(self.userAgentProfile.rawValue)")
+        return BrowserActionResult(
+            text: "Tab \(tabId) switched to \(profile.rawValue) (\(vp.width)x\(vp.height)). This tab only, and temporary: other tabs keep their own profile, new tabs use the Browser Settings default (\(userAgentProfile.rawValue)), and this tab returns to that default if it is rebuilt.",
+            tabId: tabId)
     }
 
     /// Restore a previously saved URL into a newly created tab.

@@ -23,6 +23,23 @@
 // Standalone (`swift DynamicMaxTokensTests.swift`) like its neighbours.
 import Foundation
 
+/// The sources that used to be the single file Agent/Chat/AIChatViewModel.swift -
+/// the class body plus the AIChatViewModel+<Concern>.swift files it was split
+/// into (the older extension files are NOT included) - read as one text.
+func chatViewModelSource() -> String {
+    let chat = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Agent/Chat")
+    let names = ["AIChatViewModel", "AIChatViewModel+Lifecycle", "AIChatViewModel+ContextUsage",
+                 "AIChatViewModel+StreamingUI", "AIChatViewModel+Speech", "AIChatViewModel+AutoPlayAudio",
+                 "AIChatViewModel+SystemPrompt", "AIChatViewModel+Send", "AIChatViewModel+Rerun",
+                 "AIChatViewModel+EditMessage", "AIChatViewModel+Cancel", "AIChatViewModel+PromptQueue",
+                 "AIChatViewModel+DebugDumps", "AIChatViewModel+TurnCompletion", "AIChatViewModel+AgentLoop",
+                 "AIChatViewModel+ThinkingLevel", "LLMProviderError"]
+    return names.compactMap { try? String(contentsOf: chat.appendingPathComponent($0 + ".swift"), encoding: .utf8) }
+        .joined(separator: "\n")
+}
+
 var failures = 0
 func check(_ l: String, _ a: Bool, _ e: Bool = true) {
     if a == e { print("  ✅ \(l)") } else { print("  ❌ \(l) — expected \(e), got \(a)"); failures += 1 }
@@ -259,7 +276,7 @@ print("▶️  7. shipping sources still carry the pinned lines")
 do {
     let misc = source("Agent/Chat/AIChatViewModel+Misc.swift")
     let compaction = source("Agent/Chat/AIChatViewModel+Compaction.swift")
-    let vm = source("Agent/Chat/AIChatViewModel.swift")
+    let vm = chatViewModelSource()
     let policy = source("Agent/Chat/ContextPolicy.swift")
     if misc.isEmpty || compaction.isEmpty || vm.isEmpty || policy.isEmpty { print("  ⏭  sources not readable") } else {
         check("floor is min(1024, upperBound)", misc.contains("let floor = min(1024, upperBound)"))
@@ -270,7 +287,12 @@ do {
               compaction.contains("let measured = m.measured\n        let result = policy.check(estimatedTokens: measured, contextWindow: contextWindow)")
               && !compaction.contains("max(estimated, apiReported)"))
         check("the stale live-usage mirror is gone", !vm.contains("liveContextTokensForCapacity ="))
-        checkEq("the guard runs at send AND inside the loop", vm.components(separatedBy: "switch checkContextBeforeSend(").count - 1, 2)
+        // [T-ctx-trim-ladder] The in-loop verdict is taken after the trim and can be
+        // overridden when the trimmed request is still over the hard watermark.
+        check("the guard runs at send AND inside the loop",
+              vm.contains("switch checkContextBeforeSend() {")
+              && vm.contains("var inLoopVerdict = checkContextBeforeSend(site: \"in-loop\")")
+              && vm.contains("switch inLoopVerdict {"))
         check("in-loop compaction is capped at 3", vm.contains("static let maxInLoopCompactions = 3"))
         check("user cap → proportional 85%", policy.contains("compactThreshold = Int(Double(contextWindow) * 0.85)"))
         check("hard stop at the ceiling", policy.contains("if contextWindow > 0, estimatedTokens >= contextWindow {"))

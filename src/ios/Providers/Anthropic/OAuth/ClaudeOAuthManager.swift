@@ -128,7 +128,8 @@ final class ClaudeOAuthManager: NSObject, ObservableObject {
         logger.info("Exchanging code for token...")
         let token = try await exchangeCode(result.code, verifier: verifier, state: state)
         #if DEBUG
-        logger.info("Token exchange successful — access_token prefix: \(token.accessToken.prefix(16))...")
+        // [T-log-redaction] Length only - never a token prefix.
+        logger.info("Token exchange successful — access_token \(LogRedaction.secret(token.accessToken))")
         #else
         logger.info("Token exchange successful")
         #endif
@@ -369,12 +370,10 @@ final class ClaudeOAuthManager: NSObject, ObservableObject {
 
         logger.info("\(context) POST \(self.tokenURL)")
         logger.info("\(context) Content-Type: application/json")
+        // [T-oauth-no-secret-in-log] Keys only. The full body (refresh_token /
+        // authorization code) used to be logged in Debug builds - into log
+        // files that are exported and readable through the debug server.
         logger.info("\(context) Body keys: \(body.keys.sorted().joined(separator: ", "))")
-        #if DEBUG
-        if let bodyStr = String(data: jsonData, encoding: .utf8) {
-            logger.debug("\(context) Body: \(bodyStr)")
-        }
-        #endif
 
         let (data, response) = try await URLSession.shared.data(for: request)
         let http = response as? HTTPURLResponse
@@ -455,6 +454,14 @@ final class OAuthCallbackServer: @unchecked Sendable {
     private var continuation: CheckedContinuation<OAuthCallbackResult, Error>?
     private let queue = DispatchQueue(label: "oauth.callback.server")
     private var stopped = false
+    /// [T-oauth-callback-double-resume] The waiter is resumed at most once.
+    /// `finish` is the only place it happens; `finished` + `pendingResult`
+    /// (a result that arrived before anyone waited) live under `stateLock`.
+    /// A lock, not `queue`: the accept loop occupies `queue` while it blocks
+    /// in accept(), so waitForCallback cannot sync onto it.
+    private let stateLock = NSLock()
+    private var finished = false
+    private var pendingResult: Result<OAuthCallbackResult, Error>?
 
     init(
         port: UInt16,
@@ -506,15 +513,55 @@ final class OAuthCallbackServer: @unchecked Sendable {
 
     func waitForCallback(timeout: TimeInterval) async throws -> OAuthCallbackResult {
         try await withCheckedThrowingContinuation { cont in
+            stateLock.lock()
+            if let pending = pendingResult {
+                // The callback (or a stop) landed before we started waiting.
+                pendingResult = nil
+                stateLock.unlock()
+                cont.resume(with: pending)
+                return
+            }
+            if finished {
+                stateLock.unlock()
+                cont.resume(throwing: LLMError.providerError(message: "OAuth callback cancelled"))
+                return
+            }
             self.continuation = cont
+            stateLock.unlock()
 
+            // Note: this runs on `queue`, which the accept loop holds while it
+            // blocks in accept(), so in practice it fires once the loop exits
+            // (a callback, or stop() closing the socket). It used to resume
+            // the captured `cont` whenever `stopped` was false — and an error
+            // callback resumed the waiter WITHOUT setting `stopped`, so the
+            // overdue timeout resumed it a second time when stop() freed the
+            // queue: SIGTRAP "continuation misuse" (1.15 build 3, MCP sign-in).
             queue.asyncAfter(deadline: .now() + timeout) { [weak self] in
-                guard let self, !self.stopped else { return }
-                self.stopped = true
+                guard let self,
+                      self.finish(.failure(LLMError.providerError(message: "OAuth callback timeout"))) else { return }
                 logger.error("[Server] Callback timeout after \(timeout)s")
-                cont.resume(throwing: LLMError.providerError(message: "OAuth callback timeout"))
             }
         }
+    }
+
+    /// [T-oauth-callback-double-resume] Deliver the flow's outcome exactly
+    /// once; every later call is a no-op and returns false. Safe from any
+    /// thread. With no waiter yet, the result is kept for waitForCallback.
+    @discardableResult
+    private func finish(_ result: Result<OAuthCallbackResult, Error>) -> Bool {
+        stateLock.lock()
+        guard !finished else {
+            stateLock.unlock()
+            return false
+        }
+        finished = true
+        stopped = true
+        let cont = continuation
+        continuation = nil
+        if cont == nil { pendingResult = result }
+        stateLock.unlock()
+        cont?.resume(with: result)
+        return true
     }
 
     func stop() {
@@ -546,18 +593,14 @@ final class OAuthCallbackServer: @unchecked Sendable {
         // finished before reading the state
         // (T-oauth-status-premature-and-redirect).
         queue.sync {
-            let wasStopped = stopped
-            stopped = true
             // Resume any in-flight `waitForCallback` so the caller's defer
             // runs immediately (e.g. resetting `isAuthenticating`) instead of
             // hanging until the 5-minute timeout fires. Without this, a user
             // who dismisses Safari mid-flow leaves the manager in a stuck
             // "login in progress" state and the re-entrancy guard blocks
             // every subsequent button tap (T-xai-oauth-stop-resume).
-            if !wasStopped, let cont = continuation {
-                continuation = nil
-                cont.resume(throwing: LLMError.providerError(message: "OAuth callback cancelled"))
-            }
+            // No-op when a callback or the timeout already finished the flow.
+            finish(.failure(LLMError.providerError(message: "OAuth callback cancelled")))
         }
     }
 
@@ -659,16 +702,13 @@ final class OAuthCallbackServer: @unchecked Sendable {
             let errorMsg = queryItems.first(where: { $0.name == "error" })?.value ?? "No code"
             logger.error("[Server] Callback error: \(errorMsg)")
             sendErrorPage(fd: fd, message: errorMsg)
-            continuation?.resume(throwing: LLMError.providerError(message: "OAuth error: \(errorMsg)"))
-            continuation = nil
+            finish(.failure(LLMError.providerError(message: "OAuth error: \(errorMsg)")))
             return
         }
 
         sendSuccessPage(fd: fd)
 
-        stopped = true
-        continuation?.resume(returning: OAuthCallbackResult(code: code, state: state))
-        continuation = nil
+        finish(.success(OAuthCallbackResult(code: code, state: state)))
     }
 
     private func sendSuccessPage(fd: Int32) {

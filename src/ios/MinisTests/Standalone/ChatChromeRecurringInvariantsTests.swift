@@ -26,6 +26,20 @@
 
 import Foundation
 
+/// The chat page's sources, read as one text: AIChatView.swift (state and
+/// `body`) first, then every other file under Views/Chat/AIChatView/ - the
+/// old single AIChatView.swift was split into them.
+func chatViewSource() -> String {
+    let ios = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let dir = ios.appendingPathComponent("Views/Chat/AIChatView")
+    let main = dir.appendingPathComponent("AIChatView.swift")
+    let rest = (FileManager.default.enumerator(at: dir, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? [])
+        .filter { $0.pathExtension == "swift" && $0.lastPathComponent != "AIChatView.swift" }
+        .sorted { $0.path < $1.path }
+    return ([main] + rest).compactMap { try? String(contentsOf: $0, encoding: .utf8) }.joined(separator: "\n")
+}
+
 var failures = 0
 func check(_ label: String, _ ok: Bool) {
     if ok { print("  ✅ \(label)") } else { print("  ❌ \(label)"); failures += 1 }
@@ -54,9 +68,27 @@ func code(_ s: String) -> String {
     }.joined(separator: "\n")
 }
 
+/// The markdown renderer module (Views/Chat/Markdown/, formerly the single file
+/// SelectableMarkdownView.swift), read as one text with its files in path order.
+func markdownModuleSource() -> String {
+    var dir = URL(fileURLWithPath: root)
+    for _ in 0..<7 {
+        let module = dir.appendingPathComponent("src/ios/Views/Chat/Markdown")
+        let files = (FileManager.default.enumerator(at: module, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? [])
+            .filter { $0.pathExtension == "swift" }
+            .sorted { $0.path < $1.path }
+        if !files.isEmpty {
+            return files.compactMap { try? String(contentsOf: $0, encoding: .utf8) }.joined(separator: "\n")
+        }
+        dir = dir.deletingLastPathComponent()
+    }
+    print("  ⚠️  could not locate Views/Chat/Markdown")
+    return ""
+}
+
 let infra = code(source("Agent/MessageList/MessageListInfrastructure.swift"))
-let markdown = code(source("Views/Chat/SelectableMarkdownView.swift"))
-let chatView = code(source("Views/Chat/AIChatView.swift"))
+let markdown = code(markdownModuleSource())
+let chatView = code(chatViewSource())
 let toolSheet = code(source("Views/Chat/ToolLiveSheet.swift"))
 
 // MARK: - A. scroll-to-top
@@ -106,7 +138,7 @@ for count in 1...6 {
 check("for any non-empty list displayedIdx is in range (incl. a stale manual pick)", allInRange)
 check("for an empty list displayedIdx is -1 — callers MUST guard", displayedIdx(count: 0, selected: nil, lastActive: nil) == -1)
 
-let host = slice(chatView, from: "private var floatingToolPreview: some View {", maxLen: 700)
+let host = slice(chatView, from: "var floatingToolPreview: some View {", maxLen: 700)
 check("the bar is only built for a non-empty block list (what keeps collapsedBar's subscript safe)",
       host.contains("if !allToolBlocks.isEmpty {") && host.contains("FloatingToolBar(toolBlocks: allToolBlocks"))
 check("FloatingToolBar.toolBlocks is an immutable value (no shrink between guard and body)",
@@ -116,13 +148,14 @@ check("displayedBlock stays bounds-checked",
         .contains("guard toolBlocks.indices.contains(idx) else { return nil }"))
 // The index math must read the snapshot, not the @Published fields.
 for (name, start) in [("runningAgentIdx", "private var runningAgentIdx: Int? {"),
-                      ("recentlyFinishedIdx", "private var recentlyFinishedIdx: Int? {"),
+                      // [T-composer-typing-lag] now takes the render's single snapshot.
+                      ("recentlyFinishedIdx", "private func recentlyFinishedIdx(in facts: [BlockFacts]) -> Int? {"),
                       ("agentActivity", "private var agentActivity: [UUID: String] {")] {
     let body = slice(toolSheet, from: start, maxLen: 600)
     let end = body.range(of: "\n    }\n").map { String(body[..<$0.upperBound]) } ?? body
     check("\(name) reads BlockFacts, not live @Published fields",
           // `info.toolStatus` is the child tracker's field, not a block's.
-          end.contains("blockFacts") && !end.contains("b.kind") && !end.contains("b.toolStatus")
+          (end.contains("blockFacts") || end.contains("in facts: [BlockFacts]")) && !end.contains("b.kind") && !end.contains("b.toolStatus")
             && !end.contains("toolBlocks") && !end.contains("Self.isActive("))
 }
 

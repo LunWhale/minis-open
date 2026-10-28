@@ -6,6 +6,8 @@ Responsibilities:
   2. Maintain an MCPPool that owns each MCP server child process / HTTP session
      and reuses it across calls (no per-call spawn/kill).
   3. Each server has an independent 10-minute idle TTL; an idle server is killed.
+     At most MAX_STDIO_SERVERS STDIO servers are alive at once; starting one
+     more first evicts the least recently used idle one.
   4. Once the pool is empty for a grace period the daemon exits on its own.
 
 IPC is 127.0.0.1 loopback TCP, NOT a Unix-domain socket: iSH's fakefs cannot
@@ -44,6 +46,22 @@ DAEMON_EXIT_GRACE = 60     # after the pool is empty, wait this long before exit
 RPC_TIMEOUT = 300.0        # per-RPC reply timeout (matches transport modules)
 CONN_TIMEOUT = 310.0       # socket recv timeout (slightly above RPC_TIMEOUT)
 
+# [T-mcp-pool-stdio-cap] STDIO servers alive at once. Each npx-launched server
+# is a whole process tree (npx -> npm -> server, ~16 guest processes) that adds
+# ~200MB to the app's footprint and stays resident until its TTL. Measured on
+# iPhone: one ping of amap-maps took the app 314 -> 537MB, and pinging four such
+# servers in a row reached 900MB+ and the app crashed on a failed malloc.
+# Override with MINIS_MCP_MAX_STDIO_SERVERS (see config.resolve_max_stdio_servers).
+# HTTP servers have no child process and do not count.
+MAX_STDIO_SERVERS = 3
+# How long a request waits for a slot when every live STDIO server is busy
+# serving a request (busy servers are never evicted).
+SLOT_WAIT_SECONDS = 60.0
+# stop(): per-signal wait for the server's process group to disappear.
+GROUP_KILL_GRACE = 2.0
+# Where _group_pids looks for the process table (overridden by tests).
+PROC_ROOT = "/proc"
+
 log = logging.getLogger("mcp-daemon")
 
 
@@ -60,6 +78,10 @@ class MCPServerProcess:
         self._lock = threading.Lock()
         self._id = 0
         self.last_activity = time.time()
+        # [T-mcp-pool-stdio-cap] Requests currently leased on this session
+        # (MCPPool.get(lease=True) .. release). Guarded by the pool lock; a
+        # session with inflight > 0 is never chosen for LRU eviction.
+        self.inflight = 0
 
     def _next_id(self):
         self._id += 1
@@ -187,9 +209,11 @@ class MCPServerProcess:
 
     def stop(self):
         """Graceful close: shut stdin so the server reads EOF and exits; fall
-        back to terminate/kill (SIGTERM can be unreliable under PRoot)."""
+        back to terminate/kill (SIGTERM can be unreliable under PRoot); then
+        make sure the rest of the server's process tree is gone too."""
         if not self.proc:
             return
+        pgid = self.proc.pid
         try:
             self.proc.stdin.close()
         except OSError:
@@ -202,7 +226,93 @@ class MCPServerProcess:
                 self.proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 self.proc.kill()
+                try:
+                    self.proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    pass
+        self._kill_group(pgid)
         log.info("[%s] stopped", self.name)
+
+    def _kill_group(self, pgid):
+        """[T-mcp-pool-stdio-cap] Kill whatever is left of the server's process
+        group.
+
+        start_new_session=True makes the spawned command the leader of its own
+        process group, and everything it starts inherits that group. For an
+        npx-launched server the command is only npx: npm and the server itself
+        are its descendants. Signalling self.proc alone reaps npx and orphans
+        the rest, which then stay resident, so signal the whole group: SIGTERM
+        first, SIGKILL for anything still there after GROUP_KILL_GRACE.
+
+        Members are found in /proc and signalled one pid at a time instead of
+        with killpg(): iSH's kill_group() unlocks pids_lock twice when the group
+        no longer exists (its ESRCH path unlocks, then do_kill unlocks again),
+        and a "is the group gone yet" probe hits exactly that path. Without
+        /proc (macOS, where the tests run) killpg is used.
+        """
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            if not self._signal_group(pgid, sig):
+                return
+            deadline = time.time() + GROUP_KILL_GRACE
+            while time.time() < deadline:
+                if not self._group_alive(pgid):
+                    return
+                time.sleep(0.05)
+        log.warning("[%s] process group %s still present after SIGKILL", self.name, pgid)
+
+    @staticmethod
+    def _group_pids(pgid):
+        """Live (non-zombie) pids in process group `pgid` read from /proc, or
+        None when /proc is not available."""
+        try:
+            names = os.listdir(PROC_ROOT)
+        except OSError:
+            return None
+        pids = []
+        for entry in names:
+            if not entry.isdigit():
+                continue
+            try:
+                with open(os.path.join(PROC_ROOT, entry, "stat"), "r") as f:
+                    stat = f.read()
+            except OSError:
+                continue
+            # "pid (comm) state ppid pgrp ..." - comm may contain spaces/parens.
+            fields = stat[stat.rfind(")") + 2:].split()
+            if len(fields) > 2 and fields[0] != "Z" and fields[2] == str(pgid):
+                pids.append(int(entry))
+        return pids
+
+    def _signal_group(self, pgid, sig):
+        """Send `sig` to every member; False once there is nobody left."""
+        pids = self._group_pids(pgid)
+        if pids is None:
+            try:
+                os.killpg(pgid, sig)
+            except (ProcessLookupError, PermissionError):
+                return False
+            except OSError as exc:
+                log.warning("[%s] killpg(%s, %s) failed: %s", self.name, pgid, sig, exc)
+                return False
+            return True
+        if not pids:
+            return False
+        for pid in pids:
+            try:
+                os.kill(pid, sig)
+            except OSError:
+                pass
+        return True
+
+    def _group_alive(self, pgid):
+        pids = self._group_pids(pgid)
+        if pids is not None:
+            return bool(pids)
+        try:
+            os.killpg(pgid, 0)
+        except OSError:
+            return False
+        return True
 
 
 # --- HTTP MCP session (wraps the existing stateless HTTPTransport) ----------
@@ -216,6 +326,7 @@ class MCPHTTPSession:
         self._transport = HTTPTransport(cfg, name)
         self._lock = threading.Lock()
         self.last_activity = time.time()
+        self.inflight = 0
 
     def is_alive(self):
         return True
@@ -248,7 +359,13 @@ class MCPPool:
 
     def __init__(self, on_empty, on_active=None):
         self._pool = {}
-        self._lock = threading.Lock()
+        # [T-mcp-pool-stdio-cap] Re-entrant: get() evicts the LRU server through
+        # evict() while still holding the lock, so the old server is gone before
+        # the new one is spawned and no other request can slip in between.
+        self._lock = threading.RLock()
+        # Signalled whenever a lease is released or a session leaves the pool,
+        # i.e. whenever a full pool may have become able to make room.
+        self._slot_freed = threading.Condition(self._lock)
         self._on_empty = on_empty
         # [T-mcp-daemon-idle-selfkill] GH#233. Notified whenever the pool holds
         # a live session again, so the daemon can clear its exit-grace stamp.
@@ -290,13 +407,62 @@ class MCPPool:
             return session
         return MCPHTTPSession(name, cfg)
 
-    def get(self, name):
+    def _stdio_cap(self):
+        cap, warning = config.resolve_max_stdio_servers(MAX_STDIO_SERVERS)
+        if warning:
+            log.warning("[pool] %s", warning)
+        return cap
+
+    def _make_room(self, name):
+        """[T-mcp-pool-stdio-cap] Called with the lock held, before a new STDIO
+        session for `name` is created: evict least-recently-used idle STDIO
+        servers until starting one more stays within the cap.
+
+        A server serving a request (inflight > 0) is never evicted. If every
+        live STDIO server is busy, wait for one to finish (the condition
+        releases the lock meanwhile) for up to SLOT_WAIT_SECONDS, then fail
+        the request rather than exceed the cap."""
+        cap = self._stdio_cap()
+        deadline = time.time() + SLOT_WAIT_SECONDS
+        while True:
+            stdio = [(n, s) for n, s in self._pool.items()
+                     if isinstance(s, MCPServerProcess) and n != name]
+            if len(stdio) < cap:
+                return
+            # A server whose process already died still holds a slot until gc;
+            # free those before evicting a live one.
+            dead = [n for n, s in stdio if s.inflight == 0 and not s.is_alive()]
+            if dead:
+                log.warning("[%s] process died, evicting", dead[0])
+                self.evict(dead[0])
+                continue
+            idle = [(s.last_activity, n) for n, s in stdio if s.inflight == 0]
+            if idle:
+                _, victim = min(idle)
+                log.info("[pool] evicting %s (LRU, cap=%d)", victim, cap)
+                self.evict(victim)
+                continue
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                raise MCPError("POOL_FULL", (
+                    "all %d STDIO MCP server slots are busy serving requests; "
+                    "retry when one finishes (raise the limit with %s)"
+                    % (cap, config.MAX_STDIO_SERVERS_ENV)))
+            log.info("[pool] %d STDIO servers busy (cap=%d), %s waiting for a slot",
+                     len(stdio), cap, name)
+            self._slot_freed.wait(remaining)
+
+    def get(self, name, lease=False):
+        """Return the live session for `name`, creating it if needed. With
+        lease=True the session is marked in use until release(session), which
+        protects it from LRU eviction (call_with_retry always leases)."""
         with self._lock:
             session = self._pool.get(name)
             if session is not None and not session.is_alive():
                 log.warning("[%s] process died, evicting", name)
                 session.stop()
                 del self._pool[name]
+                self._slot_freed.notify_all()
                 session = None
             if session is None:
                 cfg = config.get_server(name)
@@ -304,9 +470,17 @@ class MCPPool:
                     raise MCPError("NOT_FOUND", "server '%s' not found" % name)
                 if not cfg.get("enabled", True):
                     raise MCPError("DISABLED", "server '%s' is disabled" % name)
+                if config.is_stdio(cfg):
+                    self._make_room(name)
+                    # _make_room may have waited with the lock released; another
+                    # request for the same server could have created it then.
+                    session = self._pool.get(name)
+            if session is None:
                 log.info("[%s] creating new session", name)
                 session = self._make_session(name, cfg)
                 self._pool[name] = session
+            if lease:
+                session.inflight += 1
             self._was_empty = False
         # [T-mcp-daemon-idle-selfkill] Outside the lock: the pool now holds a
         # live session, so cancel any pending exit grace. This is THE fix — the
@@ -314,9 +488,17 @@ class MCPPool:
         self._on_active()
         return session
 
+    def release(self, session):
+        """End a lease taken by get(lease=True). The session counts as used
+        now, so a long request finishing does not leave it looking stale."""
+        with self._lock:
+            session.inflight = max(0, session.inflight - 1)
+            session.last_activity = time.time()
+            self._slot_freed.notify_all()
+
     def call_with_retry(self, name, fn):
         for attempt in range(2):
-            session = self.get(name)
+            session = self.get(name, lease=True)
             try:
                 return fn(session)
             except MCPError as exc:
@@ -325,10 +507,17 @@ class MCPPool:
                     self.evict(name)
                     continue
                 raise
+            finally:
+                self.release(session)
 
     def evict(self, name):
+        """Remove `name` from the pool and stop it. When called from get()
+        (lock already held) the stop completes before the caller goes on to
+        spawn a replacement."""
         with self._lock:
             session = self._pool.pop(name, None)
+            if session is not None:
+                self._slot_freed.notify_all()
         if session:
             session.stop()
 
@@ -339,7 +528,7 @@ class MCPPool:
         to_evict = []
         with self._lock:
             for name, session in list(self._pool.items()):
-                if now - session.last_activity > TTL_SECONDS:
+                if now - session.last_activity > TTL_SECONDS and session.inflight == 0:
                     log.info("[%s] TTL expired, killing", name)
                     to_evict.append(name)
                 elif not session.is_alive():
@@ -513,7 +702,8 @@ class DaemonServer:
         with open(tmp, "w", encoding="utf-8") as f:
             f.write(str(port))
         os.replace(tmp, self.port_file)
-        log.info("daemon listening on 127.0.0.1:%s pid=%s ttl=%ss", port, os.getpid(), TTL_SECONDS)
+        log.info("daemon listening on 127.0.0.1:%s pid=%s ttl=%ss stdio_cap=%s",
+                 port, os.getpid(), TTL_SECONDS, self.pool._stdio_cap())
 
         def _sigterm(*_):
             log.info("SIGTERM received")

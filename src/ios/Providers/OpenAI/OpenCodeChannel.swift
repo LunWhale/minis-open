@@ -117,6 +117,15 @@ enum OpenCodeChannel {
     /// is persisted. Mirrors the Android draft key.
     static let draftSessionPrefix = "__new__"
 
+    /// [T-opencode-every-entry] A fresh id for a request that belongs to no
+    /// conversation (voice correction, folder suggestion, Vision describe,
+    /// model_use outside a chat). Such a call IS a conversation of its own as
+    /// far as OpenCode is concerned, and without an id it is a hard 400.
+    ///
+    /// Never use this for a request that belongs to a chat: that one must
+    /// carry the chat's own id, or OpenCode keys its cache to a stranger.
+    static func oneOffSessionId() -> String { UUID().uuidString }
+
     /// Attach the channel to an OpenAI-family provider.
     ///
     /// `resolveSessionId` is called **at request-build time**, once per

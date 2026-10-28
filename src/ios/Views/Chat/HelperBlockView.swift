@@ -395,6 +395,10 @@ struct HelperBlockView: View {
 
     private var info: HelperBlockInfo { HelperBlockInfo.parse(block) }
 
+    /// [T-in-chat-search] Set by the list cell; lets the title and status
+    /// line carry search highlights.
+    @Environment(\.chatSearchMessageId) private var searchMessageId
+
     /// The run the app lost when it was killed — the only status that offers
     /// a Resume. Finished / cancelled / timed-out runs ended by a decision.
     private func isInterrupted(_ i: HelperBlockInfo) -> Bool {
@@ -472,7 +476,7 @@ struct HelperBlockView: View {
                         .padding(.horizontal, 5).padding(.vertical, 1)
                         .background(HelperAccent.color.opacity(0.15))
                         .clipShape(Capsule())
-                    Text(info.title)
+                    SearchHighlightText(info.title, blockId: block.id, field: .title, messageId: searchMessageId)
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(ChatColors.primaryText)
                         .lineLimit(1)
@@ -499,16 +503,10 @@ struct HelperBlockView: View {
                     // report in, the parent reads a completed sub-task and
                     // delegates a fresh one — the user pressed Stop and watched
                     // a new agent start (real case 2026-09-07 19:59:08).
-                    let reason = "user stopped this sub agent"
-                    let registry = AgentJobRegistry.shared
-                    // Mute the parent turn BEFORE cancelling: a sibling that is
-                    // already finishing delivers its result through the loop or
-                    // the job callback, and both check this flag.
-                    if let parent = registry.parentSession(ofChild: childId),
-                       let parentVM = ViewModelCache.shared.get(for: parent) {
-                        parentVM.muteDelegationResults(reason: reason)
-                    }
-                    let stopped = registry.cancelSiblings(ofChild: childId, reason: reason)
+                    // Mute + cancel siblings live in the registry, shared with
+                    // the child's own page ([T-subagent-stop-from-own-page]).
+                    let stopped = AgentJobRegistry.shared.stopSubAgentByUser(
+                        childSessionId: childId, reason: "user stopped this sub agent")
                     // No job behind it (the registry is in-memory, so a run
                     // from a previous process has none): stop the loop itself,
                     // which is all there is left to stop.
@@ -616,8 +614,14 @@ struct HelperBlockView: View {
                 // The model stays one tap away on the detail card, and the
                 // finished row below still shows it — there the activity is
                 // over and the space is free.
-                Text(activity.isEmpty ? AppLocalized("working…") : activity)
-                    .font(.system(size: 11)).foregroundStyle(ChatColors.secondaryText).lineLimit(1)
+                Group {
+                    if activity.isEmpty {
+                        Text(AppLocalized("working…"))
+                    } else {
+                        SearchHighlightText(activity, blockId: block.id, field: .activity, messageId: searchMessageId)
+                    }
+                }
+                .font(.system(size: 11)).foregroundStyle(ChatColors.secondaryText).lineLimit(1)
                 if !clock.isEmpty {
                     Text(clock).font(.system(size: 11, design: .monospaced)).foregroundStyle(ChatColors.tertiaryText)
                         .fixedSize()
@@ -631,7 +635,7 @@ struct HelperBlockView: View {
             // the model text is the one flexible member and truncates in
             // the middle, so "Done · primary · … · 8s" always fits one line.
             HStack(spacing: 6) {
-                Text(info.statusText)
+                SearchHighlightText(info.statusText, blockId: block.id, field: .activity, messageId: searchMessageId)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(HelperBlockInfo.statusColor(status))
                     .fixedSize()
@@ -760,19 +764,30 @@ struct HelperThumbnailView: View {
 // own background, a divider, and rounded, stroked content cards, exactly
 // like fileEditorContent / browserContent. Cards, top to bottom:
 //   1. header card — icon, task title, status · tier · elapsed in the bar;
-//      a few key/value lines (model, tools, turns, tokens) in the body;
-//   2. current-tool card (running only) — the child's executing tool with
+//      a few key/value lines (model, times, delivery) in the body;
+//   2. summary chips — tool calls and their outcome, turns, tokens, time left
+//      of the budget ([T-subagent-detail-rich], SubAgentRunDetail.swift);
+//   3. task card — what it was asked to do, and the context it was given,
+//      each collapsed to a few lines;
+//   4. current-tool card (running only) — the child's executing tool with
 //      its icon, and what it is doing;
-//   3. latest-screenshot card — the child's most recent browser/image
+//   5. recent-tool-calls card — the last few calls with status and duration;
+//   6. latest-screenshot card — the child's most recent browser/image
 //      snapshot, when its session holds one;
-//   4. result card — the deliverable (or last message) as Markdown;
+//   7. latest-output card (running) / result card — what it last said, or
+//      the deliverable, as Markdown;
+//   8. actions card (running only) — a course correction, and Stop;
 //   (the live conversation is reached from the sheet's top-right chat-bubble button).
 // Used both for a delegate_task block reached inside ToolLiveSheet and for
 // a tapped agent callback cell (synthetic block, see AgentCallbackDetailTarget).
 struct HelperDetailCard: View {
     @ObservedObject var block: AssistantBlock
     @State private var latestImagePath: String?
-    private let refresh = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
+    /// [T-subagent-detail-rich] What the child's session shows of the run;
+    /// nil until that session has been read (and when there is none).
+    @State private var digest: SubAgentRunDigest?
+    @State private var clock = SubAgentRunClock()
+    @State private var now = Date()
 
     private var childId: String? {
         block.helperChildSessionId
@@ -782,9 +797,26 @@ struct HelperDetailCard: View {
     var body: some View {
         let info = HelperBlockInfo.parse(block)
         let result = Self.resultText(block)
+        let taskArgs = SubAgentTaskArgs.parse(block.toolInputArgs)
+        let budget = budgetMinutes(taskArgs)
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                headerCard(info)
+                headerCard(info, args: taskArgs, budgetMinutes: budget)
+
+                // [T-subagent-detail-rich] How much it has done, at a glance.
+                let remaining: TimeInterval? = {
+                    guard info.isRunning, let budget, let started = clock.startedAt else { return nil }
+                    return SubAgentTimeBudget.remaining(budgetMinutes: budget, startedAt: started, now: now)
+                }()
+                if let digest, !digest.isEmpty || remaining != nil {
+                    SubAgentStatChips(digest: digest, remaining: remaining,
+                                      budgetMinutes: info.isRunning ? budget : nil)
+                        .padding(.horizontal, 2)
+                }
+
+                if let taskArgs {
+                    SubAgentTaskCard(args: taskArgs)
+                }
 
                 if case .running(let tool, let activity, _) = info.phase, tool != nil || !activity.isEmpty {
                     AgentDetailCard(title: AppLocalized("Current tool"),
@@ -803,6 +835,10 @@ struct HelperDetailCard: View {
                             }
                         }
                     }
+                }
+
+                if let digest, digest.total > 0 {
+                    SubAgentToolTimelineCard(digest: digest)
                 }
 
                 if let path = latestImagePath, let img = UIImage(contentsOfFile: path) {
@@ -841,6 +877,14 @@ struct HelperDetailCard: View {
                 }
 
                 let isFinished: Bool = { if case .finished = info.phase { return true }; return false }()
+                // [T-subagent-detail-rich] While it runs the block carries a
+                // progress line, not a message; what the sub agent last wrote
+                // is in its own session.
+                if !isFinished, (result ?? "").isEmpty, let latest = digest?.latestText {
+                    AgentDetailCard(title: AppLocalized("Latest output"), icon: "text.bubble") {
+                        SubAgentCollapsibleText(text: latest)
+                    }
+                }
                 let resultTitle = isFinished ? AppLocalized("Result") : AppLocalized("Last message")
                 // [T-subagent-no-deliverable-status] A sealed checkmark on the
                 // Result card asserts "this is the delivered work". When the
@@ -863,6 +907,12 @@ struct HelperDetailCard: View {
                     }
                 }
 
+                // [T-subagent-detail-rich] Steer or stop, only while there
+                // is a run to act on.
+                if info.isRunning, let childId {
+                    SubAgentActionsCard(childSessionId: childId, canSteer: clock.jobIsLive)
+                }
+
                 // [T-agent-detail-buttons] The live conversation is reached
                 // from the sheet's top-right chat-bubble button; no second
                 // entry at the bottom.
@@ -872,17 +922,48 @@ struct HelperDetailCard: View {
             .padding(.bottom, 16)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .task(id: childId) { await loadLatestImage() }
-        .onReceive(refresh) { _ in
-            if info.isRunning { Task { await loadLatestImage() } }
+        // [T-subagent-detail-rich] Read now, then every 3 s while it runs.
+        //
+        // A loop in the view's task, not a Timer held by the struct: this
+        // view is rebuilt whenever the block changes, and a running block
+        // changes every second (its clock). A `Timer.publish` property is
+        // created anew with each rebuild and `onReceive` re-subscribes to the
+        // new one, so a 3 s (before: 5 s) timer never lived long enough to
+        // fire - seen on a device as a timeline frozen at the moment the card
+        // was opened while "Current tool" moved on. The task belongs to the
+        // view's identity and survives the rebuilds.
+        .task(id: childId) {
+            await loadChildFacts()
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                if Task.isCancelled { break }
+                if HelperBlockInfo.parse(block).isRunning { await loadChildFacts() }
+            }
         }
+        // The run ending is a change of the block, not of the timer: read the
+        // final figures once more so the chips and the timeline are complete.
+        .onChange(of: info.isRunning) { running in
+            if !running { Task { await loadChildFacts() } }
+        }
+    }
+
+    /// The minutes the run was given: its own start record when the block
+    /// holds one, else the delegation's argument clamped as the runner does.
+    private func budgetMinutes(_ args: SubAgentTaskArgs?) -> Int? {
+        let recorded: Int? = {
+            guard let v = AIChatViewModel.parseDelegateResult(block.content)?["budget_minutes"] else { return nil }
+            return (v as? Int) ?? (v as? Double).map { Int($0) }
+        }()
+        return SubAgentTimeBudget.minutes(recorded: recorded, requested: args?.maxMinutes, hasArgs: args != nil,
+                                          defaultMinutes: AIChatViewModel.helperDefaultMinutes,
+                                          maxMinutes: AIChatViewModel.helperMaxMinutes)
     }
 
     // MARK: Header card
 
     @ViewBuilder
-    private func headerCard(_ info: HelperBlockInfo) -> some View {
-        let rows = metaRows(info)
+    private func headerCard(_ info: HelperBlockInfo, args: SubAgentTaskArgs?, budgetMinutes: Int?) -> some View {
+        let rows = metaRows(info, args: args, budgetMinutes: budgetMinutes)
         AgentDetailCard(title: info.title, icon: HelperAccent.icon, iconTint: HelperAccent.color,
                         trailing: { statusTrailing(info) },
                         bodyPadding: rows.isEmpty ? 0 : 12) {
@@ -958,7 +1039,8 @@ struct HelperDetailCard: View {
 
     /// Secondary facts, one short line each: model, tools, turns, tokens,
     /// escalation, delivery. Nothing here competes with the result.
-    private func metaRows(_ info: HelperBlockInfo) -> [(String, String, mono: Bool, badge: ThinkingLevel?)] {
+    private func metaRows(_ info: HelperBlockInfo, args: SubAgentTaskArgs?,
+                          budgetMinutes: Int?) -> [(String, String, mono: Bool, badge: ThinkingLevel?)] {
         var rows: [(String, String, mono: Bool, badge: ThinkingLevel?)] = []
         // [T-subagent-callback-visible] Lead with WHAT this was and WHICH run
         // it belongs to. A transcript can hold several reports from several
@@ -983,19 +1065,56 @@ struct HelperDetailCard: View {
         // qualifies the model, the way the main conversation's nav bar shows
         // it beside the model name.
         let ranAt: ThinkingLevel? = (payload?["thinking_level"] as? String)
-            .flatMap { ThinkingLevel(rawValue: $0) }
+            .flatMap { ThinkingLevel.parse($0) }
             .flatMap { $0.isEnabled ? $0 : nil }
         rows.append(contentsOf: Self.modelRows(info, thinking: ranAt))
+        // [T-subagent-detail-rich] When it ran, as far as the app remembers
+        // (the registry is in memory; after a restart only the elapsed time
+        // in the title bar is left).
+        if let started = clock.startedAt {
+            rows.append((AppLocalized("Started"), Self.clockFormatter.string(from: started), mono: true, badge: nil))
+        }
+        if let finished = clock.finishedAt, !info.isRunning {
+            rows.append((AppLocalized("Finished"), Self.clockFormatter.string(from: finished), mono: true, badge: nil))
+        }
+        if let budgetMinutes {
+            rows.append((AppLocalized("Time budget"),
+                         String(format: AppLocalized("%lld min"), budgetMinutes), mono: false, badge: nil))
+        }
+        var deliveryShown = false
         if case .finished(_, _, _, _, _, let escalation, let background, _) = info.phase {
             if escalation { rows.append((AppLocalized("Escalation"), AppLocalized("The agent asked for a stronger model"), mono: false, badge: nil)) }
-            if background { rows.append((AppLocalized("Delivery"), AppLocalized("Result posted as a new message"), mono: false, badge: nil)) }
+            if background {
+                rows.append((AppLocalized("Delivery"), AppLocalized("Result posted as a new message"), mono: false, badge: nil))
+                deliveryShown = true
+            }
+        }
+        // How the result comes back and whether it reports on the way, as the
+        // delegation asked. Background is the runner's default.
+        if let args {
+            if !deliveryShown {
+                rows.append((AppLocalized("Delivery"),
+                             args.wait == true ? AppLocalized("The conversation waits for the result")
+                                               : AppLocalized("Result arrives as a new message"),
+                             mono: false, badge: nil))
+            }
+            if let level = args.progressReport, level != "none" {
+                rows.append((AppLocalized("Progress report"),
+                             level == "frequent" ? AppLocalized("Frequent (every 15 s when something changed)")
+                                                 : AppLocalized("Moderate (every 60 s)"),
+                             mono: false, badge: nil))
+            }
         }
         if let summary = Self.runSummary(block) {
+            // The chips and the timeline already show tools / turns / tokens
+            // from the child's session; the payload's own line is the
+            // fallback for a run whose session could not be read.
+            let chipsCoverIt = !(digest?.isEmpty ?? true)
             for part in summary.components(separatedBy: " · ") {
                 let t = part.trimmingCharacters(in: .whitespaces)
-                if t.hasPrefix("tools ") { rows.append((AppLocalized("Tools"), String(t.dropFirst(6)), mono: true, badge: nil)) }
-                else if t.hasPrefix("turns ") { rows.append((AppLocalized("Turns"), String(t.dropFirst(6)), mono: true, badge: nil)) }
-                else if t.hasPrefix("tokens ") { rows.append((AppLocalized("Tokens"), String(t.dropFirst(7)), mono: true, badge: nil)) }
+                if t.hasPrefix("tools ") { if !chipsCoverIt { rows.append((AppLocalized("Tools"), String(t.dropFirst(6)), mono: true, badge: nil)) } }
+                else if t.hasPrefix("turns ") { if !chipsCoverIt { rows.append((AppLocalized("Turns"), String(t.dropFirst(6)), mono: true, badge: nil)) } }
+                else if t.hasPrefix("tokens ") { if !chipsCoverIt { rows.append((AppLocalized("Tokens"), String(t.dropFirst(7)), mono: true, badge: nil)) } }
                 else if !t.isEmpty { rows.append((AppLocalized("Summary"), t, mono: false, badge: nil)) }
             }
         }
@@ -1060,18 +1179,33 @@ struct HelperDetailCard: View {
         return rows
     }
 
-    // MARK: Latest screenshot
+    /// 24-hour clock time, locale-pinned (a bare "HH:mm:ss" still follows a
+    /// 12-hour region setting).
+    private static let clockFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "HH:mm:ss"
+        return f
+    }()
 
-    /// The child's most recent browser / image snapshot, if its session
-    /// holds one. Loads the child VM the way the transcript page does, so it
-    /// works after a restart too.
+    // MARK: Child session facts
+
+    /// [T-subagent-detail-rich] Everything the card reads from the child's
+    /// session: the run digest (tool calls, turns, tokens, latest text), the
+    /// run's clock, and its most recent browser / image snapshot. Loads the
+    /// child VM the way the transcript page does, so it works after a restart
+    /// too.
     @MainActor
-    private func loadLatestImage() async {
-        guard let childId else { latestImagePath = nil; return }
+    private func loadChildFacts() async {
+        now = Date()
+        clock = SubAgentRunClock.read(childSessionId: childId, block: block)
+        guard let childId else { latestImagePath = nil; digest = nil; return }
         // [T-vmcache-pools] Still the child pool: opening a child to read a
         // thumbnail must not move it into the user's own budget.
         let (vm, fresh) = ViewModelCache.shared.getOrCreate(for: childId, kind: .child)
         if fresh || vm.messages.isEmpty { await vm.loadSession() }
+        let read = SubAgentRunDigest.make(child: vm)
+        if read != digest { digest = read }
         for msg in vm.messages.reversed() where msg.role == .assistant {
             for b in msg.blocks.reversed() {
                 if let path = b.imageFilePath, !path.isEmpty, FileManager.default.fileExists(atPath: path) {

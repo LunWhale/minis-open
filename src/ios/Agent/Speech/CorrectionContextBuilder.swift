@@ -25,6 +25,8 @@ private let logger = AppLogger(category: "VoiceCorrection")
 /// |    └─ grounding cap          | 500    | newest turns keep plain lead-in text   |
 /// | confusion history block      | 800    | ~20 lines × ~40 chars                  |
 /// | typed-vocabulary block       | 400    | ~30 terms × ~12 chars                  |
+/// | on-screen (viewport) block   | 2000   | what the user is looking at, centre-first |
+/// | latest AI reply block        | 2000   | newest reply, minus what is on screen  |
 ///
 /// Scan guards (cost, not prompt size): at most `maxMessagesScanned` messages
 /// are examined, and only the first `perMessageScanCap` characters of each are
@@ -41,6 +43,15 @@ enum CorrectionContextBudget {
 
     static let maxMessagesScanned = 12
     static let perMessageScanCap = 2000
+
+    /// [T-voice-viewport-context] On-screen conversation block, labels included.
+    static let viewportBlock = 2000
+    /// [T-voice-viewport-context] Newest assistant reply, after removing the parts
+    /// already in the on-screen block.
+    static let latestReplyBlock = 2000
+    /// A row is only cut to fit the remaining viewport budget when at least this
+    /// much of it would survive; a 5-char stub is noise, not context.
+    static let viewportMinSlice = 24
 }
 
 // MARK: - Rarity scoring
@@ -70,6 +81,19 @@ enum RareContentScorer {
     /// for excerpt selection — a stricter bar so excerpts chase truly unusual
     /// content, not every OOV word.
     static let strongThreshold = 60
+    /// A plain Latin word (`Issue`, `commit`) on its own: the zh word list cannot judge
+    /// it, so it scores below the digest threshold.
+    static let plainLatinScore = 20
+    /// [T-voice-mixed-term-restore] A plain Latin word that RECURS in a Chinese
+    /// conversation is a term the user is talking about, and exactly what a Chinese
+    /// recognizer transliterates into look-alike hanzi ("Issue" -> "遗穴"). On device,
+    /// "Issue" appeared 10+ times in the scanned turns and never reached the digest,
+    /// while ordinary words built from common hanzi (状态, 彻底) did at 40. Recurring
+    /// plain Latin words are promoted to this score: above those, below the 90 of
+    /// identifier-shaped tokens.
+    static let recurringLatinScore = 50
+    /// Occurrences across the scanned messages before a plain Latin word is promoted.
+    static let recurringLatinMinCount = 3
 
     /// ≈900 highest-frequency modern Chinese characters (order irrelevant —
     /// membership prior only). Inlined so the scorer works with zero resource
@@ -120,8 +144,9 @@ enum RareContentScorer {
             let allCaps = letters.count >= 2 && letters.allSatisfy { $0.isUppercase }
             let hasJoiner = t.contains { "-_./".contains($0) }
             if interiorUpper || allCaps || hasJoiner { return 90 }
-            // Plain Latin word: the zh word list can't judge it; assume ordinary.
-            return 20
+            // Plain Latin word: the zh word list can't judge it; assume ordinary unless
+            // it recurs (see recurringLatinScore, applied by the builder).
+            return plainLatinScore
         }
         guard hasCJK else {
             // Digits-only or other scripts — not correction-relevant.
@@ -160,6 +185,13 @@ struct ConversationContext: Sendable, Equatable {
     var rareTermsDigest: String? = nil
     /// Budgeted per-message excerpts, oldest→newest, already role-labeled.
     var recentExcerpts: [String] = []
+    /// [T-voice-viewport-context] What the user is looking at right now: rows around
+    /// the centre of the chat's visible area, top→bottom, role-labeled, ≤2000 chars.
+    var viewportLines: [String] = []
+    /// [T-voice-viewport-context] The newest assistant reply (text blocks only), with
+    /// any block already in `viewportLines` removed, ≤2000 chars. nil when the reply is
+    /// entirely on screen or there is none.
+    var latestReply: String? = nil
 
     /// [T-voice-correction-debug-capture] Mining telemetry for the DEBUG trace: the
     /// per-term rarity scores behind `rareTermsDigest`, and the shape of each excerpt.
@@ -178,12 +210,16 @@ struct ConversationContext: Sendable, Equatable {
         var excerpts: [ExcerptMeta] = []
         var scannedMessageCount = 0
         var buildMs = 0
+        /// [T-voice-viewport-context] How the on-screen block was cut; nil when no
+        /// viewport was available (list not on screen, or context built elsewhere).
+        var viewport: ViewportContextBuilder.Report? = nil
     }
     var mining = Mining()
 
     var isEmpty: Bool {
         (lastUserMessage?.isEmpty ?? true) && (lastAgentReply?.isEmpty ?? true)
             && (rareTermsDigest?.isEmpty ?? true) && recentExcerpts.isEmpty
+            && viewportLines.isEmpty && (latestReply?.isEmpty ?? true)
     }
     static let empty = ConversationContext(lastUserMessage: nil, lastAgentReply: nil)
 
@@ -194,6 +230,8 @@ struct ConversationContext: Sendable, Equatable {
             && lhs.lastAgentReply == rhs.lastAgentReply
             && lhs.rareTermsDigest == rhs.rareTermsDigest
             && lhs.recentExcerpts == rhs.recentExcerpts
+            && lhs.viewportLines == rhs.viewportLines
+            && lhs.latestReply == rhs.latestReply
     }
 }
 
@@ -248,6 +286,13 @@ enum CorrectionContextBuilder {
         // Global rare-term aggregation: term → (bestScore, occurrences).
         // Latin terms dedupe case-insensitively (WGHome / wghome are one term).
         var rareTerms: [String: (score: Int, count: Int, display: String)] = [:]
+        // Plain Latin words, tallied separately and promoted after the scan if they
+        // recur. They never count as rare for a sentence (excerpt selection unchanged).
+        var plainLatin: [String: (count: Int, display: String)] = [:]
+        // Promotion only makes sense where Latin words stand out: in an English chat
+        // "file" and "code" recur too and are not terms. Gate on CJK terms outnumbering
+        // plain Latin ones.
+        var cjkTermCount = 0, plainLatinTotal = 0
         var scannedMessages: [ScannedMessage] = []
 
         for (idx, msg) in scanned.enumerated() {
@@ -263,7 +308,14 @@ enum CorrectionContextBuilder {
                 termTotal += terms.count
                 var strongest = 0
                 for term in terms {
+                    if term.contains(where: { RareContentScorer.isCJK($0) }) { cjkTermCount += 1 }
                     let s = RareContentScorer.score(term: term, rank: rankProvider)
+                    if s == RareContentScorer.plainLatinScore { plainLatinTotal += 1 }
+                    if s == RareContentScorer.plainLatinScore, !StopWords.contains(term) {
+                        let key = term.lowercased()
+                        plainLatin[key, default: (count: 0, display: term)].count += 1
+                        continue
+                    }
                     guard s >= RareContentScorer.digestThreshold else { continue }
                     rareInMsg += 1
                     let key = term.lowercased()
@@ -285,6 +337,14 @@ enum CorrectionContextBuilder {
             logger.debug("[CorrectionContext] scan msg#\(idx)(\(msg.role.rawValue)) chars=\(capped.count)\(stripped.count > capped.count ? "(capped)" : "") sentences=\(sentences.count) terms=\(termTotal) rareHits=\(rareInMsg)")
         }
 
+        var promotedLatin = 0
+        for (key, entry) in plainLatin
+        where cjkTermCount > plainLatinTotal
+            && entry.count >= RareContentScorer.recurringLatinMinCount && rareTerms[key] == nil {
+            rareTerms[key] = (score: RareContentScorer.recurringLatinScore, count: entry.count, display: entry.display)
+            promotedLatin += 1
+        }
+
         // ---- 1. Rare-content digest: rarest first, budget rareDigest chars.
         let ranked = rareTerms.values.sorted {
             if $0.score != $1.score { return $0.score > $1.score }
@@ -302,7 +362,7 @@ enum CorrectionContextBuilder {
             digestChars += cost
         }
         let digest = digestTerms.isEmpty ? nil : digestTerms.joined(separator: "、")
-        logger.info("[CorrectionContext] digest candidates=\(ranked.count) kept=\(digestTerms.count) chars=\(digestChars)/\(CorrectionContextBudget.rareDigest)")
+        logger.info("[CorrectionContext] digest candidates=\(ranked.count) recurringLatin=\(promotedLatin) kept=\(digestTerms.count) chars=\(digestChars)/\(CorrectionContextBudget.rareDigest)")
 
         // ---- 2. Message excerpts: newest→oldest until the budget is spent.
         // The two newest turns always contribute plain lead-in grounding (the
@@ -371,5 +431,235 @@ enum CorrectionContextBuilder {
             scannedMessageCount: scannedMessages.count,
             buildMs: ms)
         return ctx
+    }
+}
+
+// MARK: - Viewport context [T-voice-viewport-context]
+
+/// One row of the chat list as laid out, projected for the viewport block. Built by the
+/// message list (it owns the geometry); kept free of UIKit so the selection is testable.
+struct ViewportSourceItem: Sendable, Equatable {
+    enum Kind: String, Sendable {
+        case user = "用户"
+        case assistant = "AI"
+        /// A tool call's one-line title as the tool capsule shows it — never its input
+        /// or output.
+        case tool = "工具"
+    }
+    let kind: Kind
+    let messageId: String
+    /// The assistant block this row renders; nil for a whole user message.
+    let blockId: String?
+    let text: String
+    /// Vertical extent in the list's content coordinates (points).
+    let minY: Double
+    let maxY: Double
+}
+
+/// The list's visible area plus the rows laid out around it.
+struct ViewportSnapshot: Sendable {
+    /// Rows intersecting the capture window, any order.
+    let items: [ViewportSourceItem]
+    /// The part of the list the user can see (excluding the bars and composer drawn over it).
+    let visibleMinY: Double
+    let visibleMaxY: Double
+    var height: Double { max(0, visibleMaxY - visibleMinY) }
+    var centerY: Double { (visibleMinY + visibleMaxY) / 2 }
+    /// The capture window: the visible area plus half a screen above and below —
+    /// two screens in total, centred on the middle of the screen.
+    var windowMinY: Double { centerY - height }
+    var windowMaxY: Double { centerY + height }
+}
+
+/// The newest assistant reply, as its text blocks.
+struct LatestReplySource: Sendable, Equatable {
+    struct Block: Sendable, Equatable { let id: String; let text: String }
+    let messageId: String
+    let blocks: [Block]
+}
+
+/// Builds the on-screen block and the latest-reply block.
+///
+/// On-screen block: every row inside the two-screen window is ranked by its distance from
+/// the centre of the screen and taken nearest-first until `viewportBlock` characters are
+/// spent; the row that no longer fits is cut from the side facing away from the centre
+/// (a row above keeps its end, a row below keeps its start). Only the part of a tall row
+/// that lies inside the window counts — a reply thousands of points long contributes the
+/// text around what is on screen, not its opening paragraph. The kept rows are rendered
+/// top→bottom, so the model reads them in the order the user sees them.
+///
+/// Latest-reply block: the newest reply's text blocks, minus any block already in the
+/// on-screen block (so a reply the user is looking at is sent once, not twice), keeping
+/// the END when it exceeds `latestReplyBlock` — the end is what was written last and what
+/// a user replying to it has just read.
+enum ViewportContextBuilder {
+
+    /// What was selected and why — logged, and carried into the DEBUG trace.
+    struct Report: Sendable {
+        struct Row: Sendable {
+            let kind: String
+            let messageId: String
+            let blockId: String?
+            let distance: Int      // points from the screen centre, 0 = under it
+            let chars: Int         // chars kept (after window clipping / budget cut)
+            let cut: Bool          // cut to fit the budget
+        }
+        var centerY = 0
+        var viewportHeight = 0
+        var windowMinY = 0
+        var windowMaxY = 0
+        var candidateRows = 0
+        var rows: [Row] = []       // in selection order (nearest first)
+        var viewportChars = 0
+        /// "none" | "not_on_screen" | "partially_on_screen" | "fully_on_screen"
+        var latestReplyDedup = "none"
+        var latestReplyBlocksDropped = 0
+        var latestReplyChars = 0
+        var latestReplyTruncated = false
+    }
+
+    struct Output: Sendable {
+        var lines: [String] = []
+        var latestReply: String? = nil
+        var report = Report()
+    }
+
+    static func build(snapshot: ViewportSnapshot?, latestReply: LatestReplySource?) -> Output {
+        var out = Output()
+        var selectedBlockIds = Set<String>()
+
+        if let snap = snapshot, snap.height > 0 {
+            out.report.centerY = Int(snap.centerY)
+            out.report.viewportHeight = Int(snap.height)
+            out.report.windowMinY = Int(snap.windowMinY)
+            out.report.windowMaxY = Int(snap.windowMaxY)
+
+            struct Candidate {
+                let item: ViewportSourceItem
+                let text: String          // clipped to the window
+                let distance: Double
+                /// Where the screen centre falls inside `text`, 0…1 (0 = row is below the
+                /// centre, 1 = above it). Decides which side survives a budget cut.
+                let centerFraction: Double
+            }
+            var candidates: [Candidate] = []
+            for item in snap.items {
+                let clean = item.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !clean.isEmpty, item.maxY > snap.windowMinY, item.minY < snap.windowMaxY else { continue }
+                let text = clip(clean, item: item, toWindow: snap.windowMinY, snap.windowMaxY)
+                guard !text.isEmpty else { continue }
+                let distance: Double
+                if item.minY <= snap.centerY && item.maxY >= snap.centerY { distance = 0 }
+                else { distance = min(abs(item.minY - snap.centerY), abs(item.maxY - snap.centerY)) }
+                let visMin = max(item.minY, snap.windowMinY), visMax = min(item.maxY, snap.windowMaxY)
+                let frac = visMax > visMin ? min(1, max(0, (snap.centerY - visMin) / (visMax - visMin))) : 0.5
+                candidates.append(Candidate(item: item, text: text, distance: distance, centerFraction: frac))
+            }
+            out.report.candidateRows = candidates.count
+
+            // Nearest first; ties (two rows both under the centre can't happen, but equal
+            // distances above and below can) go to the row above — already read.
+            candidates.sort { $0.distance != $1.distance ? $0.distance < $1.distance : $0.item.minY < $1.item.minY }
+
+            var budget = CorrectionContextBudget.viewportBlock
+            var kept: [(minY: Double, line: String)] = []
+            for c in candidates {
+                let label = label(for: c.item, latestReplyId: latestReply?.messageId)
+                // +1: the newline joining this line to the previous one.
+                let overhead = label.count + (kept.isEmpty ? 0 : 1)
+                let room = budget - overhead
+                guard room >= CorrectionContextBudget.viewportMinSlice || room >= c.text.count, room > 0 else { break }
+                var body = c.text
+                var cut = false
+                if body.count > room {
+                    body = cutAround(body, keep: room, centerFraction: c.centerFraction)
+                    cut = true
+                }
+                let line = label + body
+                kept.append((c.item.minY, line))
+                budget -= overhead + body.count
+                if let b = c.item.blockId, c.item.kind == .assistant { selectedBlockIds.insert(b) }
+                out.report.rows.append(.init(kind: c.item.kind.rawValue, messageId: c.item.messageId,
+                                             blockId: c.item.blockId, distance: Int(c.distance),
+                                             chars: body.count, cut: cut))
+                if cut { break }
+            }
+            out.lines = kept.sorted { $0.minY < $1.minY }.map(\.line)
+            out.report.viewportChars = out.lines.joined(separator: "\n").count
+        }
+
+        // Latest reply, deduplicated against the on-screen rows at block granularity.
+        if let reply = latestReply {
+            let blocks = reply.blocks.filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            let remaining = blocks.filter { !selectedBlockIds.contains($0.id) }
+            out.report.latestReplyBlocksDropped = blocks.count - remaining.count
+            if blocks.isEmpty {
+                out.report.latestReplyDedup = "none"
+            } else if remaining.isEmpty {
+                out.report.latestReplyDedup = "fully_on_screen"
+            } else {
+                out.report.latestReplyDedup = remaining.count == blocks.count ? "not_on_screen" : "partially_on_screen"
+                var text = remaining.map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .joined(separator: "\n")
+                if text.count > CorrectionContextBudget.latestReplyBlock {
+                    text = "…" + String(text.suffix(CorrectionContextBudget.latestReplyBlock - 1))
+                    out.report.latestReplyTruncated = true
+                }
+                out.latestReply = text
+                out.report.latestReplyChars = text.count
+            }
+        }
+        let r = out.report
+        if snapshot == nil {
+            logger.info("[CorrectionContext] viewport unavailable (list not on screen) — on-screen block skipped")
+        } else {
+            logger.info("[CorrectionContext] viewport center=\(r.centerY) height=\(r.viewportHeight) window=\(r.windowMinY)…\(r.windowMaxY) rows=\(r.rows.count)/\(r.candidateRows) chars=\(r.viewportChars)/\(CorrectionContextBudget.viewportBlock) cut=\(r.rows.contains { $0.cut })")
+        }
+        logger.info("[CorrectionContext] latestReply dedup=\(r.latestReplyDedup) blocksDropped=\(r.latestReplyBlocksDropped) chars=\(r.latestReplyChars)/\(CorrectionContextBudget.latestReplyBlock) truncated=\(r.latestReplyTruncated)")
+        return out
+    }
+
+    static func label(for item: ViewportSourceItem, latestReplyId: String?) -> String {
+        if item.kind == .assistant, item.messageId == latestReplyId { return "【AI·最新回复】" }
+        return "【\(item.kind.rawValue)】"
+    }
+
+    /// The part of `text` that lies inside the window, assuming characters are spread
+    /// evenly down the row — close enough to keep a tall reply's on-screen paragraphs and
+    /// drop the ones two screens away.
+    static func clip(_ text: String, item: ViewportSourceItem, toWindow lo: Double, _ hi: Double) -> String {
+        let h = item.maxY - item.minY
+        guard h > 0, item.minY < lo || item.maxY > hi else { return text }
+        let n = Double(text.count)
+        let start = Int((max(0, lo - item.minY) / h * n).rounded(.down))
+        let end = Int((min(h, hi - item.minY) / h * n).rounded(.up))
+        guard end > start else { return "" }
+        let chars = Array(text)
+        let s = max(0, min(chars.count, start)), e = max(s, min(chars.count, end))
+        var out = String(chars[s..<e])
+        if s > 0 { out = "…" + out }
+        if e < chars.count { out += "…" }
+        return out
+    }
+
+    /// Keep `keep` characters of `text` centred on `centerFraction` (1 = keep the end,
+    /// 0 = keep the start), marking the removed sides with "…" within the same budget.
+    static func cutAround(_ text: String, keep: Int, centerFraction: Double) -> String {
+        let chars = Array(text)
+        guard chars.count > keep, keep > 0 else { return text }
+        guard keep > 2 else { return String(chars.prefix(keep)) }
+        let bodyLen = keep - 1   // at least one "…"
+        let center = Int((Double(chars.count) * centerFraction).rounded())
+        var start = max(0, min(chars.count - bodyLen, center - bodyLen / 2))
+        var len = bodyLen
+        if start > 0 && start + len < chars.count {
+            // Both sides cut: a second "…" costs one more character.
+            len -= 1
+            start = max(0, min(chars.count - len, center - len / 2))
+        }
+        var out = String(chars[start..<(start + len)])
+        if start > 0 { out = "…" + out }
+        if start + len < chars.count { out += "…" }
+        return out
     }
 }

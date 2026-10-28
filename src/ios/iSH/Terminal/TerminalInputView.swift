@@ -315,12 +315,14 @@ class TerminalKeyInputView: UIView, UITextInput {
         return commands
     }
 
+    /// [OpenMinis#277] Kept as a second path for Ctrl+letter (see
+    /// `pressesBegan`). `lowercased()` + the shared mapper replace the old
+    /// `ascii - 'a' + 1`, which underflowed UInt8 (a runtime trap) whenever the
+    /// input arrived upper-case, e.g. with Caps Lock on.
     @objc private func handleCtrlKey(_ command: UIKeyCommand) {
-        guard let input = command.input,
-              let first = input.first,
-              let ascii = first.asciiValue else { return }
-        let controlCode = ascii - Character("a").asciiValue! + 1
-        sendBytes([controlCode])
+        guard let input = command.input?.lowercased(),
+              let code = TerminalControlKeyMapper.controlCode(for: input) else { return }
+        emitControlCode(code, fromPress: false)
     }
 
     @objc private func handleAltKey(_ command: UIKeyCommand) {
@@ -335,6 +337,11 @@ class TerminalKeyInputView: UIView, UITextInput {
     // MARK: - Physical Key Presses
     // Arrow keys, Tab, and Escape are handled here instead of keyCommands
     // because UITextInput intercepts them for cursor/text manipulation.
+
+    /// Presses consumed in `pressesBegan`. Their ended/cancelled phases are
+    /// consumed too, so UIKit never sees an end for a press whose begin it was
+    /// not given (OpenMinis#277 step 3).
+    private var consumedPresses: Set<ObjectIdentifier> = []
 
     override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
         var handled = false
@@ -417,13 +424,62 @@ class TerminalKeyInputView: UIView, UITextInput {
                 sendBytes([0x1B, 0x5B, 0x32, 0x34, 0x7E]) // ESC[24~
                 handled = true
             default:
-                break
+                // [OpenMinis#277] Hardware Ctrl+key. Handled here, before
+                // super, because on iPadOS the press otherwise travels on into
+                // the text-input system, which inserts nothing for a Ctrl
+                // combination and drops it: typing worked, Ctrl+C / Ctrl+D did
+                // nothing. Cmd combinations are left to the system (copy, paste,
+                // app shortcuts). Ctrl+arrows are handled by the cases above.
+                let flags = key.modifierFlags
+                guard flags.contains(.control), !flags.contains(.command),
+                      let code = TerminalControlKeyMapper.controlCode(for: key.charactersIgnoringModifiers)
+                else { break }
+                if flags.contains(.alternate) {
+                    // Ctrl+Alt+key → Meta (ESC) prefix + control code.
+                    sendBytes([0x1B, code])
+                    lastControlEmit = (code, true, CACurrentMediaTime())
+                } else {
+                    emitControlCode(code, fromPress: true)
+                }
+                handled = true
             }
+            if handled { consumedPresses.insert(ObjectIdentifier(press)) }
         }
 
         if !handled {
             super.pressesBegan(presses, with: event)
         }
+    }
+
+    override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        let passthrough = presses.filter { consumedPresses.remove(ObjectIdentifier($0)) == nil }
+        if !passthrough.isEmpty { super.pressesEnded(passthrough, with: event) }
+    }
+
+    override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        let passthrough = presses.filter { consumedPresses.remove(ObjectIdentifier($0)) == nil }
+        if !passthrough.isEmpty { super.pressesCancelled(passthrough, with: event) }
+    }
+
+    /// Last control code sent, which path sent it, and when.
+    private var lastControlEmit: (code: UInt8, fromPress: Bool, at: CFTimeInterval)?
+
+    /// [OpenMinis#277] Single exit for hardware Ctrl+key from both paths.
+    ///
+    /// Ctrl+letter can reach this view twice for ONE keystroke: through
+    /// `pressesBegan` and through the `keyCommands` action, depending on how a
+    /// given iPadOS version routes key commands for a text-input responder.
+    /// Sending both would double the byte, and a doubled Ctrl+D exits two
+    /// shells. So the same code arriving from the OTHER path within 50 ms is
+    /// dropped. Repeats from the same path (a held key) are never dropped.
+    private func emitControlCode(_ code: UInt8, fromPress: Bool) {
+        let now = CACurrentMediaTime()
+        if let last = lastControlEmit, last.code == code, last.fromPress != fromPress,
+           now - last.at < 0.05 {
+            return
+        }
+        lastControlEmit = (code, fromPress, now)
+        sendBytes([code])
     }
 
     // MARK: - Helpers
@@ -486,3 +542,34 @@ private class TerminalTextRange: UITextRange {
     override var end: UITextPosition { TerminalTextPosition(offset: range.upperBound) }
     override var isEmpty: Bool { range.length == 0 }
 }
+
+// MARK: - Hardware Ctrl+key mapping
+
+// [OpenMinis#277] BEGIN control-key-mapper
+/// Maps the key pressed together with Control to the byte a terminal expects.
+/// Pure and UIKit-free so it can be unit-tested in isolation.
+enum TerminalControlKeyMapper {
+    /// `characters` is the key WITHOUT modifiers (`UIKey.charactersIgnoringModifiers`).
+    /// Returns nil for keys that have no control meaning, which are left to UIKit.
+    static func controlCode(for characters: String) -> UInt8? {
+        guard characters.count == 1, let ch = characters.first, let ascii = ch.asciiValue else { return nil }
+        switch ch {
+        case "a"..."z", "A"..."Z":
+            // Masking the low five bits maps both cases (a=0x61, A=0x41) to
+            // 0x01...0x1A, with no subtraction to underflow.
+            return ascii & 0x1F
+        // NUL. Deliberately not Ctrl+Space: iPadOS uses it to switch input
+        // sources, and consuming it here would strand CJK users in the
+        // terminal. Ctrl+@ / Ctrl+2 give NUL, as in xterm.
+        case "@", "2":      return 0x00
+        case "[", "3":      return 0x1B   // ESC
+        case "\\", "4":     return 0x1C   // FS (SIGQUIT)
+        case "]", "5":      return 0x1D   // GS
+        case "^", "6":      return 0x1E   // RS
+        case "_", "-", "/", "7": return 0x1F   // US
+        case "?", "8":      return 0x7F   // DEL
+        default:            return nil
+        }
+    }
+}
+// [OpenMinis#277] END control-key-mapper

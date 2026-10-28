@@ -71,9 +71,8 @@ enum GeminiModelsAPI {
         request.httpMethod = "GET"
         request.setValue("Bearer \(oauthToken)", forHTTPHeaderField: "Authorization")
         logger.info("Fetching Gemini models (OAuth auth)")
-        #if DEBUG
-        logger.debug("OAuth token prefix: \(String(oauthToken.prefix(20)))...")
-        #endif
+        // [T-log-redaction] Length only - never a token prefix.
+        logger.debug("OAuth token \(LogRedaction.secret(oauthToken))")
         do {
             let models = try await performFetch(request)
             GeminiModelsCache.save(models, credential: oauthToken)

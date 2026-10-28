@@ -409,6 +409,11 @@ enum VoiceCorrectionDebugRPC {
                      "chars": $0.chars, "text": $0.text] as [String: Any]
                 },
             ] as [String: Any],
+            // [T-voice-viewport-context] What was on screen when the user tapped, and the
+            // newest reply after deduplication against it — the exact text that went into
+            // the prompt's two on-screen blocks, plus how each row was chosen.
+            "viewportContext": viewportDict(lines: e.viewportLines, latestReply: e.latestReply,
+                                            report: e.viewport),
             // What survived budget clamping into the prompt. Comparing `promptVocabTerms`
             // against `retrieval.candidates` shows exactly which evidence got squeezed out.
             "promptEvidence": [
@@ -427,6 +432,61 @@ enum VoiceCorrectionDebugRPC {
         ]
         // Off by default: a full prompt is ~2.5k chars and swamps a multi-run listing.
         if includePrompt { out["prompt"] = e.prompt }
+        return out
+    }
+
+    /// [T-voice-viewport-context] Shared by `traceList` and `viewportContext`.
+    static func viewportDict(lines: [String], latestReply: String?,
+                             report: ViewportContextBuilder.Report?) -> [String: Any] {
+        guard let r = report else {
+            return ["available": false, "lines": lines, "latestReply": latestReply ?? NSNull()]
+        }
+        return [
+            "available": r.viewportHeight > 0,
+            "centerY": r.centerY, "viewportHeight": r.viewportHeight,
+            "window": [r.windowMinY, r.windowMaxY],
+            "candidateRows": r.candidateRows,
+            "selectedRows": r.rows.map {
+                ["kind": $0.kind, "messageId": $0.messageId, "blockId": $0.blockId ?? NSNull(),
+                 "distance": $0.distance, "chars": $0.chars, "cut": $0.cut] as [String: Any]
+            },
+            "viewportChars": r.viewportChars,
+            "viewportBudget": CorrectionContextBudget.viewportBlock,
+            "lines": lines,
+            "latestReply": latestReply ?? NSNull(),
+            "latestReplyDedup": r.latestReplyDedup,
+            "latestReplyBlocksDropped": r.latestReplyBlocksDropped,
+            "latestReplyChars": r.latestReplyChars,
+            "latestReplyBudget": CorrectionContextBudget.latestReplyBlock,
+            "latestReplyTruncated": r.latestReplyTruncated,
+        ]
+    }
+
+    /// [T-voice-viewport-context] Build the on-screen context for a session exactly as a
+    /// correction would right now, without running one — so what the extractor picks can
+    /// be checked against what is on the screen while scrolling around.
+    @MainActor
+    static func viewportContext(params: [String: Any]) async throws -> [String: Any] {
+        let sid = try require(params["sessionId"] as? String, "sessionId")
+        guard let vm = ViewModelCache.shared.get(for: sid) else {
+            throw DebugRPCErr(-32602, "session \(sid) is not loaded — open it first (debug.openSession)")
+        }
+        let snapshot = vm.captureViewportSnapshot?()
+        let ctx = voiceCorrectionContext(from: vm.messages, viewport: snapshot)
+        var out = viewportDict(lines: ctx.viewportLines, latestReply: ctx.latestReply,
+                               report: ctx.mining.viewport)
+        out["listOnScreen"] = snapshot != nil
+        out["snapshotRows"] = snapshot?.items.count ?? 0
+        out["recentExcerpts"] = ctx.recentExcerpts
+        if (params["includePrompt"] as? Bool) == true {
+            let transcript = (params["transcript"] as? String) ?? "（示例转录）"
+            let profile = CorrectionLanguageProfile.resolve(
+                locale: (params["locale"] as? String) ?? "zh", transcript: transcript)
+            out["languageProfile"] = profile.rawValue
+            out["systemPrompt"] = LLMCorrectionStrategy.systemPrompt(for: profile)
+            out["prompt"] = LLMCorrectionStrategy.buildPrompt(
+                transcript: transcript, candidates: [], context: ctx, profile: profile)
+        }
         return out
     }
 

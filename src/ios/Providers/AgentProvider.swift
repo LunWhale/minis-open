@@ -36,11 +36,17 @@ struct AgentToolParam {
     let type: AgentParamType
     let description: String
     let enumValues: [String]?
+    /// [T-user-ask] Nested schema for a structured (array) parameter — the
+    /// three scalar types cannot express `user_ask.questions` (an array of
+    /// question objects, each with an array of option objects). Providers
+    /// render it in their own schema dialect; scalars leave it nil.
+    let schema: AgentSchemaNode?
 
-    init(type: AgentParamType, description: String, enumValues: [String]? = nil) {
+    init(type: AgentParamType, description: String, enumValues: [String]? = nil, schema: AgentSchemaNode? = nil) {
         self.type = type
         self.description = description
         self.enumValues = enumValues
+        self.schema = schema
     }
 }
 
@@ -48,6 +54,68 @@ enum AgentParamType: String {
     case string
     case integer
     case boolean
+    /// [T-user-ask] Requires `AgentToolParam.schema`.
+    case array
+}
+
+/// [T-user-ask] A provider-neutral JSON Schema subset: scalars, arrays and
+/// objects (objects only as array items — the Anthropic SDK's Property type
+/// has no `properties`). Bounds and item `required` lists are advisory: the
+/// tool's parser re-validates, since not every provider accepts them.
+indirect enum AgentSchemaNode {
+    case string(description: String?, enumValues: [String]? = nil)
+    case integer(description: String?)
+    case boolean(description: String?)
+    case array(description: String?, items: AgentSchemaNode, minItems: Int? = nil, maxItems: Int? = nil)
+    case object(description: String?, properties: [(name: String, node: AgentSchemaNode)], required: [String])
+
+    /// Standard JSON Schema. `uppercaseTypes` + `bounds: false` = the Gemini
+    /// dialect (STRING/ARRAY/OBJECT, enums folded into the description).
+    func jsonSchema(uppercaseTypes: Bool = false, bounds: Bool = true) -> [String: Any] {
+        func t(_ s: String) -> String { uppercaseTypes ? s.uppercased() : s }
+        var o: [String: Any] = [:]
+        switch self {
+        case .string(let d, let e):
+            o["type"] = t("string")
+            if let e, !e.isEmpty, uppercaseTypes {
+                o["description"] = "\(d ?? "") (values: \(e.joined(separator: ", ")))"
+            } else {
+                if let d { o["description"] = d }
+                if let e { o["enum"] = e }
+            }
+        case .integer(let d):
+            o["type"] = t("integer")
+            if let d { o["description"] = d }
+        case .boolean(let d):
+            o["type"] = t("boolean")
+            if let d { o["description"] = d }
+        case .array(let d, let items, let minItems, let maxItems):
+            o["type"] = t("array")
+            if let d { o["description"] = d }
+            o["items"] = items.jsonSchema(uppercaseTypes: uppercaseTypes, bounds: bounds)
+            if bounds, let minItems { o["minItems"] = minItems }
+            if bounds, let maxItems { o["maxItems"] = maxItems }
+        case .object(let d, let props, let required):
+            o["type"] = t("object")
+            if let d { o["description"] = d }
+            var p: [String: Any] = [:]
+            for (name, node) in props { p[name] = node.jsonSchema(uppercaseTypes: uppercaseTypes, bounds: bounds) }
+            o["properties"] = p
+            if !required.isEmpty { o["required"] = required }
+        }
+        return o
+    }
+
+    /// All descriptions / names / enum values, for the context-size estimate.
+    var estimationText: String {
+        switch self {
+        case .string(let d, let e): return [d ?? "", (e ?? []).joined(separator: " ")].joined(separator: " ")
+        case .integer(let d), .boolean(let d): return d ?? ""
+        case .array(let d, let items, _, _): return (d ?? "") + " " + items.estimationText
+        case .object(let d, let props, _):
+            return (d ?? "") + " " + props.map { $0.name + " " + $0.node.estimationText }.joined(separator: " ")
+        }
+    }
 }
 
 // MARK: - Agent Messages
@@ -219,6 +287,11 @@ struct AgentMessage: @unchecked Sendable {
     /// via id instead of sort_order. nil while the message is still in-flight
     /// (e.g. mid-stream before persist).
     var dbMessageId: String? = nil
+    /// [T-edit-anchor-link] In-memory identity linking a user-bubble entry to
+    /// its chat bubble(s) (`ChatMessage.historyAnchorId`). Never persisted or
+    /// synced: every load mints fresh ones on both sides from the same row.
+    /// Survives in-place part edits (the struct is copied, not rebuilt).
+    var anchorId = UUID()
 }
 
 // MARK: - Stream Events
@@ -249,6 +322,11 @@ enum AgentStreamEvent: @unchecked Sendable {
     /// for in-memory multi-turn replay. Cross-model isolation rules live on
     /// `ReasoningEcho`.
     case reasoningEcho(ReasoningEcho)
+    /// [T-sse-idle-timeout] The server sent real model output that produced no
+    /// other event - reasoning that is not being shown because the thinking
+    /// level is off. Carries nothing: it only tells the stall watchdog the
+    /// stream is alive. Never sent for keepalives, comments or empty chunks.
+    case streamActivity
     /// Response finished.
     case done(stopReason: AgentStopReason)
 }
@@ -284,6 +362,11 @@ protocol AgentProvider {
     var model: LLMModel { get }
     /// Default max output tokens for this provider.
     var defaultMaxTokens: Int { get }
+    /// [T-sse-idle-timeout] How long the agent loop waits for the next stream
+    /// event (the first one included) before calling the stream stalled.
+    /// 120 s unless a provider says otherwise; only the OpenAI-compatible
+    /// Chat Completions path reads a per-provider setting.
+    var responseIdleTimeout: TimeInterval { get }
 
     /// Provider-specific streaming implementation. Receives a thinking level
     /// that has already been clamped to the model's effective max by the
@@ -295,9 +378,70 @@ protocol AgentProvider {
         maxTokens: Int,
         thinkingLevel: ThinkingLevel
     ) async throws -> AsyncThrowingStream<AgentStreamEvent, Error>
+
+    /// [T-ctx-count-reasoning] Whether a request from this provider carries the
+    /// `reasoningContent` of past assistant turns back to the server. The
+    /// context meter counts that text only when it is really sent, so each
+    /// provider answers with the same gate its request builder uses.
+    func echoesReasoningContent(thinkingLevel: ThinkingLevel) -> Bool
 }
 
+// BEGIN ResponseIdleTimeoutSetting
+/// [T-sse-idle-timeout] The per-provider "response idle timeout": the longest
+/// wait for the next piece of a streamed reply, the first piece included. It is
+/// NOT a limit on how long a reply may take - a stream that keeps delivering
+/// never times out.
+///
+/// Stored per device in UserDefaults, keyed by provider instance id. Nothing
+/// stored means the default, so existing providers behave exactly as before.
+/// Deliberately not a ProviderInstance field: that would need a DB column and
+/// sync / backup wiring for a value that describes this device's link to one
+/// server.
+enum ResponseIdleTimeoutSetting {
+    static let defaultSeconds = 120
+    static let minSeconds = 30
+    /// No "never": a stream that really died would leave the turn waiting
+    /// forever, holding a session slot and the background keep-alive.
+    static let maxSeconds = 3600
+    static let presets = [120, 300, 600, 1800, 3600]
+
+    static func clamp(_ seconds: Int) -> Int { min(max(seconds, minSeconds), maxSeconds) }
+
+    static func key(forInstanceId id: String) -> String { "provider.responseIdleTimeout.\(id)" }
+
+    /// The effective value: the stored one, clamped, or the default.
+    static func seconds(forInstanceId id: String?, defaults: UserDefaults = .standard) -> Int {
+        guard let id, !id.isEmpty, let stored = defaults.object(forKey: key(forInstanceId: id)) as? Int else {
+            return defaultSeconds
+        }
+        return clamp(stored)
+    }
+
+    /// Storing the default removes the key, so "default" stays "never set".
+    static func set(_ seconds: Int?, forInstanceId id: String, defaults: UserDefaults = .standard) {
+        guard let seconds, clamp(seconds) != defaultSeconds else {
+            defaults.removeObject(forKey: key(forInstanceId: id))
+            return
+        }
+        defaults.set(clamp(seconds), forKey: key(forInstanceId: id))
+    }
+
+    /// The per-request URLSession timeout a streaming request needs so the
+    /// transport does not give up before the watchdog does. nil = leave the
+    /// session's own 600 s alone.
+    static func requestTimeout(forIdleSeconds idle: Int, sessionDefault: Int = 600) -> TimeInterval? {
+        idle > sessionDefault ? TimeInterval(idle + 30) : nil
+    }
+}
+// END ResponseIdleTimeoutSetting
+
 extension AgentProvider {
+    var responseIdleTimeout: TimeInterval { TimeInterval(ResponseIdleTimeoutSetting.defaultSeconds) }
+
+    /// Gemini, Antigravity and the Responses API replay reasoning in their own
+    /// signed / encrypted form, never as `reasoningContent` text.
+    func echoesReasoningContent(thinkingLevel: ThinkingLevel) -> Bool { false }
+
     func streamAgentMessage(
         messages: [AgentMessage],
         systemPrompt: String?,

@@ -4,21 +4,34 @@ import UniformTypeIdentifiers
 
 /// Processes NSExtensionItems from the share sheet, saves files to the shared
 /// container, and writes a PendingShare for the main app to consume.
+///
+/// Main-actor bound: the view controller reads its state when the time limit
+/// cuts processing short, while a provider load may still be suspended.
+@MainActor
 final class ShareViewModel {
     private var pendingItems: [PendingShare.Item] = []
     private let inlineTextLimit = 1000
+    /// [T-share-one-link] What the providers returned, before the rules in
+    /// `ShareItemRules.reduce` decide what one share keeps.
+    private var candidates: [ShareItemRules.Candidate] = []
+    private var currentGroup = 0
+
+    /// How many items this share produced (after `processExtensionItems`).
+    var itemCount: Int { pendingItems.count }
 
     /// Process all extension items from the share context.
     func processExtensionItems(_ extensionItems: [NSExtensionItem]) async {
         pendingItems.removeAll()
+        candidates.removeAll()
 
         let fm = FileManager.default
         if let dir = SharedContainerStore.sharedFileDirectory {
             try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
         }
 
-        for extensionItem in extensionItems {
+        for (group, extensionItem) in extensionItems.enumerated() {
             guard let attachments = extensionItem.attachments else { continue }
+            currentGroup = group
 
             for provider in attachments {
                 if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
@@ -34,6 +47,37 @@ final class ShareViewModel {
                 }
             }
         }
+        finalizeItems()
+    }
+
+    /// [T-share-one-link] Apply the rules, then turn what is left into items.
+    /// Also called when processing is cut short by the extension's time limit,
+    /// so whatever was loaded by then is still delivered.
+    func finalizeItems() {
+        let kept = ShareItemRules.reduce(candidates)
+        if kept.count != candidates.count {
+            NSLog("[ShareExt] rules kept %d of %d loaded values", kept.count, candidates.count)
+        }
+        pendingItems = kept.compactMap { candidate in
+            switch candidate.source {
+            case .attachment:
+                return .init(kind: .attachment, value: candidate.value)
+            case .webURL:
+                return .init(kind: .inlineText, value: candidate.value)
+            case .text:
+                guard candidate.value.count > inlineTextLimit else {
+                    return .init(kind: .inlineText, value: candidate.value)
+                }
+                let fileName = "shared-text-\(UUID().uuidString.prefix(8)).txt"
+                guard let dir = SharedContainerStore.sharedFileDirectory else { return nil }
+                try? candidate.value.write(to: dir.appendingPathComponent(fileName), atomically: true, encoding: .utf8)
+                return .init(kind: .attachment, value: fileName)
+            }
+        }
+    }
+
+    private func add(_ source: ShareItemRules.Candidate.Source, _ value: String) {
+        candidates.append(.init(source: source, value: value, group: currentGroup))
     }
 
     /// Save pending share and return true on success.
@@ -52,7 +96,8 @@ final class ShareViewModel {
            Date().timeIntervalSince(existing.timestamp) < 300 {
             NSLog("[ShareExt] save: merging %d existing unconsumed items with %d new",
                   existing.items.count, pendingItems.count)
-            items = existing.items + items
+            // [T-share-one-link] The same link shared twice in a row stays one line.
+            items = ShareItemRules.merge(existing: existing.items, new: items)
         }
         let share = PendingShare(items: items, timestamp: Date())
         SharedContainerStore.savePendingShare(share)
@@ -71,7 +116,7 @@ final class ShareViewModel {
             return
         }
 
-        pendingItems.append(.init(kind: .inlineText, value: url.absoluteString))
+        add(.webURL, url.absoluteString)
     }
 
     /// Copy a local file URL to the shared container as an attachment.
@@ -89,7 +134,7 @@ final class ShareViewModel {
                let jpegData = image.jpegData(compressionQuality: 0.85) {
                 let fileURL = dir.appendingPathComponent(fileName)
                 try? jpegData.write(to: fileURL)
-                pendingItems.append(.init(kind: .attachment, value: fileName))
+                add(.attachment, fileName)
             }
             return
         }
@@ -99,7 +144,7 @@ final class ShareViewModel {
         if let dir = SharedContainerStore.sharedFileDirectory {
             let destURL = dir.appendingPathComponent(fileName)
             try? FileManager.default.copyItem(at: url, to: destURL)
-            pendingItems.append(.init(kind: .attachment, value: fileName))
+            add(.attachment, fileName)
         }
     }
 
@@ -107,16 +152,8 @@ final class ShareViewModel {
         guard let item = try? await provider.loadItem(forTypeIdentifier: UTType.plainText.identifier),
               let text = item as? String else { return }
 
-        if text.count <= inlineTextLimit {
-            pendingItems.append(.init(kind: .inlineText, value: text))
-        } else {
-            let fileName = "shared-text-\(UUID().uuidString.prefix(8)).txt"
-            if let dir = SharedContainerStore.sharedFileDirectory {
-                let fileURL = dir.appendingPathComponent(fileName)
-                try? text.write(to: fileURL, atomically: true, encoding: .utf8)
-                pendingItems.append(.init(kind: .attachment, value: fileName))
-            }
-        }
+        // Long text becomes a file in `finalizeItems`, after the rules ran.
+        add(.text, text)
     }
 
     private func processImage(_ provider: NSItemProvider) async {
@@ -136,7 +173,7 @@ final class ShareViewModel {
                    let jpegData = image.jpegData(compressionQuality: 0.85) {
                     let fileURL = dir.appendingPathComponent(fileName)
                     try? jpegData.write(to: fileURL)
-                    pendingItems.append(.init(kind: .attachment, value: fileName))
+                    add(.attachment, fileName)
                 }
             }
         }
@@ -155,7 +192,7 @@ final class ShareViewModel {
         if let dir = SharedContainerStore.sharedFileDirectory {
             let destURL = dir.appendingPathComponent(fileName)
             try? FileManager.default.copyItem(at: url, to: destURL)
-            pendingItems.append(.init(kind: .attachment, value: fileName))
+            add(.attachment, fileName)
         }
     }
 
@@ -170,7 +207,7 @@ final class ShareViewModel {
         if let dir = SharedContainerStore.sharedFileDirectory {
             let destURL = dir.appendingPathComponent(fileName)
             try? FileManager.default.copyItem(at: url, to: destURL)
-            pendingItems.append(.init(kind: .attachment, value: fileName))
+            add(.attachment, fileName)
         }
     }
 }

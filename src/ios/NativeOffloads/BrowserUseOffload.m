@@ -47,6 +47,9 @@ static NSString *const HELP_TEXT =
      "  hover           --selector <css>\n"
      "  get_readable\n"
      "  set_user_agent  --user-agent mobile_safari|desktop_safari|custom\n"
+     "                  Switch the target tab only (--tab-id, else the current\n"
+     "                  tab). Temporary: other tabs are untouched, new tabs use\n"
+     "                  the Browser Settings default, and nothing is saved.\n"
      "  set_viewport    --width <n> --height <n> | --reset\n"
      "                  Override the viewport for this session only. Without\n"
      "                  --reset it shadows the app-wide default from Browser\n"
@@ -317,8 +320,11 @@ static int browser_use_handler(int argc, char **argv,
     // invocation, so a timeout below cancels only the call it abandons. The
     // old (session id, tab id) key matched every concurrent CLI call, since
     // the session id is process-wide and most commands name no tab.
+    // [T-browser-pool-caller-session] Which chat issued this command, read on
+    // this guest thread: the bridge picks THAT chat's tab pool.
     uint64_t invocation = [BrowserUseOffloadBridge executeWithJson:jsonStr
                                   withBase64:withBase64
+                                   fsContext:noff_current_fs_context()
                                   completion:^(NSDictionary *data) {
         resultDict = data;
         dispatch_semaphore_signal(sem);

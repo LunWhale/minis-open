@@ -161,6 +161,33 @@ def resolve_startup_timeout(server):
     return DEFAULT_STARTUP_TIMEOUT, None
 
 
+MAX_STDIO_SERVERS_ENV = "MINIS_MCP_MAX_STDIO_SERVERS"
+MAX_STDIO_SERVERS_LIMIT = 16
+
+
+def resolve_max_stdio_servers(default, env=None):
+    """[T-mcp-pool-stdio-cap] How many STDIO servers the daemon keeps alive at
+    once. Returns (value, warning).
+
+    Read from the environment (Minis Settings > Environment Variables reach the
+    guest shell, and the daemon inherits the env of the CLI that forked it), not
+    from servers.json: the app rewrites servers.json with only `mcpServers`, so
+    any extra top-level key would be dropped on the next edit. An unset, empty
+    or invalid value falls back to `default`; invalid ones come with a warning.
+    """
+    raw = (os.environ if env is None else env).get(MAX_STDIO_SERVERS_ENV)
+    if raw is None or str(raw).strip() == "":
+        return default, None
+    try:
+        value = int(str(raw).strip())
+    except ValueError:
+        return default, "%s=%r is not an integer; using %d" % (MAX_STDIO_SERVERS_ENV, raw, default)
+    if value < 1 or value > MAX_STDIO_SERVERS_LIMIT:
+        return default, "%s=%d is outside 1..%d; using %d" % (
+            MAX_STDIO_SERVERS_ENV, value, MAX_STDIO_SERVERS_LIMIT, default)
+    return value, None
+
+
 def _timeout_warning(field, given):
     return (
         "ignoring %s=%r: startup timeout must be an integer number of seconds "

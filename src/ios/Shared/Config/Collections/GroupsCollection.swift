@@ -90,16 +90,55 @@ struct GroupsCollection: ConfigCollection {
         ProviderConfigStore.shared.removeGroup(id)
     }
 
+    // MARK: [T-config-readable] Readable descriptions
+
+    let readableSubjectFormat = "Group “%1$@” – %2$@"
+
+    func entityLabel(id: String) -> String? {
+        group(id)?.name
+    }
+
+    static let strategyLabels = ["fallback": "Fallback (in order)", "loadBalance": "Load balance"]
+    static let fallbackLabels = ["limited": "Only when the provider rejects", "always": "Also on transient errors"]
+    /// "" = not set (sessions start with thinking off / the model default).
+    static let thinkingLabels = ThinkingLevel.readableLabels.merging(["": "Not set"]) { a, _ in a }
+
+    func readableForAdd(_ payload: RedactedConfigValue) -> [ReadableLine] {
+        guard case .object(let d) = payload.value else { return [] }
+        let name: String = { if case .string(let s)? = d["name"] { return s }; return "?" }()
+        var entries: [String] = []
+        if case .array(let arr)? = (d["entries"] ?? d["members"]) {
+            entries = arr.compactMap { if case .string(let s) = $0, !s.isEmpty { return s }; return nil }
+        }
+        var lines = [ReadableLine("Create group “%1$@” with %2$@ models", [.text(name), .text("\(entries.count)")])]
+        if let first = entries.first {
+            lines.append(ReadableLine("Primary model: %@", [ConfigRefResolver.name(.modelEntry, first)]))
+        }
+        return lines
+    }
+
+    func readableForRemove(id: String) -> [ReadableLine] {
+        guard let g = group(id) else { return [] }
+        return [ReadableLine("Delete group “%1$@” (%2$@ models)", [.text(g.name), .text("\(g.memberEntryIds.count)")])]
+    }
+
     // MARK: Field factories
 
     private func group(_ id: String) -> ModelGroup? {
         ProviderConfigStore.shared.config.modelGroups.first { $0.id == id }
     }
 
-    private func mutate(_ id: String, _ apply: (inout ModelGroup) -> Void) throws {
+    /// - Parameter field: [T-group-order-log] the field factory writing
+    ///   (`entriesField(for:)` and so on). It only names the writer in the
+    ///   `[GroupOrder]` log line (`via=GroupsCollection.<field>`), so a
+    ///   reorder that arrives through a field other than `entries` is visible
+    ///   as such. Who asked - the agent or the user, and from which session -
+    ///   is in the config audit entry written for the same change.
+    private func mutate(_ id: String, field: String = #function, _ apply: (inout ModelGroup) -> Void) throws {
         guard var g = group(id) else { throw ConfigError.unknownPath("groups.\(id)") }
         apply(&g)
-        ProviderConfigStore.shared.updateGroup(g)
+        ProviderConfigStore.shared.updateGroup(g, orderReason: "config-tool",
+                                               file: "GroupsCollection.\(field)")
     }
 
     private func nameField(for id: String) -> ConfigField {
@@ -109,6 +148,7 @@ struct GroupsCollection: ConfigCollection {
             description: "User-visible label.",
             valueSchema: .string(maxLength: 200),
             risk: .normal, revertable: true,
+            readable: ConfigReadable(.text()),
             reader: { [self] in
                 guard let g = group(id) else { return .null }
                 return .string(g.name)
@@ -127,6 +167,7 @@ struct GroupsCollection: ConfigCollection {
             description: "fallback (try in order) / loadBalance (distribute).",
             valueSchema: .stringEnum(["fallback", "loadBalance"]),
             risk: .sensitive, revertable: true,
+            readable: ConfigReadable(.enumLabels(Self.strategyLabels)),
             reader: { [self] in
                 guard let g = group(id) else { return .null }
                 return .string(g.strategy.rawValue)
@@ -148,6 +189,7 @@ struct GroupsCollection: ConfigCollection {
             description: "limited (only on provider rejection) / always (also on transient errors).",
             valueSchema: .stringEnum(["limited", "always"]),
             risk: .sensitive, revertable: true,
+            readable: ConfigReadable(.enumLabels(Self.fallbackLabels)),
             reader: { [self] in
                 guard let g = group(id) else { return .null }
                 return .string(g.fallbackStrategy.rawValue)
@@ -169,6 +211,7 @@ struct GroupsCollection: ConfigCollection {
             description: "Applied to new sessions bound to this group. Empty = off.",
             valueSchema: .stringEnum(["", "off", "low", "medium", "high", "xhigh", "max", "ultra"]),
             risk: .normal, revertable: true,
+            readable: ConfigReadable(.enumLabels(Self.thinkingLabels)),
             reader: { [self] in
                 guard let g = group(id) else { return .null }
                 return .string(g.defaultThinkingLevel?.rawValue ?? "")
@@ -193,6 +236,7 @@ struct GroupsCollection: ConfigCollection {
             description: "0 = no limit (use model's native context window).",
             valueSchema: .int(min: 0, max: 4_000_000),
             risk: .sensitive, revertable: true,
+            readable: ConfigReadable(.number(.tokens, zero: "No limit")),
             reader: { [self] in
                 guard let g = group(id) else { return .null }
                 return .int(g.contextLimitTokens ?? 0)
@@ -217,6 +261,7 @@ struct GroupsCollection: ConfigCollection {
             description: "Ordered list of model entry UUIDs.",
             valueSchema: .array(.string()),
             risk: .sensitive, revertable: true,
+            readable: ConfigReadable(.refList(.modelEntry, ordered: true), label: "Models"),
             reader: { [self] in
                 guard let g = group(id) else { return .null }
                 return .array(g.memberEntryIds.map { .string($0) })

@@ -392,12 +392,17 @@ do {
         // history, which a standalone script cannot construct.
         check("…but an already-pruned argument is skipped, by flag and by text",
               offl.contains("if isOffloadedArgument {")
-              && offl.contains("if let content = input[\"content\"] as? String, Self.isOffloadedStub(content) {"))
+              // [T-offload-scan-cache] the argument is read once into `argument`.
+              && offl.contains("if let content = argument, Self.isOffloadedStub(content) {"))
         check("…and an unanswered tool call's argument is never pruned",
               offl.contains("guard answeredToolUseIds.contains(id) else {")
               && offl.contains("skippedUnanswered += 1"))
-        check("answered ids are collected over the whole history, not the candidate range",
-              offl.contains("for msg in agentHistory {") && offl.contains("answeredToolUseIds.insert(id)"))
+        // [T-offload-scan-cache] From the scan start (the compaction anchor) to
+        // the END — past the candidate range's protected tail, where a
+        // candidate call's result often sits. Nothing before the anchor is a
+        // candidate any more, so nothing earlier can answer one.
+        check("answered ids are collected up to the end of history, not just the candidate range",
+              offl.contains("for msg in agentHistory[scanStart...] {") && offl.contains("answeredToolUseIds.insert(id)"))
     }
 }
 

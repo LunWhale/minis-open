@@ -16,6 +16,7 @@ struct AppStorageBoolField: ConfigField {
     var risk: ConfigRisk = .normal
     var revertable: Bool = true
     var valueSchema: ConfigValueSchema { .bool }
+    var readable: ConfigReadable { ConfigReadable(.bool()) }
 
     @MainActor func read() throws -> ConfigValue {
         if UserDefaults.standard.object(forKey: userDefaultsKey) == nil {
@@ -41,7 +42,11 @@ struct AppStorageIntField: ConfigField {
     var access: ConfigAccess = .readwrite
     var risk: ConfigRisk = .normal
     var revertable: Bool = true
+    /// [T-config-readable] Unit, and the label shown for 0 (e.g. "Off").
+    var unit: NumberUnit = .plain
+    var zeroLabel: String? = nil
     var valueSchema: ConfigValueSchema { .int(min: min, max: max) }
+    var readable: ConfigReadable { ConfigReadable(.number(unit, zero: zeroLabel)) }
 
     @MainActor func read() throws -> ConfigValue {
         if UserDefaults.standard.object(forKey: userDefaultsKey) == nil {
@@ -68,6 +73,7 @@ struct AppStorageDoubleField: ConfigField {
     var risk: ConfigRisk = .normal
     var revertable: Bool = true
     var valueSchema: ConfigValueSchema { .double(min: min, max: max) }
+    var readable: ConfigReadable { ConfigReadable(.number()) }
 
     @MainActor func read() throws -> ConfigValue {
         if UserDefaults.standard.object(forKey: userDefaultsKey) == nil {
@@ -98,6 +104,9 @@ struct AppStorageStringField: ConfigField {
     var access: ConfigAccess = .readwrite
     var risk: ConfigRisk = .normal
     var revertable: Bool = true
+    /// [T-config-readable] Required: a string field's values can be ids,
+    /// language codes, free text… only the registration knows which.
+    let readable: ConfigReadable
     var valueSchema: ConfigValueSchema { .string(maxLength: maxLength, regex: regex) }
 
     @MainActor func read() throws -> ConfigValue {
@@ -119,11 +128,14 @@ struct AppStorageEnumField: ConfigField {
     let description: String
     let userDefaultsKey: String
     let cases: [String]
+    /// [T-config-readable] Required: raw case → label key, covering every case.
+    let valueLabels: [String: String]
     let defaultValue: String
     var access: ConfigAccess = .readwrite
     var risk: ConfigRisk = .normal
     var revertable: Bool = true
     var valueSchema: ConfigValueSchema { .stringEnum(cases) }
+    var readable: ConfigReadable { ConfigReadable(.enumLabels(valueLabels)) }
 
     @MainActor func read() throws -> ConfigValue {
         let raw = UserDefaults.standard.string(forKey: userDefaultsKey) ?? defaultValue
@@ -146,11 +158,14 @@ struct AppStorageIntCodedEnumField: ConfigField {
     let userDefaultsKey: String
     /// Cases ordered by their persisted Int value. cases[0] ↔ stored 0, etc.
     let cases: [String]
+    /// [T-config-readable] Required: raw case → label key, covering every case.
+    let valueLabels: [String: String]
     let defaultIndex: Int
     var access: ConfigAccess = .readwrite
     var risk: ConfigRisk = .normal
     var revertable: Bool = true
     var valueSchema: ConfigValueSchema { .stringEnum(cases) }
+    var readable: ConfigReadable { ConfigReadable(.enumLabels(valueLabels)) }
 
     @MainActor func read() throws -> ConfigValue {
         let idx: Int

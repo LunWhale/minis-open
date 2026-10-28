@@ -17,6 +17,12 @@ enum ThinkingLevelCatalog {
         // never offered, and the wire mapping folds .max/.ultra to "max" anyway.
         // No separate ultra-exclusion is needed or wanted.
         ({ $0.hasPrefix("gpt-6-sol") || $0.hasPrefix("gpt-6-luna") }, .max),
+        // [T-gpt61-sol] gpt-6.1-sol: its own rule because "gpt-6-sol" is not a
+        // prefix of "gpt-6.1-sol" (the rule above never matched it, leaving the
+        // model with no declared ceiling). Registry levels are low…max, so the
+        // same .max ceiling; the dash spelling covers relays that normalise
+        // dots to dashes.
+        ({ $0.hasPrefix("gpt-6.1-sol") || $0.hasPrefix("gpt-6-1-sol") }, .max),
         ({ $0.hasPrefix("gpt-5.6-sol") || $0.hasPrefix("gpt-5.6-terra") }, .max),
         ({ $0.hasPrefix("gpt-5.6-luna") }, .max),
         ({ $0.hasPrefix("gpt-5.5") }, .xhigh),
@@ -50,6 +56,17 @@ enum ThinkingLevelCatalog {
         // picker, with no error anywhere. Same class as the gpt-5.6-sol case the
         // comment above describes, reached by the other branch.
         ({ Self.normalizedHasPrefix($0, "claude-opus-5") }, .max),
+        // [T-anthropic-sonnet55] Claude Sonnet 5.5 declares low…max upstream.
+        // It is not in models-dev-api.json; today the stage-3 prefix fallback
+        // borrows claude-sonnet-5's tiers (which include max), but if that
+        // lookup misses, `catalogMaxThinkingLevel` falls to `ruleTop ?? .xhigh`
+        // and Max silently vanishes from the picker — the Opus 5.5 trap above.
+        // Scoped to 5-5 on purpose: claude-sonnet-5 itself is in the catalog.
+        // Like the claude-opus rules it matches direct ids only (incl. the
+        // dotted `claude-sonnet-5.5`), not vendor-prefixed relay ids such as
+        // `anthropic/claude-sonnet-5.5`: a rule can RAISE a ceiling above a
+        // model's declared tiers, and such relays speak their own ladder.
+        ({ Self.normalizedHasPrefix($0, "claude-sonnet-5-5") }, .max),
         // [T-deepseek-flash-scope] GH#356. DeepSeek's ladder is
         // ["low","high","max"] — no xhigh, which it rejects the same way Ark's
         // seed models do.

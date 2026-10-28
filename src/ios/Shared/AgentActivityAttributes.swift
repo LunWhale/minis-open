@@ -15,6 +15,17 @@ struct LiveSessionSnapshot: Codable, Hashable {
     var isCompleted: Bool = false
     /// One-line summary of the final assistant reply, shown when `isCompleted`.
     var lastMessage: String = ""
+    /// [T-live-activity-scheduled] True on the card of a conversation that is
+    /// not running now but waits for its next scheduled run. The three fields
+    /// are optional so states encoded before they existed still decode.
+    var scheduledWaiting: Bool? = nil
+    /// The next scheduled run; the card counts down to it. nil for a task that
+    /// waits on another task's completion (no time to count down to).
+    var nextRunAt: Date? = nil
+    /// The chat pill's run counter ("2/30", "#7"); nil for a one-shot task.
+    var runCounter: String? = nil
+
+    var isScheduledWait: Bool { scheduledWaiting == true && !isCompleted }
 }
 
 @available(iOS 16.2, *)

@@ -8,11 +8,16 @@ set -e
 # encoder on iOS.
 #
 # Usage:
-#   ./build_lame.sh [clean]
+#   ./build_lame.sh [clean] [--simulator]
 #
 # Output:
-#   deps/lame-build/lib/libmp3lame.a
+#   deps/lame-build/lib/libmp3lame.a                 (device)
 #   deps/lame-build/include/lame/lame.h
+#   deps/lame-build-iphonesimulator/...              (--simulator, arm64)
+#
+# The Simulator build runs in its own copy of the source tree
+# (lame-3.100-iphonesimulator/): LAME configures in place, so building both
+# platforms in one tree would overwrite each other's objects.
 # ============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -22,6 +27,22 @@ LAME_SRC_DIR="$SCRIPT_DIR/lame-${LAME_VERSION}"
 LAME_BUILD_DIR="$SCRIPT_DIR/lame-build"
 
 IOS_DEPLOYMENT_TARGET="14.0"
+PLATFORM="iphoneos"
+CLEAN=0
+for arg in "$@"; do
+    case "$arg" in
+        clean) CLEAN=1 ;;
+        --simulator) PLATFORM="iphonesimulator" ;;
+        *) echo "Unknown argument: $arg (expected clean, --simulator)" >&2; exit 1 ;;
+    esac
+done
+SOURCE_DIR="$LAME_SRC_DIR"
+MIN_FLAG="-miphoneos-version-min=$IOS_DEPLOYMENT_TARGET"
+if [ "$PLATFORM" == "iphonesimulator" ]; then
+    SOURCE_DIR="$SCRIPT_DIR/lame-${LAME_VERSION}-iphonesimulator"
+    LAME_BUILD_DIR="$SCRIPT_DIR/lame-build-iphonesimulator"
+    MIN_FLAG="-mios-simulator-version-min=$IOS_DEPLOYMENT_TARGET"
+fi
 
 # Colors for output
 RED='\033[0;31m'
@@ -36,9 +57,10 @@ log_error()   { echo -e "${RED}❌ $1${NC}"; exit 1; }
 # ============================================================================
 # Clean
 # ============================================================================
-if [ "$1" == "clean" ]; then
+if [ "$CLEAN" == "1" ]; then
     log_info "Cleaning LAME build artifacts..."
     rm -rf "$LAME_SRC_DIR" "$LAME_BUILD_DIR"
+    rm -rf "$SCRIPT_DIR/lame-${LAME_VERSION}-iphonesimulator" "$SCRIPT_DIR/lame-build-iphonesimulator"
     log_success "Clean completed"
     exit 0
 fi
@@ -63,16 +85,25 @@ fi
 # ============================================================================
 # Cross-compile for iOS arm64
 # ============================================================================
-log_info "Configuring LAME for iOS arm64..."
+if [ "$PLATFORM" == "iphonesimulator" ]; then
+    # A fresh copy each time: the device tree may hold a configured build.
+    log_info "Preparing a separate source tree for the Simulator..."
+    rm -rf "$SOURCE_DIR"
+    rsync -a --exclude '*.o' --exclude '*.lo' --exclude '.libs' --exclude '.deps' \
+        "$LAME_SRC_DIR/" "$SOURCE_DIR/"
+    (cd "$SOURCE_DIR" && { [ ! -f Makefile ] || make distclean >/dev/null 2>&1 || true; })
+fi
 
-IOS_SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-CC="$(xcrun --sdk iphoneos -f clang)"
+log_info "Configuring LAME for $PLATFORM arm64..."
+
+IOS_SDK=$(xcrun --sdk "$PLATFORM" --show-sdk-path)
+CC="$(xcrun --sdk "$PLATFORM" -f clang)"
 
 export CC
-export CFLAGS="-arch arm64 -miphoneos-version-min=$IOS_DEPLOYMENT_TARGET -isysroot $IOS_SDK -fembed-bitcode -Oz -fPIC -Wno-implicit-function-declaration"
-export LDFLAGS="-arch arm64 -miphoneos-version-min=$IOS_DEPLOYMENT_TARGET -isysroot $IOS_SDK"
+export CFLAGS="-arch arm64 $MIN_FLAG -isysroot $IOS_SDK -fembed-bitcode -Oz -fPIC -Wno-implicit-function-declaration"
+export LDFLAGS="-arch arm64 $MIN_FLAG -isysroot $IOS_SDK"
 
-cd "$LAME_SRC_DIR"
+cd "$SOURCE_DIR"
 
 ./configure \
     --prefix="$LAME_BUILD_DIR" \

@@ -24,6 +24,23 @@
 
 import Foundation
 
+/// The sources that used to be the single file Agent/Chat/AIChatViewModel.swift -
+/// the class body plus the AIChatViewModel+<Concern>.swift files it was split
+/// into (the older extension files are NOT included) - read as one text.
+func chatViewModelSource() -> String {
+    let chat = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Agent/Chat")
+    let names = ["AIChatViewModel", "AIChatViewModel+Lifecycle", "AIChatViewModel+ContextUsage",
+                 "AIChatViewModel+StreamingUI", "AIChatViewModel+Speech", "AIChatViewModel+AutoPlayAudio",
+                 "AIChatViewModel+SystemPrompt", "AIChatViewModel+Send", "AIChatViewModel+Rerun",
+                 "AIChatViewModel+EditMessage", "AIChatViewModel+Cancel", "AIChatViewModel+PromptQueue",
+                 "AIChatViewModel+DebugDumps", "AIChatViewModel+TurnCompletion", "AIChatViewModel+AgentLoop",
+                 "AIChatViewModel+ThinkingLevel", "LLMProviderError"]
+    return names.compactMap { try? String(contentsOf: chat.appendingPathComponent($0 + ".swift"), encoding: .utf8) }
+        .joined(separator: "\n")
+}
+
 var failures = 0
 func check(_ label: String, _ actual: Bool, _ expected: Bool = true) {
     if actual == expected { print("  ✅ \(label)") }
@@ -227,13 +244,67 @@ check("the static path still offers the resolver form",
 
 // The mirror must be kept current at the single promotion choke point, or the
 // first turn stays broken for a different reason.
-let vmMain = sourceOf("Agent/Chat/AIChatViewModel.swift")
+let vmMain = chatViewModelSource()
 check("sessionId didSet updates the off-actor mirror",
       vmMain.contains("openCodeSessionBox.value = sessionId"))
 check("the box is owned per conversation", vmMain.contains("let openCodeSessionBox = OpenCodeSessionBox()"))
 
 let bridge = sourceOf("NativeOffloads/ModelUseOffloadBridge.swift")
 check("model_use passes its caller session",
-      bridge.contains("sessionId: ISHExecutionCoordinator.mountedSessionIdSnapshot"))
+      bridge.contains("OpenCodeChannel.normalizedSessionId(callerSid)"))
+
+// [T-quicktest-opencode-session] A Quick Test is its own conversation.
+let quick = sourceOf("Views/Providers/ModelQuickTestSheet.swift")
+check("quick test builds its provider with a fresh random session id",
+      quick.contains("static func quickTestSessionId() -> String { UUID().uuidString }")
+      && quick.contains("try await LLMProviderFactory.makeProvider(for: entry, sessionId: quickTestSessionId())"))
+check("both the text and the image test go through it",
+      quick.components(separatedBy: "let provider = try await quickTestProvider(for: entry)").count - 1 == 2)
+check("no quick test path builds a provider without a session id",
+      quick.contains("LLMProviderFactory.makeProvider(for: entry)"), false)
+
+// [T-opencode-every-entry] Every path that talks to a model must hand the
+// channel a session id. Before this, compaction built its provider through a
+// hand-written copy of the factory that never attached the channel at all
+// (user screenshot: "Compaction failed after retrying in segments: Provider
+// error: [400] Request is missing x-opencode-session"), and voice correction,
+// folder suggestion and Vision passed none, so each was a hard 400 on an
+// OpenCode Go instance.
+print("\n[10] Every entry point carries a session id")
+let compaction = sourceOf("Agent/Chat/AIChatViewModel+Compaction.swift")
+check("compaction builds through the shared factory with the LIVE session",
+      compaction.contains("LLMProviderFactory.makeProvider(for: entry, resolveSessionId: { box.value })"))
+check("the hand-written duplicate factory is gone (it skipped the channel, overrides and Azure)",
+      vm.contains("static func makeLLMProvider("), false)
+check("no default nil session id on the static agent factory (callers must decide)",
+      vm.contains("sessionId: String? = nil"), false)
+check("no default nil session id on LLMProviderFactory.makeProvider",
+      f.contains("sessionId: String? = nil"), false)
+check("one-off id helper exists on the channel",
+      ch.contains("static func oneOffSessionId() -> String"))
+let correction = sourceOf("Providers/Voice/CorrectionStrategy.swift")
+check("voice correction is its own one-off conversation",
+      correction.contains("makeAgentProvider(for: resolved.entry, sessionId: OpenCodeChannel.oneOffSessionId())"))
+let vision = sourceOf("Providers/VisionGroupResolver.swift")
+check("Vision describe is its own one-off conversation",
+      vision.contains("makeAgentProvider(for: entry, sessionId: OpenCodeChannel.oneOffSessionId())"))
+let titleGen = sourceOf("Agent/Chat/AIChatViewModel+TitleGeneration.swift")
+check("folder suggestion is its own one-off conversation",
+      titleGen.contains("AIChatViewModel.makeAgentProvider(for: entry, sessionId: OpenCodeChannel.oneOffSessionId())"))
+check("model_use with no caller session still gets an id",
+      bridge.contains("sessionId: OpenCodeChannel.normalizedSessionId(callerSid) ?? OpenCodeChannel.oneOffSessionId()"))
+
+// The non-conversation request builders must run the per-request hook too,
+// or an id handed to the provider never reaches the wire.
+let oai = sourceOf("Providers/OpenAI/OpenAIProvider.swift")
+func body(of signature: String, in src: String) -> String {
+    guard let r = src.range(of: signature) else { return "" }
+    let rest = src[r.upperBound...]
+    let end = rest.range(of: "\n    func ")?.lowerBound ?? rest.endIndex
+    return String(rest[..<end])
+}
+for fn in ["func rawPassthroughRequest(", "func generateImage(", "func editImage("] {
+    check("\(fn)…) applies perRequestHeaders", body(of: fn, in: oai).contains("perRequestHeaders?("))
+}
 
 print("\n" + String(repeating: "\u{2500}", count: 60))

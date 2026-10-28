@@ -242,6 +242,9 @@ struct ModelEntry: Identifiable, Codable, Hashable {
         // re-moded OpenRouter entry would fall back to the audio-bit rule.
         // [T-openrouter-voice-catalog]
         rebuilt.voiceRole = baseModel.voiceRole
+        // [OpenMinis#438] Same reason: re-enriching the effective model must
+        // not let models.dev overwrite the limits the endpoint reported.
+        rebuilt.limitsReportedByEndpoint = baseModel.limitsReportedByEndpoint
         return rebuilt
     }
 

@@ -7,6 +7,7 @@
 
 #import "NativeOffloadUtils.h"
 #include "kernel/fs.h"
+#include "kernel/task.h"
 #include "fs/fd.h"
 #include "fs/path.h"
 #include <unistd.h>
@@ -380,4 +381,13 @@ BOOL noff_try_objc(void (NS_NOESCAPE ^block)(void)) {
         NSLog(@"noff_try_objc: caught ObjC exception: %@ — %@", e.name, e.reason);
         return NO;
     }
+}
+
+// ── Calling session ──
+
+uint64_t noff_current_fs_context(void) {
+    // `current` is iSH's thread-local task: on the handler's guest thread it is
+    // the task that exec'd the offloaded binary.
+    if (current == NULL || current->group == NULL) return 0;
+    return current->group->fs_context;
 }

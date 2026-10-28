@@ -1,5 +1,6 @@
 import AppIntents
 import Foundation
+import UIKit
 import UniformTypeIdentifiers
 import UserNotifications
 
@@ -405,7 +406,8 @@ enum ShortcutNotification {
             actions: [],
             intentIdentifiers: []
         )
-        center.setNotificationCategories([category])
+        // [T-user-ask] Through the shared registry: a bare set() wipes other features' categories.
+        NotificationCategoryCenter.shared.register([category])
 
         let content = UNMutableNotificationContent()
         content.title = title
@@ -414,17 +416,17 @@ enum ShortcutNotification {
         content.categoryIdentifier = categoryId
         content.userInfo = ["sessionId": sessionId]
 
-        // Increment app badge count
-        let current = UIApplication.shared.applicationIconBadgeNumber
-        content.badge = NSNumber(value: current + 1)
-        UIApplication.shared.applicationIconBadgeNumber = current + 1
-
-        let request = UNNotificationRequest(
-            identifier: id,
-            content: content,
-            trigger: nil  // deliver immediately
-        )
-        center.add(request)
+        // [T-mac-dock-badge] Through the badge ledger, not "icon + 1". The
+        // ledger lives on the main actor; post() stays fire-and-forget.
+        Task { @MainActor in
+            content.badge = NSNumber(value: BackgroundKeepAliveManager.shared.noteUnseenNotification())
+            let request = UNNotificationRequest(
+                identifier: id,
+                content: content,
+                trigger: nil  // deliver immediately
+            )
+            center.add(request)
+        }
     }
 }
 
@@ -501,6 +503,27 @@ final class ShortcutNotificationDelegate: NSObject, UNUserNotificationCenterDele
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         let userInfo = response.notification.request.content.userInfo
+        // [T-user-ask] An answer (or Cancel / Allow) from a user_ask
+        // notification: record it first (first come, first served), keep a
+        // little background time for the run to pick it up, and open the app
+        // only for "Open App" or a plain tap.
+        if userInfo["userAskRequestId"] != nil {
+            let bgTask = UIApplication.shared.beginBackgroundTask(withName: "user-ask-answer")
+            Task { @MainActor in
+                let outcome = UserAskCenter.shared.handleNotificationResponse(response)
+                if outcome == .openApp { Self.openSession(from: userInfo) }
+                completionHandler()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 25) {
+                    if bgTask != .invalid { UIApplication.shared.endBackgroundTask(bgTask) }
+                }
+            }
+            return
+        }
+        Self.openSession(from: userInfo)
+        completionHandler()
+    }
+
+    private static func openSession(from userInfo: [AnyHashable: Any]) {
         if let sessionId = userInfo["sessionId"] as? String, !sessionId.isEmpty {
             DispatchQueue.main.async {
                 // Buffer first (cold-launch consumer), then post (warm-path
@@ -525,7 +548,6 @@ final class ShortcutNotificationDelegate: NSObject, UNUserNotificationCenterDele
                 }
             }
         }
-        completionHandler()
     }
 
     /// Show notification even when app is in foreground.
@@ -534,6 +556,16 @@ final class ShortcutNotificationDelegate: NSObject, UNUserNotificationCenterDele
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
+        // [T-user-ask] In the foreground the card is on screen already.
+        // [T-mac-dock-badge] Except on a Mac with another app in front: UIKit
+        // still calls this ("foreground"), but nobody is looking at the card.
+        if notification.request.content.userInfo["userAskRequestId"] != nil {
+            DispatchQueue.main.async {
+                let away = MainActor.assumeIsolated { BackgroundKeepAliveManager.shared.userIsAway }
+                completionHandler(away ? [.banner, .sound] : [])
+            }
+            return
+        }
         completionHandler([.banner, .sound])
     }
 }

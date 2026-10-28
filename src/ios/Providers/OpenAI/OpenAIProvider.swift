@@ -96,12 +96,36 @@ final class OpenAIProvider: LLMProvider {
     // declare `minimal_client_version: 0.155.0` (CLIProxyAPI 2430354330af bumped
     // its own default in the same commit that added the two ids). Monotonic, so
     // the models already gated at 0.153.0 are unaffected: the field is a floor.
-    static let codexClientVersion = "0.155.0"
+    //
+    // [T-codex-client-0159] 0.155.0 → 0.159.0. CLIProxyAPI c8a2bfe8f ("feat(models):
+    // add gpt-6.1-sol model") raised its Codex model fetcher's client_version from
+    // 0.155.0 to 0.159.0 in the same commit that added gpt-6.1-sol, and users report
+    // the official Codex app and CLIProxyAPI list gpt-6.1-sol while our discovery
+    // does not. The working hypothesis is that /backend-api/codex/models filters
+    // its catalog by `client_version`; that is NOT verified against a live account.
+    // One constant on purpose: discovery (OpenAIModelsAPI), inference (Version
+    // header + User-Agent below) and QuotaStore must present the same version, or
+    // the catalog would offer models the inference fingerprint cannot use.
+    static let codexClientVersion = "0.159.0"
 
     /// [T-codex-fast-mode] UserDefaults key for the Codex Fast Mode toggle.
     /// Read at request-build time (not cached at init) so flipping the "..."
     /// menu toggle affects the very next request of an ongoing session.
-    static let fastModeDefaultsKey = "codexFastModeEnabled"
+    /// [T-codex-speed-tier] Now the legacy half of the speed tier: read and
+    /// written through `SpeedTierSettings`, never directly.
+    static let fastModeDefaultsKey = SpeedTierSettings.legacyFastModeKey
+
+    /// [T-codex-routing-hint] `x-codex-routing-hint` on a ChatGPT-backend
+    /// (Codex OAuth) Responses request, from the FINAL body — call right
+    /// before serialising it, so the header can never describe a different
+    /// model or tier than the body. API-key and custom-base requests never get
+    /// it: callers gate on `isCodexOAuth`, as the official client gates on
+    /// `uses_codex_backend`.
+    static func applyCodexRoutingHint(to request: inout URLRequest, body: [String: Any]) {
+        guard let hint = SpeedTierSettings.codexRoutingHint(
+            model: body["model"] as? String, serviceTier: body["service_tier"] as? String) else { return }
+        request.setValue(hint, forHTTPHeaderField: SpeedTierSettings.routingHintHeaderField)
+    }
 
     let name = "OpenAI"
     var model: LLMModel
@@ -114,6 +138,9 @@ final class OpenAIProvider: LLMProvider {
     let authMode: AuthMode
     /// Codex account ID for OAuth mode (set by provider factory).
     var codexAccountId: String?
+    /// [T-quota-codex-subscription] Provider instance of a Codex OAuth provider,
+    /// so a reply's `x-codex-*` usage headers update that instance's quota.
+    var quotaInstanceId: String?
     /// Optional custom API base URL for proxy services (e.g. "https://my-proxy.com").
     var customBaseURL: String?
     /// When false, customBaseURL is used verbatim without appending "/v1".
@@ -259,8 +286,11 @@ final class OpenAIProvider: LLMProvider {
     /// user who leaves Fast Mode on and then points a *custom* base URL at some
     /// other vendor must not have an unknown field injected — strict endpoints
     /// answer 400. Off ⇒ the key is omitted entirely, so bodies are unchanged.
+    ///
+    /// [T-codex-speed-tier] Any faster tier (Fast or Ultrafast) sends
+    /// "priority" here: xAI has no Ultrafast, so "ultrafast" never reaches it.
     var sendsPriorityServiceTier: Bool {
-        isXAI && UserDefaults.standard.bool(forKey: Self.fastModeDefaultsKey)
+        isXAI && SpeedTierSettings.xaiServiceTier(stored: SpeedTierSettings.storedTier()) != nil
     }
 
     /// Whether this provider points at Alibaba DashScope (supports Qwen cache_control).
@@ -993,6 +1023,7 @@ final class OpenAIProvider: LLMProvider {
         // JSON, letting DeepSeek's prefix-based disk cache match from the 0th token.
         // Without this, Swift's dictionary iteration order randomizes top-level /
         // nested key order across calls and the cache misses on every request.
+        if isCodexOAuth { Self.applyCodexRoutingHint(to: &request, body: body) }
         request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
 
         // Extension request interception: plugins may rewrite URL / method /
@@ -1033,6 +1064,15 @@ final class OpenAIProvider: LLMProvider {
         logOutgoingRequest(url: url, headers: request.allHTTPHeaderFields, body: body)
         #endif
 
+        // [T-sse-idle-timeout] A provider whose response idle timeout is set
+        // above the session's 600 s needs the transport to wait as long, or
+        // URLSession ends the stream first. Chat Completions only; a provider
+        // with no setting (the default) is not touched.
+        if !isResponsesAPI,
+           let longer = ResponseIdleTimeoutSetting.requestTimeout(
+               forIdleSeconds: ResponseIdleTimeoutSetting.seconds(forInstanceId: providerInstanceId)) {
+            request.timeoutInterval = longer
+        }
         // [T-ios-stream-connection-reuse] Own session for this stream; see
         // `makeStreamingSession()`. This is the agent loop's request path — the
         // one the 22:11 stall happened on.
@@ -1046,6 +1086,11 @@ final class OpenAIProvider: LLMProvider {
             throw error
         }
         let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+        // [T-quota-codex-subscription] Passive usage: the Codex backend reports the
+        // subscription's windows on every reply, errors (429) included.
+        if isCodexOAuth, let http = response as? HTTPURLResponse {
+            QuotaObservationSink.recordCodexResponse(instanceId: quotaInstanceId, response: http)
+        }
 
         if !(200..<300).contains(statusCode) {
             var body = ""
@@ -1300,11 +1345,19 @@ final class OpenAIProvider: LLMProvider {
         // verified against codex_cli_rs source: ServiceTier::Fast.
         // request_value() == "priority" ("fast" is only the UI name).
         // Broadened to every Responses-API flavor (this builder is the
-        // Responses path) gated on a gpt-family model id. ~1.5x faster,
-        // 2x credit burn on the subscription.
-        if UserDefaults.standard.bool(forKey: Self.fastModeDefaultsKey),
-           model.id.lowercased().contains("gpt") {
-            body["service_tier"] = "priority"
+        // Responses path) gated on a gpt-family model id.
+        // [T-codex-speed-tier] The value follows the chosen tier: "priority"
+        // for Fast, "ultrafast" for Ultrafast on a whitelisted model (Fast
+        // otherwise), nothing for Standard.
+        if let tier = SpeedTierSettings.responsesServiceTier(
+            stored: SpeedTierSettings.storedTier(), modelId: model.id) {
+            body["service_tier"] = tier
+        }
+        // [T-ultrafast-unsupported-log] Say so when Ultrafast was chosen but is
+        // not what this model / account supports.
+        if let note = SpeedTierSettings.ultrafastUnsupportedNote(
+            stored: SpeedTierSettings.storedTier(), modelId: model.id) {
+            logger.info("[SpeedTier] \(note)")
         }
         if let sys = systemPrompt, !sys.isEmpty {
             body["instructions"] = sys
@@ -1334,6 +1387,7 @@ final class OpenAIProvider: LLMProvider {
         // [T-ios-openai-body-oom] See streamRaw — carries the conversation too.
         try guardRequestBodySize(body, context: "responsesAPI")
 
+        if isCodexOAuth { Self.applyCodexRoutingHint(to: &request, body: body) }
         request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
 
         // Extension request interception (see streamRaw).
@@ -1673,6 +1727,12 @@ final class OpenAIProvider: LLMProvider {
         let token = try await getToken()
         applyKeyAuth(&request, token: token)
         for (k, v) in extraHeaders { request.setValue(v, forHTTPHeaderField: k) }
+        // [T-opencode-every-entry] Per-request headers too (OpenCode session,
+        // Copilot), exactly like the conversation builders; without them a
+        // passthrough to an OpenCode Go instance is a hard 400.
+        for (k, v) in perRequestHeaders?(bodyObject ?? [:]) ?? [:] {
+            request.setValue(v, forHTTPHeaderField: k)
+        }
         // User headers LAST — replace semantics over all defaults.
         for (k, v) in headers { request.setValue(v, forHTTPHeaderField: k) }
 
@@ -1758,10 +1818,14 @@ final class OpenAIProvider: LLMProvider {
         for (key, value) in extraHeaders {
             request.setValue(value, forHTTPHeaderField: key)
         }
+        // [T-opencode-every-entry] Per-request headers (OpenCode session,
+        // Copilot) apply here too, not only on the conversation builders.
+        for (key, value) in perRequestHeaders?([:]) ?? [:] {
+            request.setValue(value, forHTTPHeaderField: key)
+        }
 
-        let tokenPrefix = String(token.prefix(12))
-        let tokenSuffix = String(token.suffix(4))
-        logger.info("🖼️ /images/generations auth: \(tokenPrefix)...\(tokenSuffix) (len=\(token.count)) isOAuth=\(isOAuth)")
+        // [T-log-redaction] Length only - no prefix / suffix of the token.
+        logger.info("🖼️ /images/generations auth: \(LogRedaction.secret(token)) isOAuth=\(isOAuth)")
 
         var body: [String: Any] = [
             "model": model.id,
@@ -1961,6 +2025,11 @@ final class OpenAIProvider: LLMProvider {
         let token = try await getToken()
         applyKeyAuth(&request, token: token)
         for (key, value) in extraHeaders {
+            request.setValue(value, forHTTPHeaderField: key)
+        }
+        // [T-opencode-every-entry] Per-request headers (OpenCode session,
+        // Copilot) apply here too, not only on the conversation builders.
+        for (key, value) in perRequestHeaders?([:]) ?? [:] {
             request.setValue(value, forHTTPHeaderField: key)
         }
 

@@ -298,13 +298,21 @@ extension AIChatViewModel {
             return FileToolResult(output: "Error: No such file: \(path)", success: false)
         }
 
-        // Check for binary content (null bytes in first 512 bytes)
+        // [T-filetool-io-offmain] Read off the main thread with a timeout; an
+        // iCloud file is downloaded first and read under file coordination.
+        // A plain read() of a not-yet-downloaded iCloud file froze the main
+        // thread until the watchdog killed the app (see FileToolIO).
         let fileData: Data
         do {
-            fileData = try Data(contentsOf: hostURL)
+            fileData = try await FileToolIO.run("Reading \(path)", url: hostURL) { try FileToolIO.readData(hostURL, cancellation: $0) }
+        } catch let ioError as FileToolIO.IOError {
+            AppLogger(category: "FileTool").warning("[FileTool] read failed path=\(path): \(ioError)")
+            return FileToolResult(output: "Error reading \(path): \(ioError)", success: false)
         } catch {
             return FileToolResult(output: "Error reading \(path): \(error.localizedDescription)", success: false)
         }
+
+        // Check for binary content (null bytes in first 512 bytes)
 
         let sampleSize = min(fileData.count, 512)
         let sample = fileData.prefix(sampleSize)
@@ -537,18 +545,6 @@ extension AIChatViewModel {
         let appendMode = (dict["append"] as? Bool) ?? false
         let createDirs = (dict["create_dirs"] as? Bool) ?? false
 
-        let fm = FileManager.default
-        let parentDir = hostURL.deletingLastPathComponent()
-
-        // Create parent directories if needed
-        if createDirs || !fm.fileExists(atPath: parentDir.path) {
-            do {
-                try fm.createDirectory(at: parentDir, withIntermediateDirectories: true)
-            } catch {
-                return FileToolResult(output: "Error creating directories: \(error.localizedDescription)", success: false)
-            }
-        }
-
         guard let contentData = content.data(using: .utf8) else {
             return FileToolResult(output: "Error: Content is not valid UTF-8", success: false)
         }
@@ -584,22 +580,21 @@ extension AIChatViewModel {
             }
         }
 
+        // [T-filetool-io-offmain] Create the parent directory (if needed) and
+        // write off the main thread with a timeout; an iCloud target is
+        // written under file coordination. The directory is now created after
+        // the read-only and mount checks above, not before them.
         do {
-            if appendMode, fm.fileExists(atPath: hostURL.path) {
-                let handle = try FileHandle(forWritingTo: hostURL)
-                handle.seekToEndOfFile()
-                handle.write(contentData)
-                handle.closeFile()
-                #if DEBUG
-                print("[FileWrite] APPENDED \(contentData.count) bytes to \(hostURL.path)")
-                #endif
-            } else {
-                try contentData.write(to: hostURL)
-                #if DEBUG
-                let landedSize = (try? FileManager.default.attributesOfItem(atPath: hostURL.path)[.size] as? Int) ?? -1
-                print("[FileWrite] WROTE \(contentData.count) bytes to \(hostURL.path) (on-disk size now \(landedSize))")
-                #endif
+            try await FileToolIO.run("Writing \(path)", writes: true, url: hostURL) {
+                try FileToolIO.writeData(contentData, to: hostURL, append: appendMode,
+                                         createDirs: createDirs, cancellation: $0)
             }
+            #if DEBUG
+            print("[FileWrite] \(appendMode ? "APPENDED" : "WROTE") \(contentData.count) bytes to \(hostURL.path)")
+            #endif
+        } catch let ioError as FileToolIO.IOError {
+            AppLogger(category: "FileTool").warning("[FileTool] write failed path=\(path): \(ioError)")
+            return FileToolResult(output: "Error writing \(path): \(ioError)", success: false)
         } catch {
             #if DEBUG
             print("[FileWrite] ✗ WRITE ERROR path=\(path) url=\(hostURL.path) err=\(error.localizedDescription)")
@@ -666,106 +661,42 @@ extension AIChatViewModel {
             return FileToolResult(output: "Error: File does not exist: \(path). Use file_write to create new files.", success: false)
         }
 
-        guard let fileContent = try? String(contentsOf: hostURL, encoding: .utf8) else {
-            return FileToolResult(output: "Error: Could not read \(path) as UTF-8 text", success: false)
-        }
-
         guard !oldString.isEmpty else {
             return FileToolResult(output: "Error: old_string must not be empty. Use file_write to create or overwrite files.", success: false)
         }
 
         let replaceAll = (dict["replace_all"] as? Bool) ?? false
-        let strictRanges = Self.findAllRanges(of: oldString, in: fileContent)
 
-        // Fuzzy fallback. AIs routinely emit smart quotes as ASCII quotes
-        // (Claude tokenizer especially) and drop trailing whitespace or
-        // collapse runs of inline spaces when re-emitting code/prose they
-        // just read. Strict byte-equality matching then rejects edits the
-        // user clearly intended. When strict fails, normalize BOTH sides
-        // (quotes, trailing whitespace, runs of inline spaces) and search
-        // the normalized text — but apply the replacement against the
-        // ORIGINAL byte range so the file's actual bytes are preserved
-        // around the swap. Surface "fuzzy" in the success message so the
-        // model learns its old_string didn't match verbatim.
-        let fuzzyNote: String?
-        let editRanges: [Range<String.Index>]
-        if !strictRanges.isEmpty {
-            editRanges = strictRanges
-            fuzzyNote = nil
-        } else {
-            let (normFile, fileMap) = Self.normalizeForFuzzyMatch(fileContent)
-            let (normOld, _) = Self.normalizeForFuzzyMatch(oldString)
-            let normRanges = Self.findAllRanges(of: normOld, in: normFile)
-            if normRanges.isEmpty {
-                let preview = Self.buildFileEditPreview(
-                    fileContent: fileContent,
-                    oldString: oldString,
-                    normFile: normFile,
-                    normOld: normOld
-                )
-                return FileToolResult(
-                    output: "Error: old_string not found in \(path). Use file_read to view current file contents before editing.\n\n\(preview)",
-                    success: false
-                )
-            }
-            // Map normalized character offsets back to original String.Index
-            // ranges. The map array stores the original index for each char
-            // in normFile; we look up the start char's mapping and walk to
-            // the end char's mapping (+1) to get the matching original
-            // range. This is robust across multi-byte UTF-8 because both
-            // sides are operated on as Character sequences.
-            var mapped: [Range<String.Index>] = []
-            mapped.reserveCapacity(normRanges.count)
-            for r in normRanges {
-                let startOffset = normFile.distance(from: normFile.startIndex, to: r.lowerBound)
-                let endOffset = normFile.distance(from: normFile.startIndex, to: r.upperBound)
-                guard startOffset < fileMap.count else { continue }
-                let originalStart = fileMap[startOffset]
-                let originalEnd: String.Index
-                if endOffset == 0 {
-                    originalEnd = fileContent.startIndex
-                } else if endOffset <= fileMap.count {
-                    // Use the next char's mapped start (or file end) as the
-                    // exclusive upper bound so we don't truncate.
-                    let lastIncluded = fileMap[endOffset - 1]
-                    originalEnd = fileContent.index(after: lastIncluded)
-                } else {
-                    originalEnd = fileContent.endIndex
-                }
-                mapped.append(originalStart..<originalEnd)
-            }
-            editRanges = mapped
-            fuzzyNote = "fuzzy-matched: quotes/whitespace normalized"
-        }
-
-        if editRanges.count > 1 && !replaceAll {
-            return FileToolResult(
-                output: "Error: old_string matches \(editRanges.count) locations in \(path). Provide more surrounding context to make the match unique, or set replace_all: true to replace all occurrences.",
-                success: false
-            )
-        }
-
-        // Apply replacements from the last range backwards so earlier
-        // indices stay valid as we mutate the string.
-        var updatedContent = fileContent
-        for range in editRanges.reversed() {
-            updatedContent.replaceSubrange(range, with: newString)
-        }
-
-        guard let writeData = updatedContent.data(using: .utf8) else {
-            return FileToolResult(output: "Error: Updated content is not valid UTF-8", success: false)
-        }
-
+        // [T-filetool-io-offmain] Read, match/replace and write back off the
+        // main thread, with a timeout. An iCloud file is downloaded first and
+        // edited under one coordinated read+write. This String(contentsOf:)
+        // used to run on the main actor: on 2026-10-02 an edit of a mounted
+        // Surge iCloud config blocked in read() for 75s and FrontBoard's
+        // watchdog killed the app, twice. The matching code itself moved
+        // unchanged into FileToolIO.applyEdit.
+        let outcome: FileToolIO.EditOutcome
         do {
-            try writeData.write(to: hostURL)
+            outcome = try await FileToolIO.run("Editing \(path)", writes: true, url: hostURL) {
+                try FileToolIO.editFile(hostURL, path: path, oldString: oldString, newString: newString,
+                                        replaceAll: replaceAll, cancellation: $0)
+            }
+        } catch let ioError as FileToolIO.IOError {
+            AppLogger(category: "FileTool").warning("[FileTool] edit failed path=\(path): \(ioError)")
+            return FileToolResult(output: "Error editing \(path): \(ioError)", success: false)
         } catch {
-            return FileToolResult(output: "Error writing \(path): \(error.localizedDescription)", success: false)
+            return FileToolResult(output: "Error editing \(path): \(error.localizedDescription)", success: false)
+        }
+        guard case let .edited(replacementCount, bytes, fuzzyNote) = outcome else {
+            if case let .failed(message) = outcome {
+                return FileToolResult(output: message, success: false)
+            }
+            return FileToolResult(output: "Error editing \(path)", success: false)
         }
 
         ensureFakefsMetadata(for: path, isDirectory: false)
 
-        let replacements = editRanges.count == 1 ? "1 replacement" : "\(editRanges.count) replacements"
-        var result = "Edited \(path) (\(replacements), \(updatedContent.utf8.count) bytes)"
+        let replacements = replacementCount == 1 ? "1 replacement" : "\(replacementCount) replacements"
+        var result = "Edited \(path) (\(replacements), \(bytes) bytes)"
         if let note = fuzzyNote {
             result += " — \(note)"
         }
@@ -773,148 +704,6 @@ extension AIChatViewModel {
             result += "\nminis_url: \(minisURL)"
         }
         return FileToolResult(output: result, success: true)
-    }
-
-    /// Find every (non-overlapping) range of `needle` in `haystack`,
-    /// returning ranges in ascending order. Empty needle returns [].
-    private static func findAllRanges(of needle: String, in haystack: String) -> [Range<String.Index>] {
-        guard !needle.isEmpty else { return [] }
-        var results: [Range<String.Index>] = []
-        var searchStart = haystack.startIndex
-        while searchStart < haystack.endIndex,
-              let r = haystack.range(of: needle, range: searchStart..<haystack.endIndex) {
-            results.append(r)
-            searchStart = r.upperBound
-        }
-        return results
-    }
-
-    /// Normalize text for fuzzy file_edit matching. Returns the normalized
-    /// string AND a parallel array mapping each normalized character's
-    /// position back to the corresponding original `String.Index`. The
-    /// caller uses this map to translate a match position in the
-    /// normalized string into the original file's byte range so the
-    /// replacement preserves the file's actual bytes outside the match.
-    ///
-    /// Rules:
-    ///   - Smart quotes → ASCII quotes
-    ///     U+201C/U+201D → `"`,  U+2018/U+2019 → `'`
-    ///   - Each line's trailing whitespace dropped
-    ///   - Runs of inline ASCII spaces collapsed to a single space
-    ///     (but only between non-whitespace — leading indent on a line
-    ///     is preserved verbatim so source code formatting isn't lost)
-    ///
-    /// Tabs and other whitespace are left intact so indentation-significant
-    /// files (Python, Makefile) are still matchable strictly when the
-    /// model emits tabs correctly.
-    private static func normalizeForFuzzyMatch(_ text: String) -> (String, [String.Index]) {
-        var out = String()
-        out.reserveCapacity(text.count)
-        var map: [String.Index] = []
-        map.reserveCapacity(text.count)
-
-        // First pass: substitute characters one-by-one, tracking trailing
-        // whitespace per line and inline-space collapsing.
-        // We process character-by-character, peeking at the next non-space
-        // to decide whether trailing spaces should be dropped.
-        let chars = Array(text)
-        let indices = Array(text.indices)
-        var i = 0
-        var atLineStart = true   // true until first non-whitespace on the line
-        while i < chars.count {
-            let ch = chars[i]
-            // Newline always emitted (with original mapping). Resets
-            // atLineStart for the next line.
-            if ch == "\n" {
-                out.append(ch); map.append(indices[i])
-                atLineStart = true
-                i += 1
-                continue
-            }
-            // Substitute smart quotes.
-            var emit: Character = ch
-            switch ch {
-            case "\u{201C}", "\u{201D}": emit = "\""
-            case "\u{2018}", "\u{2019}": emit = "'"
-            default: break
-            }
-            // Trailing whitespace drop: if this is an ASCII space and
-            // every remaining char before the next '\n' (or end) is also
-            // a space, drop the run.
-            if ch == " " {
-                // Look ahead to next non-space
-                var j = i
-                while j < chars.count, chars[j] == " " { j += 1 }
-                let isTrailing = (j == chars.count) || (chars[j] == "\n")
-                if isTrailing {
-                    // Skip this whole trailing whitespace run.
-                    i = j
-                    continue
-                }
-                // Inline space — collapse runs to a single space UNLESS
-                // we're at the start of a line (preserve indentation).
-                if atLineStart {
-                    // Leading indent: emit every space verbatim.
-                    for k in i..<j {
-                        out.append(" "); map.append(indices[k])
-                    }
-                    i = j
-                    atLineStart = false
-                    continue
-                }
-                // Inline collapse: emit one space mapped to the first
-                // space's index.
-                out.append(" "); map.append(indices[i])
-                i = j
-                continue
-            }
-            out.append(emit); map.append(indices[i])
-            atLineStart = false
-            i += 1
-        }
-        return (out, map)
-    }
-
-    /// Build a context-rich preview for file_edit miss. We try to locate
-    /// the most likely region using a heuristic: search the first 60 chars
-    /// of the (normalized) old_string against the (normalized) file. If
-    /// found, return ±10 lines of context around that hit. Otherwise fall
-    /// back to the original first-20-lines preview so the AI at least sees
-    /// the file head.
-    private static func buildFileEditPreview(
-        fileContent: String,
-        oldString: String,
-        normFile: String,
-        normOld: String
-    ) -> String {
-        // Use first ~60 chars of normalized old as anchor; many failed
-        // matches differ later in the string but the start lines up.
-        let probeLen = min(60, normOld.count)
-        let probeEnd = normOld.index(normOld.startIndex, offsetBy: probeLen)
-        let probe = String(normOld[..<probeEnd])
-        var anchorLine: Int? = nil
-        if !probe.isEmpty, let r = normFile.range(of: probe) {
-            // Convert match offset to line number in the ORIGINAL file.
-            let offset = normFile.distance(from: normFile.startIndex, to: r.lowerBound)
-            // Walk normFile up to offset, counting newlines; this is the
-            // same line index in the original file because normalization
-            // never adds or removes \n.
-            let prefix = normFile[normFile.startIndex..<r.lowerBound]
-            anchorLine = prefix.filter { $0 == "\n" }.count
-        }
-        let lines = fileContent.components(separatedBy: "\n")
-        if let a = anchorLine {
-            let start = max(0, a - 10)
-            let end = min(lines.count, a + 11)
-            var out = "Closest match in file (lines \(start + 1)–\(end), normalized old_string anchor at line \(a + 1)):\n"
-            out += lines[start..<end].enumerated()
-                .map { "\(start + $0.offset + 1): \($0.element)" }
-                .joined(separator: "\n")
-            out += "\n\nNote: file may use smart quotes (\u{201C}\u{201D}\u{2018}\u{2019}), tabs, or trailing whitespace your old_string omits. Re-read the file and copy the exact bytes."
-            return out
-        }
-        let preview = lines.prefix(20).enumerated().map { "\($0.offset + 1): \($0.element)" }.joined(separator: "\n")
-        return "First 20 lines:\n\(preview)"
     }
 
 }

@@ -175,6 +175,18 @@ enum DebugMethodRegistry {
             example: ["command": "ls /var/minis/workspace", "timeout": 30, "stdinScript": true, "sessionId": "ABC123..."]
         ),
         MethodSpec(
+            name: "debug.chatSearch",
+            description: "[T-in-chat-search] Drive \"Search in Chat\" on the chat on screen (or sessionId): open the bar (optionally with a query), set the query, step to the next/previous result, close it, or read its state. action=spike renders every assistant text block and compares the text the cell highlights with the text the search computed from markdown.",
+            params: [
+                ParamSpec(name: "action", type: "string", required: false, default: "state", description: "open | query | next | previous | done | state | spike"),
+                ParamSpec(name: "query", type: "string", required: false, default: nil, description: "open: prefill; query: the new query; spike: also compare occurrence counts of this query."),
+                ParamSpec(name: "sessionId", type: "string", required: false, default: nil, description: "Defaults to the chat on screen."),
+                ParamSpec(name: "waitMs", type: "int", required: false, default: nil, description: "Wait before reading back the state (default 600 after open/query, 150 otherwise)."),
+            ],
+            returns: "{active, query, count, truncated, counter, currentIndex, current{messageId, blockId, field, ordinal}, notice} or, for spike, {textBlocks, identical, different, queryCountMismatches, blocksWith, examples}",
+            example: ["action": "open", "query": "table"]
+        ),
+        MethodSpec(
             name: "debug.scrollMetrics",
             description: "In-memory scroll diagnostics ring buffer (DEBUG builds only, OFF by default). Call with enabled=true to arm recording, then scroll, then call without 'enabled' to dump: every cell self-size (measure), layout height correction (inv), settle flush (flush), settle anchor shift (settle), full re-flow (prepare) and per-frame offset sample (scroll). No thresholds — complete data.",
             params: [
@@ -427,8 +439,48 @@ enum DebugMethodRegistry {
                 ParamSpec(name: "sinceID", type: "int", required: false, default: nil, description: "Only runs with id greater than this — poll for new runs without re-reading."),
                 ParamSpec(name: "includePrompt", type: "bool", required: false, default: false, description: "Include the full assembled prompt per run (~2.5k chars each; off by default so a listing stays readable)."),
             ],
-            returns: "{count, totalRetained, runs:[{id, at, trigger, locale, transcript, segmentedTokens, phoneticKeys, retrieval:{ms,cacheHit,candidateCount,candidates:[{token,phoneticKey,term,source,confidence,fusedScore,evidence}]}, contextMining:{scannedMessages,buildMs,digestChars,digestTerms:[{term,score,count,backgroundRank}],excerptChars,excerpts:[{role,newestIndex,kind,chars,text}]}, promptEvidence:{vocabTerms,confusionLines,blockChars}, verdict:{corrected,changed,appliedPairs,rejectedReason,modelGroup,totalMs}, prompt?}]}",
+            returns: "{count, totalRetained, runs:[{id, at, trigger, locale, transcript, segmentedTokens, phoneticKeys, retrieval:{ms,cacheHit,candidateCount,candidates:[{token,phoneticKey,term,source,confidence,fusedScore,evidence}]}, contextMining:{scannedMessages,buildMs,digestChars,digestTerms:[{term,score,count,backgroundRank}],excerptChars,excerpts:[{role,newestIndex,kind,chars,text}]}, viewportContext:{available,centerY,viewportHeight,window,candidateRows,selectedRows:[{kind,messageId,blockId,distance,chars,cut}],viewportChars,viewportBudget,lines,latestReply,latestReplyDedup,latestReplyBlocksDropped,latestReplyChars,latestReplyBudget,latestReplyTruncated}, promptEvidence:{vocabTerms,confusionLines,blockChars}, verdict:{corrected,changed,appliedPairs,rejectedReason,modelGroup,totalMs}, prompt?}]}",
             example: ["limit": 5, "includePrompt": false]
+        ),
+        MethodSpec(
+            name: "debug.voiceCorrection.viewportContext",
+            description: "[T-voice-viewport-context] Build voice correction's ON-SCREEN context for a session exactly as tapping the correction button would right now, without running a correction: the visible part of the message list plus half a screen above and below, rows taken nearest-to-screen-centre first up to 2000 chars (user text, assistant text, tool-call titles), rendered top→bottom; and the newest AI reply minus any block already on screen (≤2000 chars, tail kept). Scroll the chat, call this, and compare `lines` with the screen. The session must be loaded (debug.openSession). DEBUG only.",
+            params: [
+                ParamSpec(name: "sessionId", type: "string", required: true, default: nil, description: "Session whose chat list is on screen."),
+                ParamSpec(name: "includePrompt", type: "bool", required: false, default: false, description: "Also return the full correction prompt this context would produce (no candidates)."),
+                ParamSpec(name: "transcript", type: "string", required: false, default: nil, description: "Transcript to place in the returned prompt (with includePrompt)."),
+                ParamSpec(name: "locale", type: "string", required: false, default: "zh", description: "Recognizer locale that, with the transcript's script, picks the language profile (with includePrompt)."),
+            ],
+            returns: "{listOnScreen, snapshotRows, available, centerY, viewportHeight, window:[minY,maxY], candidateRows, selectedRows:[{kind,messageId,blockId,distance,chars,cut}], viewportChars, viewportBudget, lines:[string], latestReply, latestReplyDedup:'none'|'not_on_screen'|'partially_on_screen'|'fully_on_screen', latestReplyBlocksDropped, latestReplyChars, latestReplyBudget, latestReplyTruncated, recentExcerpts:[string], languageProfile?, systemPrompt?, prompt?}",
+            example: ["sessionId": "<uuid>", "includePrompt": true]
+        ),
+        MethodSpec(
+            name: "debug.chatShare.openPicker",
+            description: "[T-multi-select-share] Open the Share Chat picker on the session currently on screen, exactly as long-pressing a message and choosing \"Share Chat…\" would (its round preselected). Anchors on the last user message unless messageId is given. The session must be the one displayed. DEBUG only.",
+            params: [
+                ParamSpec(name: "sessionId", type: "string", required: true, default: nil, description: "The session on screen (debug.openSession)."),
+                ParamSpec(name: "messageId", type: "string", required: false, default: nil, description: "Message to anchor the preselected round on."),
+            ],
+            returns: "{ok, messageId}",
+            example: ["sessionId": "<uuid>"]
+        ),
+        MethodSpec(
+            name: "debug.chatExport.render",
+            description: "[T-multi-select-share] Export a loaded session's messages exactly as the share picker's Create does (long image or PDF), without the UI. Units follow the picker: one per user message, callback card or whole reply. The file is copied to Library/Caches/ChatExportDebug/ — fetch it with debug.readFile (base64). PDF results include the text PDFKit extracts, to confirm text stayed vector. DEBUG only.",
+            params: [
+                ParamSpec(name: "sessionId", type: "string", required: true, default: nil, description: "A loaded session (debug.openSession)."),
+                ParamSpec(name: "format", type: "string", required: false, default: "image", description: "image | pdf"),
+                ParamSpec(name: "wideLayout", type: "bool", required: false, default: false, description: "Lay the chat out at iPad width (1024pt) instead of the phone's."),
+                ParamSpec(name: "dark", type: "bool", required: false, default: false, description: "Render in dark appearance."),
+                ParamSpec(name: "adaptiveTables", type: "bool", required: false, default: false, description: "Tables at natural width; the page widens to fit (capped)."),
+                ParamSpec(name: "includeToolCalls", type: "bool", required: false, default: false, description: "Also select the tool-call cells of the chosen units (the picker leaves them unselected by default)."),
+                ParamSpec(name: "includeThinking", type: "bool", required: false, default: false, description: "Also select the thinking cells of the chosen units."),
+                ParamSpec(name: "lastUnits", type: "int", required: false, default: nil, description: "Export only the last N units (default: all)."),
+                ParamSpec(name: "unitIndexes", type: "array", required: false, default: nil, description: "Export these unit indexes (overrides lastUnits)."),
+                ParamSpec(name: "title", type: "string", required: false, default: "Debug Export", description: "Header title and file name."),
+            ],
+            returns: "{path, bytes, width, height, pages, units, totalUnits, cells:[kind], ms, pdfText?}",
+            example: ["sessionId": "<uuid>", "format": "pdf", "wideLayout": true, "lastUnits": 4]
         ),
         MethodSpec(
             name: "debug.voiceCorrection.traceManualEdits",
@@ -531,6 +583,93 @@ enum DebugMethodRegistry {
             example: ["sessionId": "<sid>", "state": "paused", "ageHours": 25]
         ),
         MethodSpec(
+            name: "debug.location.setAutoRetract",
+            description: "[T-bka-orphan-retract-exp] Turn the automatic orphaned-location-session retracts (launch, setup, foreground) on or off, so a leaked CLBackgroundActivitySession can be tested in isolation. Persists; turn back on after the experiment.",
+            params: [
+                ParamSpec(name: "enabled", type: "bool", required: true, default: nil, description: "true = automatic retracts run (default)"),
+            ],
+            returns: "{autoRetract}",
+            example: ["enabled": false]
+        ),
+        MethodSpec(
+            name: "debug.loadtest.getLimits",
+            description: "[T-loadtest-limits] DEBUG only. Effective concurrency limits (sessions / childJobs / queuedDelegations / tools), what each counts (scope: childJobs and queuedDelegations are PER PARENT conversation; sub agent runs take no session slot), the shipping values and which are overridden.",
+            params: [],
+            returns: "{sessions, childJobs, queuedDelegations, tools, scope, shipping, overridden}",
+            example: [:]
+        ),
+        MethodSpec(
+            name: "debug.loadtest.setLimits",
+            description: "[T-loadtest-limits] DEBUG only, for the on-device load test. Override any subset of the hard concurrency limits; 0 restores the shipping value (6 sessions / 3 sub agents per parent / 10 queued per parent / 10 tools). In memory only - a relaunch restores the defaults. Raising the session limit does not wake already-suspended sessions; they start as slots free up.",
+            params: [
+                ParamSpec(name: "sessions", type: "int", required: false, default: nil, description: "ConcurrencyLimits.sessionSlots - agent loops of conversations at once (sub agents exempt)"),
+                ParamSpec(name: "childJobs", type: "int", required: false, default: nil, description: "ConcurrencyLimits.childJobsPerParent - sub agents running at once PER PARENT (alias: childJobsPerParent)"),
+                ParamSpec(name: "queuedDelegations", type: "int", required: false, default: nil, description: "ConcurrencyLimits.queuedDelegationsPerParent - queued delegations PER PARENT (alias: queuedDelegationsPerParent)"),
+                ParamSpec(name: "tools", type: "int", required: false, default: nil, description: "AIChatViewModel.maxConcurrentTools"),
+            ],
+            returns: "getLimits",
+            example: ["sessions": 10, "childJobs": 10]
+        ),
+        MethodSpec(
+            name: "debug.loadtest.sample",
+            description: "[T-loadtest-limits] DEBUG only. One resource snapshot: phys_footprint, os_proc_available_memory, threads, iSH guest processes and anon memory, thermal state, battery, app state, running / suspended sessions, running child jobs, limits.",
+            params: [],
+            returns: "{t, footprintMB, availMB, threads, guestProcs, guestAnonMB, thermal, battery, ...}",
+            example: [:]
+        ),
+        MethodSpec(
+            name: "debug.bka.getProfile",
+            description: "[T-bka-debug-profile] Every background-behaviour knob (settings + DEBUG modes) and the live runtime state: app in background, run active, continued task running/released, location session open, silent audio playing.",
+            params: [],
+            returns: "{settings, debug, runtime}",
+            example: [:]
+        ),
+        MethodSpec(
+            name: "debug.bka.setProfile",
+            description: "[T-bka-debug-profile] Set any subset of the background knobs at once, applied live (settings go through the running manager, so no relaunch). Optional preset first: legacy (the default: no continued task, continuous location) / bgtask (the opt-in switch on: continued task, location only when it is not running) / bgtask-only (bgtask + location off + Background Speak off) / audio-only (no continued task, location off, Background Speak on). Explicit keys override the preset. Returns getProfile.",
+            params: [
+                ParamSpec(name: "preset", type: "string", required: false, default: nil, description: "legacy | bgtask | bgtask-only | audio-only"),
+                ParamSpec(name: "enhancedBackground", type: "bool", required: false, default: nil, description: "Settings: Enhanced Background"),
+                ParamSpec(name: "backgroundSpeak", type: "bool", required: false, default: nil, description: "Settings: Background Speak (silent-audio keep-alive)"),
+                ParamSpec(name: "locationTracking", type: "bool", required: false, default: nil, description: "Settings: Location Tracking"),
+                ParamSpec(name: "liveActivity", type: "bool", required: false, default: nil, description: "Settings: Live Activity"),
+                ParamSpec(name: "continuedPreferred", type: "bool", required: false, default: nil, description: "Settings: Prefer Continued Background Processing"),
+                ParamSpec(name: "continuedMode", type: "string", required: false, default: nil, description: "preferred | fallback | off | default"),
+                ParamSpec(name: "locationMode", type: "string", required: false, default: nil, description: "continuous | off | default"),
+                ParamSpec(name: "laRestartAfterTask", type: "string", required: false, default: nil, description: "off | taskStart | resignActive - re-create the Live Activity after the continued task is up (Dynamic Island priority experiment)"),
+                ParamSpec(name: "liveActivityRelevance", type: "number", required: false, default: nil, description: "relevanceScore on our Live Activity (default 100); decides which of an app's activities holds the Dynamic Island"),
+            ],
+            returns: "{settings, debug, runtime}",
+            example: ["preset": "bgtask"]
+        ),
+        MethodSpec(
+            name: "debug.bka.setLocationMode",
+            description: "[T-bka-loc-pulse] How location keeps the Live Activity refreshing in the background: continuous (one session the whole time; default) / off (none, experiment) / default (clear the override). Takes effect at the next background arming.",
+            params: [
+                ParamSpec(name: "mode", type: "string", required: true, default: nil, description: "continuous | off | default"),
+            ],
+            returns: "{mode}",
+            example: ["mode": "continuous"]
+        ),
+        MethodSpec(
+            name: "debug.bka.setContinuedMode",
+            description: "[T-bka-continued-preferred-switch] iOS 26+ BGContinuedProcessingTask, only while the settings switch background.continuedProcessing is on (default off): preferred (default: every run started in the foreground; location stands down while the task runs) / fallback (only runs without the silent-audio keep-alive; location unchanged) / off. Applies from the next run.",
+            params: [
+                ParamSpec(name: "mode", type: "string", required: true, default: nil, description: "preferred | fallback | off"),
+            ],
+            returns: "{mode}",
+            example: ["mode": "preferred"]
+        ),
+        MethodSpec(
+            name: "debug.location.retractExperiment",
+            description: "[T-bka-orphan-retract-exp] Run one retract strategy on a leaked background location session and log each step ([BKA][RetractExp]).",
+            params: [
+                ParamSpec(name: "strategy", type: "string", required: true, default: nil, description: "probe | delayed1 | delayed5 | liveUpdates"),
+            ],
+            returns: "{ok, strategy, steps}",
+            example: ["strategy": "probe"]
+        ),
+        MethodSpec(
             name: "debug.appearance.set",
             description: "Set the app Theme override (0 system / 1 light / 2 dark) — drives appearance-dependent rendering for tests.",
             params: [
@@ -617,6 +756,23 @@ enum DebugMethodRegistry {
             ],
             returns: "{enabled, path, exists, size, maxBytes, modified}",
             example: ["enabled": true]
+        ),
+        MethodSpec(
+            name: "debug.crashDiag.list",
+            description: "Crash diagnostics on the device: this run's and earlier runs' breadcrumbs, archived crash contexts (fault address / registers) and MetricKit JSON. Read one with debug.crashDiag.read.",
+            params: [],
+            returns: "{items: [{id, kind, title, size, modified}]}",
+            example: [:]
+        ),
+        MethodSpec(
+            name: "debug.crashDiag.read",
+            description: "One crash-diagnostics item as text, sanitised exactly like the Settings export (keys, tokens, Authorization, URL query parameters, e-mail addresses removed).",
+            params: [
+                ParamSpec(name: "id", type: "string", required: true, default: nil, description: "An id from debug.crashDiag.list."),
+                ParamSpec(name: "limit", type: "int", required: false, default: 524288, description: "Maximum bytes returned (<= 1 MB)."),
+            ],
+            returns: "{id, text, bytes, truncated}",
+            example: ["id": "current:current.bin"]
         ),
         MethodSpec(
             name: "debug.toolExec.getStatus",
@@ -1034,7 +1190,7 @@ enum DebugMethodRegistry {
             params: [
                 ParamSpec(name: "instanceId", type: "string", required: true, default: nil, description: "Target instance UUID."),
             ],
-            returns: "{instanceId, added, updated, disappeared, total, durationMs}",
+            returns: "{instanceId, source (vendor|built-in|models.dev|kept), vendorError (string|null), listed, added, removed, unlisted, updated, disappeared, total, durationMs}",
             example: ["instanceId": "pi_xyz"]
         ),
         MethodSpec(

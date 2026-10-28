@@ -155,7 +155,12 @@ struct BrowserSheetView: View {
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     HStack(spacing: 5) {
-                        Image(systemName: pool.userAgentProfile.icon)
+                        // The selected tab's own profile - what the page on
+                        // screen was loaded with - not the global default,
+                        // which only says what the NEXT tab will get.
+                        Image(systemName: UserAgentProfile.panelProfile(
+                            activeTab: pool.activeManager?.currentProfile,
+                            globalDefault: pool.userAgentProfile).icon)
                             .font(.system(size: 12))
                             .foregroundStyle(.secondary)
                         Text(navigationTitle)

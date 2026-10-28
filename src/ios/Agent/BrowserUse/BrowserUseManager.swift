@@ -137,6 +137,10 @@ final class BrowserUseManager: NSObject, ObservableObject {
         registerPrintHandler(on: webView)
     }
 
+    /// The user-agent string this tab's page requests are sent with. Lets the
+    /// pool rebuild the tab at another viewport without changing its UA.
+    var effectiveUserAgent: String? { webView.customUserAgent }
+
     /// Init with a pre-built configuration (used for window.open popups that share the opener's session).
     init(profile: UserAgentProfile, customString: String?, configuration: WKWebViewConfiguration,
          viewportWidth: Int? = nil, viewportHeight: Int? = nil) {
@@ -327,7 +331,12 @@ final class BrowserUseManager: NSObject, ObservableObject {
         case .getReadable:
             return try await getReadable()
         case .setUserAgent:
-            return setUserAgent(profile: input.userAgent)
+            // Normally answered by BrowserTabPool before it gets here; kept
+            // exhaustive, and equally unwilling to guess a profile.
+            guard let profile = input.userAgent else {
+                return .error(UserAgentProfile.invalidArgumentMessage(raw: input.userAgentRaw))
+            }
+            return setUserAgent(profile: profile)
         case .setViewport:
             // Routed by BrowserTabPool.execute — pool mutates all tabs; this
             // path only hits if execute is called directly on a detached manager.
@@ -942,7 +951,7 @@ final class BrowserUseManager: NSObject, ObservableObject {
         logger.info("[ScreenshotTiming] takeSnapshot elapsed=\(takeSnapMs)ms")
         lastScreenshot = image
 
-        guard let jpegData = image.jpegData(compressionQuality: 0.8) else {
+        guard let jpegData = Self.screenshotJPEGData(image) else {
             return .error("Failed to encode screenshot as JPEG")
         }
 
@@ -972,6 +981,20 @@ final class BrowserUseManager: NSObject, ObservableObject {
     }
 
     /// Collect viewport and page metadata for screenshot results.
+    // [T-image-seams] Moved verbatim out of screenshot() / viewportMetadata() so
+    // tests run the exact encoder setting and metadata line. No behaviour change.
+
+    /// The JPEG the screenshot action returns and writes.
+    nonisolated static func screenshotJPEGData(_ image: UIImage) -> Data? {
+        image.jpegData(compressionQuality: 0.8)
+    }
+
+    /// The `Image:` line of the screenshot metadata. `imageSize` is whatever the
+    /// caller passes — today the snapshot's `UIImage.size`, i.e. points (P-i9).
+    nonisolated static func screenshotImageLine(imageSize: CGSize, fileSize: Int) -> String {
+        "  Image: \(Int(imageSize.width))x\(Int(imageSize.height)) (\(fileSize / 1024)KB)"
+    }
+
     private func viewportMetadata(
         imageSize: CGSize,
         fileSize: Int,
@@ -1000,7 +1023,7 @@ final class BrowserUseManager: NSObject, ObservableObject {
         lines.append("Screenshot captured")
         lines.append("  URL: \(url)")
         if !title.isEmpty { lines.append("  Title: \(title)") }
-        lines.append("  Image: \(Int(imageSize.width))x\(Int(imageSize.height)) (\(fileSize / 1024)KB)")
+        lines.append(Self.screenshotImageLine(imageSize: imageSize, fileSize: fileSize))
         lines.append("  Viewport: \(vp.width)x\(vp.height)")
         if pageW > 0 || pageH > 0 {
             lines.append("  Page size: \(pageW)x\(pageH)")
@@ -1074,7 +1097,7 @@ final class BrowserUseManager: NSObject, ObservableObject {
             }
             return BrowserActionResult(text: String(describing: raw ?? "null"))
         } catch {
-            return .error("JavaScript error: \(error.localizedDescription)")
+            return .error(BrowserJSErrorFormatter.message(error))
         }
     }
 
@@ -1097,7 +1120,7 @@ final class BrowserUseManager: NSObject, ObservableObject {
             }
             return BrowserActionResult(text: String(describing: raw ?? "null"))
         } catch {
-            return .error("JavaScript error: \(error.localizedDescription)")
+            return .error(BrowserJSErrorFormatter.message(error))
         }
     }
 
@@ -1119,7 +1142,7 @@ final class BrowserUseManager: NSObject, ObservableObject {
             }
             return BrowserActionResult(text: String(describing: raw ?? "null"))
         } catch {
-            return .error("JavaScript error: \(error.localizedDescription)")
+            return .error(BrowserJSErrorFormatter.message(error))
         }
     }
 
@@ -1142,7 +1165,7 @@ final class BrowserUseManager: NSObject, ObservableObject {
             }
             return BrowserActionResult(text: String(describing: raw ?? "null"))
         } catch {
-            return .error("JavaScript error: \(error.localizedDescription)")
+            return .error(BrowserJSErrorFormatter.message(error))
         }
     }
 
@@ -1480,10 +1503,7 @@ final class BrowserUseManager: NSObject, ObservableObject {
             logger.warning("[ExecJS] timeout after \(Int(Self.executeJSTimeout))s — script pinned the JS thread or returned a non-settling promise")
             return .error("JavaScript timed out after \(Int(Self.executeJSTimeout))s. The script may be blocking the page's main thread or awaiting a promise that never settles. Simplify the script, or split long work into smaller calls.")
         } catch {
-            let nsError = error as NSError
-            let detail = nsError.userInfo["WKJavaScriptExceptionMessage"] as? String
-                ?? error.localizedDescription
-            return .error("JavaScript error: \(detail)")
+            return .error(BrowserJSErrorFormatter.message(error))
         }
     }
 
@@ -1628,7 +1648,7 @@ final class BrowserUseManager: NSObject, ObservableObject {
             }
             return BrowserActionResult(text: Self.formatBackboneResult(json))
         } catch {
-            return .error("JavaScript error: \(error.localizedDescription)")
+            return .error(BrowserJSErrorFormatter.message(error))
         }
     }
 
@@ -1846,8 +1866,8 @@ final class BrowserUseManager: NSObject, ObservableObject {
     // MARK: - Set User Agent
 
     @discardableResult
-    func setUserAgent(profile: UserAgentProfile?, customString: String? = nil) -> BrowserActionResult {
-        let newProfile = profile ?? .mobileSafari
+    func setUserAgent(profile: UserAgentProfile, customString: String? = nil) -> BrowserActionResult {
+        let newProfile = profile
 
         currentProfile = newProfile
         // Preserve the current viewport across UA switches so a user-set
@@ -2034,10 +2054,7 @@ final class BrowserUseManager: NSObject, ObservableObject {
             // WKError.javaScriptExceptionOccurred only says "A JavaScript
             // exception occurred" in localizedDescription; the actual JS error
             // message is in the "WKJavaScriptExceptionMessage" userInfo key.
-            let nsError = error as NSError
-            let detail = nsError.userInfo["WKJavaScriptExceptionMessage"] as? String
-                ?? error.localizedDescription
-            return .error("JavaScript error: \(detail)")
+            return .error(BrowserJSErrorFormatter.message(error))
         }
     }
 

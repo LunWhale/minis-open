@@ -1329,12 +1329,13 @@ final class CloudSyncEngine: ObservableObject {
             }
 
             // Pack all skill files (SKILL.md + scripts/references/assets) into a ZIP CKAsset
-            if let zipData = await MainActor.run(body: { SkillStore.shared.buildSkillZipData(id) }) {
-                let tempURL = FileManager.default.temporaryDirectory
-                    .appendingPathComponent("skill-sync-\(id).zip")
-                try? zipData.write(to: tempURL)
-                record["bundleAsset"] = CKAsset(fileURL: tempURL)
-                logger.info("[SkillSync] SEND bundle: '\(skill.name)' ZIP \(zipData.count) bytes")
+            // [T-skill-zip-off-main] Built off the main thread and reused
+            // while the skill's files are unchanged (SkillZipPackager).
+            let skillDir = await MainActor.run { SkillStore.shared.skillDirectoryURL(for: id) }
+            if let zipURL = await SkillStore.skillZipFile(skillId: id, skillDir: skillDir) {
+                record["bundleAsset"] = CKAsset(fileURL: zipURL)
+                let zipSize = ((try? FileManager.default.attributesOfItem(atPath: zipURL.path))?[.size] as? Int) ?? 0
+                logger.info("[SkillSync] SEND bundle: '\(skill.name)' ZIP \(zipSize) bytes")
             } else {
                 logger.info("[SkillSync] SEND bundle: '\(skill.name)' no bundled files (SKILL.md only)")
             }
@@ -2063,9 +2064,35 @@ final class CloudSyncEngine: ObservableObject {
         // updatedAt, so we apply tombstones unconditionally to instances —
         // a same-id "re-add" would have to happen on the device that holds
         // the tombstone (where removeInstance has already wiped it).
-        let mergedInstanceTombstones = mergeTombstones(local.deletedInstances, remote.deletedInstances)
-        let mergedEntryTombstones    = mergeTombstones(local.deletedModelEntries, remote.deletedModelEntries)
-        let mergedGroupTombstones    = mergeTombstones(local.deletedModelGroups, remote.deletedModelGroups)
+        //
+        // [T-backup-restore-tombstone] Except on RESTORE. Deleting a group
+        // records its id in `deletedModelGroups`, and the filters below drop
+        // every package item in the tombstone union, so "delete a group, then
+        // restore the backup" returned the group to nobody: the merge removed
+        // it, reported success, and the user saw it gone. On restore the
+        // package is the user's explicit intent, so its ids clear their local
+        // tombstones, and its own tombstones are not applied (a restore never
+        // deletes). Same rule for instances and entries: same code, same bug.
+        let preRestoreConfig = local
+        let mergedInstanceTombstones: [ProviderConfigTombstone]
+        let mergedEntryTombstones: [ProviderConfigTombstone]
+        let mergedGroupTombstones: [ProviderConfigTombstone]
+        if isRestore {
+            mergedInstanceTombstones = ProviderConfigTombstone.survivingRestore(
+                local.deletedInstances, restoring: Set(remote.instances.map(\.id)))
+            mergedEntryTombstones = ProviderConfigTombstone.survivingRestore(
+                local.deletedModelEntries, restoring: Set(remote.modelEntries.map(\.id)))
+            mergedGroupTombstones = ProviderConfigTombstone.survivingRestore(
+                local.deletedModelGroups, restoring: Set(remote.modelGroups.map(\.id)))
+            let revived = local.deletedModelGroups.count - mergedGroupTombstones.count
+            if revived > 0 {
+                logger.info("[Restore] provider merge: \(revived) deleted model group(s) restored from the backup (local tombstones cleared)")
+            }
+        } else {
+            mergedInstanceTombstones = mergeTombstones(local.deletedInstances, remote.deletedInstances)
+            mergedEntryTombstones    = mergeTombstones(local.deletedModelEntries, remote.deletedModelEntries)
+            mergedGroupTombstones    = mergeTombstones(local.deletedModelGroups, remote.deletedModelGroups)
+        }
         let tombstonedInstanceIds = Set(mergedInstanceTombstones.map(\.id))
         let tombstonedEntryIds    = Set(mergedEntryTombstones.map(\.id))
         let tombstonedGroupIds    = Set(mergedGroupTombstones.map(\.id))
@@ -2285,6 +2312,9 @@ final class CloudSyncEngine: ObservableObject {
             local.modelGroups.removeAll { tombstonedGroupIds.contains($0.id) }
         }
         var groupMap = Dictionary(local.modelGroups.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        // [T-group-order-log] This body serves both the legacy snapshot sync
+        // and a backup restore.
+        let orderLogReason = isRestore ? "restore-merge" : "sync-inbound-legacy"
         var groupIdRewrites: [String: String] = [:]  // oldRemoteId -> canonicalLocalId
         // Build a local name index for collision detection.
         var localGroupByName: [String: String] = [:]  // name -> id
@@ -2314,6 +2344,11 @@ final class CloudSyncEngine: ObservableObject {
                     order.append(mid)
                 }
                 merged.memberEntryIds = order
+                // [T-group-order-log] The legacy whole-config merge takes the
+                // remote order outright (no timestamp comparison).
+                GroupOrderLog.note(reason: orderLogReason, groupId: rg.id, name: rg.name,
+                                   before: localGroup.memberEntryIds, after: order, warnOnReorder: true,
+                                   detail: "path=same-id winner=remote remote=\(GroupOrderDiff.describe(rg.memberEntryIds))")
                 groupMap[rg.id] = merged
             } else if let collidingLocalId = localGroupByName[rg.name], collidingLocalId != rg.id {
                 // Same name, different id → collapse onto the lexicographically
@@ -2325,11 +2360,15 @@ final class CloudSyncEngine: ObservableObject {
                 if canonicalId == collidingLocalId {
                     // Local id wins: merge remote's memberEntryIds union into local, prefer local's other fields.
                     if var winner = groupMap[canonicalId] {
+                        let orderBefore = winner.memberEntryIds   // [T-group-order-log]
                         var seen = Set(winner.memberEntryIds)
                         for mid in rg.memberEntryIds where !seen.contains(mid) {
                             winner.memberEntryIds.append(mid)
                             seen.insert(mid)
                         }
+                        GroupOrderLog.note(reason: orderLogReason, groupId: canonicalId, name: winner.name,
+                                           before: orderBefore, after: winner.memberEntryIds, warnOnReorder: true,
+                                           detail: "path=same-name winner=local collapsed=\(otherId.prefix(8)) remote=\(GroupOrderDiff.describe(rg.memberEntryIds))")
                         groupMap[canonicalId] = winner
                     }
                 } else {
@@ -2342,6 +2381,11 @@ final class CloudSyncEngine: ObservableObject {
                             winner.memberEntryIds.append(mid)
                             seen.insert(mid)
                         }
+                        // [T-group-order-log] The local group of that name is
+                        // replaced by the remote one: its order is the remote's.
+                        GroupOrderLog.note(reason: orderLogReason, groupId: canonicalId, name: winner.name,
+                                           before: oldLocal.memberEntryIds, after: winner.memberEntryIds, warnOnReorder: true,
+                                           detail: "path=same-name winner=remote collapsed=\(otherId.prefix(8)) remote=\(GroupOrderDiff.describe(rg.memberEntryIds))")
                     }
                     groupMap.removeValue(forKey: collidingLocalId)
                     groupMap[canonicalId] = winner
@@ -2464,7 +2508,7 @@ final class CloudSyncEngine: ObservableObject {
         // Commit: push merged config into store (in-memory + disk) WITHOUT
         // triggering a markDirty upload. We control the re-upload decision
         // explicitly below via localHasUnique.
-        store.applyMergedConfigFromSync(local)
+        store.applyMergedConfigFromSync(local, source: isRestore ? "restore" : "legacy-merge")
         logger.info("[iCloud] mergeProviderConfig: merged \(instanceMap.count) instances, \(local.modelEntries.count) entries, \(local.modelGroups.count) groups")
 
         // A restore is user-initiated local authorship, not an inbound echo:
@@ -2477,6 +2521,16 @@ final class CloudSyncEngine: ObservableObject {
                 await ChatStore.shared.markDirty(recordType: "ProviderConfig",
                                                  recordId: "provider-config")
             }
+            // [T-backup-restore-tombstone] The "ProviderConfig" row above is
+            // dual-written as the whole-file ProviderConfigV2 record, which
+            // every v3 device drops on receipt, and applyMergedConfigFromSync
+            // deliberately emits no v3 records (it is built for INBOUND data).
+            // So a restore never reached the user's other devices: a restored
+            // group existed here only, and a peer that had applied the delete
+            // kept it deleted. Emit the per-record v3 upserts for what the
+            // restore changed, exactly as a local edit would.
+            let prior = preRestoreConfig
+            Task { await store.markRestoredRecordsDirty(prior: prior) }
             logger.info("[iCloud] mergeProviderConfigForRestore: merged and marked dirty")
             return .applied
         }

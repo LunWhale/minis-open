@@ -35,6 +35,24 @@
 
 import Foundation
 
+/// The sources that used to be the single file Agent/Chat/ChatStore.swift -
+/// the actor plus the files it was split into - read as one text.
+func chatStoreSource() -> String {
+    let chat = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Agent/Chat")
+    let names = ["ChatStore", "ChatStore+Schema", "ChatStore+SessionCRUD", "ChatStore+SessionList",
+                 "ChatStore+Search", "ChatStore+SessionQueries", "ChatStore+Folders",
+                 "ChatStore+SessionDeletion", "ChatStore+StoredPreview", "ChatStore+Messages",
+                 "ChatStore+Media", "ChatStore+CompactMarkers", "ChatStore+Tombstones",
+                 "ChatStore+WebAppShortcuts", "ChatStore+Maintenance", "ChatStore+Helpers",
+                 "ChatStore+UsageStats", "ChatStoreModels", "ContentPart+ProviderConversion",
+                 "RawMessage+Conversion", "ChatStore+SyncDirty", "ChatStore+SyncRemoteSessions",
+                 "ChatStore+SyncRemoteRecords", "ChatStore+BackupRestore"]
+    return names.compactMap { try? String(contentsOf: chat.appendingPathComponent($0 + ".swift"), encoding: .utf8) }
+        .joined(separator: "\n")
+}
+
 var failures = 0
 func check(_ l: String, _ a: Bool, _ e: Bool = true) {
     if a == e { print("  ✅ \(l)") } else { print("  ❌ \(l) — expected \(e), got \(a)"); failures += 1 }
@@ -176,7 +194,7 @@ checkEq("and still flushes what was buffered before the throw", thrower.emitted.
 print("\n▶️  the once-init path is clean in the real source")
 
 func read(_ p: String) -> String? { try? String(contentsOfFile: p, encoding: .utf8) }
-guard let chatStore = read("../../Agent/Chat/ChatStore.swift"),
+guard let chatStore = Optional(chatStoreSource()), !chatStore.isEmpty,
       let appLogger = read("../../Shared/AppLogger.swift"),
       let minisApp = read("../../MinisApp.swift"),
       let cloudSync = read("../../Agent/Sync/CloudSyncEngine.swift") else {
@@ -200,7 +218,7 @@ func body(of fn: String, in src: String) -> String? {
     }
     return out
 }
-if let ct = body(of: "private func createTables()", in: chatStore) {
+if let ct = body(of: "func createTables()", in: chatStore) {
     check("part_flags backfill is NOT in createTables",
           !ct.contains("UPDATE messages SET part_flags"))
     check("v1 zombie dirty-row DELETE is NOT in createTables",

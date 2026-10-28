@@ -124,7 +124,9 @@ func body(_ start: String) -> String {
           let b = cal0.range(of: "\n}\n", range: a.upperBound..<cal0.endIndex) else { return "" }
     return String(cal0[a.lowerBound..<b.upperBound])
 }
-let listFn = body("int calendar_cmd_reminders(")
+// [T-issue282-list-id] list serializes through reminder_to_dict (shared with read).
+let listFn = body("int calendar_cmd_reminders(").contains("reminder_to_dict(r)")
+    ? body("static NSMutableDictionary *reminder_to_dict(") : body("int calendar_cmd_reminders(")
 let createFn = body("int calendar_cmd_remind(")
 let updateFn = body("int calendar_cmd_update_reminder(")
 

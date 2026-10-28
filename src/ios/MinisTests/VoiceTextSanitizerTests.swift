@@ -1,4 +1,5 @@
 import XCTest
+@testable import Minis
 
 /// [T-voice-sanitizer-underscore] Guards the stripMarkdown underscore rules:
 /// the trailing cleanup pass must NOT eat underscores inside identifiers

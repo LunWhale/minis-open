@@ -121,11 +121,20 @@ private let logger = AppLogger(category: "SessionsOffload")
     /// forward the CLI's `--start`/`--end` down to ChatStore. They were absent
     /// from this signature entirely, which is why the ObjC layer had nothing to
     /// pass and the flags were silently dropped.
+    ///
+    /// [T-sessions-cli-tool-calls] `tools` adds `tool_calls` / `tool_results`
+    /// arrays to each message: the exact tool name, the full input JSON (as a
+    /// string, e.g. the real shell command) and the full output, each capped at
+    /// the same per-field `max_chars` as `text`. Purely additive: with
+    /// `tools == false` the output has exactly the previous keys and values
+    /// (the envelope's `tools` key is only added when it is true), and with it
+    /// on every pre-existing field keeps its name, type and meaning.
     @objc public static func loadMessages(
         sessionId: String,
         offset: Int,
         limit: Int,
         full: Bool,
+        tools: Bool,
         startDate: Date?,
         endDate: Date?
     ) -> NSDictionary {
@@ -141,7 +150,8 @@ private let logger = AppLogger(category: "SessionsOffload")
                 limit: limit,
                 maxChars: maxChars,
                 startDate: startDate,
-                endDate: endDate
+                endDate: endDate,
+                includeTools: tools
             )
             // Counted over the SAME range so `total` describes the filtered set
             // the caller is paging through, not the whole session.
@@ -160,13 +170,34 @@ private let logger = AppLogger(category: "SessionsOffload")
                     "text": m.text,
                 ]
                 if m.truncated { dict["truncated"] = true }
+                if tools {
+                    dict["tool_calls"] = m.toolUses.map { tu -> [String: Any] in
+                        var call: [String: Any] = [
+                            "tool_use_id": tu.toolUseId,
+                            "name": tu.name,
+                            "input": String(tu.input.prefix(maxChars)),
+                        ]
+                        if tu.input.count > maxChars { call["input_truncated"] = true }
+                        return call
+                    }
+                    dict["tool_results"] = m.toolResults.map { tr -> [String: Any] in
+                        var res: [String: Any] = [
+                            "tool_use_id": tr.toolUseId,
+                            "success": tr.success,
+                            "output": String(tr.output.prefix(maxChars)),
+                        ]
+                        if let status = tr.status { res["status"] = status }
+                        if tr.output.count > maxChars { res["output_truncated"] = true }
+                        return res
+                    }
+                }
                 return dict
             }
             sem.signal()
         }
         sem.wait()
 
-        return [
+        var envelope: [String: Any] = [
             "session_id": sessionId,
             "offset": offset,
             "limit": limit,
@@ -175,7 +206,11 @@ private let logger = AppLogger(category: "SessionsOffload")
             "total": totalCount,
             "count": result.count,
             "messages": result,
-        ] as NSDictionary
+        ]
+        // Only present when asked for, so the default output keeps exactly
+        // its previous key set.
+        if tools { envelope["tools"] = true }
+        return envelope as NSDictionary
     }
 
     // MARK: - Shared helpers
@@ -486,6 +521,35 @@ private let logger = AppLogger(category: "SessionsOffload")
 
     // MARK: - Get Session Status
 
+    /// [T-subagent-termination] Last assistant text and last tool call of a
+    /// stored transcript. Tool results travel in user rows; the tool's name is
+    /// on the assistant row that called it.
+    static func lastActivity(in raws: [RawMessage]) -> (message: String, tool: (name: String, status: String, result: String)?) {
+        var message = ""
+        for raw in raws.reversed() where raw.role == .assistant && !raw.isInternalBridge {
+            let text = raw.parts.compactMap { part -> String? in
+                if case .text(let t) = part { return t }
+                return nil
+            }.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty { message = text; break }
+        }
+        var names: [String: String] = [:]
+        for raw in raws where raw.role == .assistant {
+            for part in raw.parts {
+                if case .toolUse(let tu) = part { names[tu.toolUseId] = tu.name }
+            }
+        }
+        for raw in raws.reversed() {
+            guard let tr = raw.parts.reversed().compactMap({ part -> ToolResult? in
+                if case .toolResult(let tr) = part { return tr }
+                return nil
+            }).first else { continue }
+            let status = tr.status ?? (tr.success ? "success" : "failed")
+            return (message, (names[tr.toolUseId] ?? "tool", status, SubAgentTerminationRules.summarize(tr.output)))
+        }
+        return (message, nil)
+    }
+
     /// Query session status — works whether or not the VM is in cache.
     @objc public static func getSessionStatus(sessionId: String) -> NSDictionary {
         let sem = DispatchSemaphore(value: 0)
@@ -518,6 +582,8 @@ private let logger = AppLogger(category: "SessionsOffload")
             // lastMessage / lastTool: prefer live VM when cached, fall back to DB.
             var lastMessage = session.lastMessage ?? ""
             var lastTool = ""
+            var lastToolStatus = ""
+            var lastToolResult = ""
             if let vm = ViewModelCache.shared.get(for: sessionId) {
                 if let lastAssistant = vm.messages.last(where: { $0.role == .assistant }) {
                     let textBlocks = lastAssistant.blocks
@@ -535,23 +601,60 @@ private let logger = AppLogger(category: "SessionsOffload")
                         lastTool = toolBlock.toolSummary ?? toolBlock.toolDescription
                     }
                 }
+                if let snap = AIChatViewModel.lastToolSnapshot(of: vm) {
+                    lastToolStatus = snap.status
+                    lastToolResult = snap.summary
+                }
             }
+            // [T-subagent-termination] `getSession` does not select the last
+            // message, so with the VM evicted (any session not opened since
+            // launch) both fields used to come back "" - 68 of 72 sub agent
+            // sessions in the 2026-10-04 field report, normal endings
+            // included. Read them from the stored transcript instead.
+            if lastMessage.isEmpty || lastTool.isEmpty {
+                let fromDB = Self.lastActivity(in: await ChatStore.shared.loadMessages(sessionId: sessionId))
+                if lastMessage.isEmpty { lastMessage = fromDB.message }
+                if lastTool.isEmpty, let tool = fromDB.tool {
+                    lastTool = tool.name
+                    lastToolStatus = tool.status
+                    lastToolResult = tool.result
+                }
+            }
+
+            // [T-subagent-termination] How a sub agent run ended. A record still
+            // `running` with nothing alive behind it is reported (and stored) as
+            // `interrupted`.
+            let jobAlive = AgentJobRegistry.shared.list().contains {
+                $0.runSessionId == sessionId && ($0.state == .running || $0.state == .pending)
+            }
+            let vmBusy = ViewModelCache.shared.get(for: sessionId)?.isProcessing ?? false
+            let termination = SubAgentTerminationStore.shared.resolved(
+                sessionId: sessionId, isLive: isRunning || jobAlive || vmBusy)
 
             let dateFmt = DateFormatter()
             dateFmt.dateFormat = "yyyy-MM-dd HH:mm"
 
+            var data: [String: Any] = [
+                "session_id": session.id,
+                "title": session.title ?? "",
+                "model_name": modelName,
+                "is_running": isRunning,
+                "last_message": lastMessage,
+                "last_tool": lastTool,
+                "updated_at": dateFmt.string(from: session.updatedAt),
+            ]
+            if !lastToolStatus.isEmpty { data["last_tool_status"] = lastToolStatus }
+            // The last tool's result, summarised - what to read when the run
+            // ended without a final message.
+            if !lastToolResult.isEmpty { data["last_tool_result"] = lastToolResult }
+            if let parent = session.parentSessionId { data["parent_session_id"] = parent }
+            if let termination {
+                data.merge(termination.payload()) { _, new in new }
+            }
             output = [
                 "ok": true,
                 "action": "status",
-                "data": [
-                    "session_id": session.id,
-                    "title": session.title ?? "",
-                    "model_name": modelName,
-                    "is_running": isRunning,
-                    "last_message": lastMessage,
-                    "last_tool": lastTool,
-                    "updated_at": dateFmt.string(from: session.updatedAt),
-                ] as [String: Any],
+                "data": data,
             ]
             sem.signal()
         }

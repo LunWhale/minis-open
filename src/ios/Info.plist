@@ -5,6 +5,7 @@
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
 		<string>com.openminis.app.liveactivity-refresh</string>
+		<string>com.openminis.app.continued.*</string>
 	</array>
 	<key>CFBundleDocumentTypes</key>
 	<array>

@@ -11,9 +11,171 @@
 //  current slot stay as placeholders until navigated to.
 //
 
+import ImageIO
 import Photos
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
+
+// MARK: - ImageExport [T-image-save-original]
+
+/// Save / copy / share / print for chat images, from the ORIGINAL file.
+///
+/// Every preview decodes its image for the screen: the gallery, the Markdown
+/// renderer and the inline previews cap the longest edge at 2048 px
+/// (`downsampleImageData`). Save used to hand that display bitmap to Photos
+/// (`creationRequestForAsset(from: UIImage)`), which re-encoded it at display
+/// resolution: a 2560×7488 PNG (5.3 MB) came out as 700×2048 (546 KB)
+/// (Telegram report, 2026-09-27). Copy, share and print exported the same
+/// bitmap.
+///
+/// Now each action reads the original bytes. Save adds them to Photos as-is
+/// (`addResource(with: .photo, data:)` — same pixels, format and metadata).
+/// If Photos refuses that format it falls back to a FULL-resolution decode,
+/// and only if the original cannot be read at all to the displayed bitmap.
+enum ImageExport {
+    private static let logger = AppLogger(category: "ImageExport")
+
+    /// Where a previewed image came from.
+    enum Source: Equatable {
+        /// A Markdown / attachment source: minis://…, http(s)://…, or anything
+        /// `ImageAttachment.canonicalizeMarkdownImageSource` resolves.
+        case markdown(String)
+        case file(URL)
+        case remote(URL)
+    }
+
+    struct Original {
+        let data: Data
+        let filename: String
+        let type: UTType?
+        /// Pixel size read from the header (no decode); nil if unknown.
+        let pixelSize: CGSize?
+    }
+
+    /// Read the original bytes. Local files are read directly; remote URLs are
+    /// fetched again (the preview kept only the decoded bitmap).
+    static func loadOriginal(_ source: Source) async -> Original? {
+        switch source {
+        case .file(let url):
+            guard let data = try? Data(contentsOf: url) else { return nil }
+            return make(data: data, name: url.lastPathComponent)
+        case .remote(let url):
+            guard let (data, response) = try? await URLSession.shared.data(from: url) else { return nil }
+            let name = response.suggestedFilename ?? url.lastPathComponent
+            return make(data: data, name: name)
+        case .markdown(let raw):
+            let canonical = ImageAttachment.canonicalizeMarkdownImageSource(raw)
+            guard let url = URL(string: canonical) else { return nil }
+            if url.scheme == "minis" {
+                guard let fileURL = resolveMinisFileURLCached(url: url) else { return nil }
+                return await loadOriginal(.file(fileURL))
+            }
+            if url.scheme == "http" || url.scheme == "https" { return await loadOriginal(.remote(url)) }
+            if url.isFileURL { return await loadOriginal(.file(url)) }
+            return nil
+        }
+    }
+
+    /// Wrap bytes that ImageIO recognises as an image; the filename gets the
+    /// real format's extension when it has none (or a wrong one).
+    static func make(data: Data, name: String) -> Original? {
+        guard let src = CGImageSourceCreateWithData(data as CFData, nil),
+              let typeId = CGImageSourceGetType(src) as String? else { return nil }
+        let type = UTType(typeId)
+        var size: CGSize?
+        if let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
+           let w = props[kCGImagePropertyPixelWidth] as? Int, let h = props[kCGImagePropertyPixelHeight] as? Int {
+            size = CGSize(width: w, height: h)
+        }
+        var filename = name.isEmpty ? "image" : name
+        if let ext = type?.preferredFilenameExtension {
+            let current = (filename as NSString).pathExtension.lowercased()
+            let accepted = Set(type?.tags[.filenameExtension] ?? []).union([ext])
+            if !accepted.contains(current) { filename = (filename as NSString).deletingPathExtension + "." + ext }
+        }
+        return Original(data: data, filename: filename, type: type, pixelSize: size)
+    }
+
+    /// Save to Photos. `completion` runs on the main queue.
+    static func saveToPhotos(source: Source?, displayed: UIImage?, completion: @escaping (Bool) -> Void) {
+        let finish: (Bool) -> Void = { ok in DispatchQueue.main.async { completion(ok) } }
+        PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
+            guard status == .authorized || status == .limited else { finish(false); return }
+            Task {
+                let original: Original? = if let source { await loadOriginal(source) } else { nil }
+                if let original {
+                    let ok = await perform {
+                        let request = PHAssetCreationRequest.forAsset()
+                        let options = PHAssetResourceCreationOptions()
+                        options.originalFilename = original.filename
+                        request.addResource(with: .photo, data: original.data, options: options)
+                    }
+                    if ok {
+                        logger.info("[ImageExport] saved ORIGINAL \(original.filename) \(sizeText(original.pixelSize)) bytes=\(original.data.count)")
+                        finish(true); return
+                    }
+                    // Photos refused the format (e.g. SVG-rendered or exotic
+                    // codecs): save a full-resolution decode instead.
+                    if let full = UIImage(data: original.data) {
+                        let ok = await perform { PHAssetChangeRequest.creationRequestForAsset(from: full) }
+                        logger.info("[ImageExport] original rejected by Photos — saved FULL-RES decode \(Int(full.size.width * full.scale))x\(Int(full.size.height * full.scale)) ok=\(ok)")
+                        if ok { finish(true); return }
+                    }
+                }
+                guard let displayed else { finish(false); return }
+                let ok = await perform { PHAssetChangeRequest.creationRequestForAsset(from: displayed) }
+                logger.warning("[ImageExport] original unavailable — saved DISPLAYED bitmap \(Int(displayed.size.width * displayed.scale))x\(Int(displayed.size.height * displayed.scale)) ok=\(ok)")
+                finish(ok)
+            }
+        }
+    }
+
+    /// Copy the original bytes (with their type) to the pasteboard, else the
+    /// displayed bitmap.
+    static func copy(source: Source?, displayed: UIImage?) async {
+        if let source, let original = await loadOriginal(source), let type = original.type {
+            await MainActor.run { UIPasteboard.general.setItems([[type.identifier: original.data]]) }
+            return
+        }
+        if let displayed { await MainActor.run { UIPasteboard.general.image = displayed } }
+    }
+
+    /// A temp file to share: the original bytes under their own filename, else
+    /// the displayed bitmap as PNG.
+    static func shareFile(source: Source?, displayed: UIImage?) async -> URL? {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("share_\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        if let source, let original = await loadOriginal(source) {
+            let url = dir.appendingPathComponent(original.filename)
+            if (try? original.data.write(to: url)) != nil { return url }
+        }
+        guard let data = displayed?.pngData() else { return nil }
+        let url = dir.appendingPathComponent("image.png")
+        return (try? data.write(to: url)) != nil ? url : nil
+    }
+
+    /// Full-resolution image for printing, else the displayed bitmap.
+    static func printableImage(source: Source?, displayed: UIImage?) async -> UIImage? {
+        if let source, let original = await loadOriginal(source), let full = UIImage(data: original.data) {
+            return full
+        }
+        return displayed
+    }
+
+    private static func perform(_ changes: @escaping () -> Void) async -> Bool {
+        await withCheckedContinuation { cont in
+            PHPhotoLibrary.shared().performChanges(changes) { ok, error in
+                if let error { logger.info("[ImageExport] performChanges failed: \(error.localizedDescription)") }
+                cont.resume(returning: ok)
+            }
+        }
+    }
+
+    private static func sizeText(_ size: CGSize?) -> String {
+        size.map { "\(Int($0.width))x\(Int($0.height))" } ?? "?x?"
+    }
+}
 
 // MARK: - GalleryItem
 
@@ -22,7 +184,12 @@ import UIKit
 struct GalleryItem: Identifiable, Equatable {
     let id: String              // unique per session — typically the source URL string
     let title: String           // human-readable caption (usually file name)
+    /// Decodes for DISPLAY (downsampled). Never what Save / Copy / Share export.
     let load: () async -> UIImage?
+    /// [T-image-save-original] Where the original file is, for Save / Copy /
+    /// Share / Print. nil only when the image has no file (then the displayed
+    /// bitmap is exported, as before).
+    var source: ImageExport.Source? = nil
 
     static func == (lhs: GalleryItem, rhs: GalleryItem) -> Bool {
         lhs.id == rhs.id
@@ -48,6 +215,7 @@ struct MessageImageGallery: View {
     @State private var saveStatus: SaveStatus = .idle
     @State private var copyDone = false
     @State private var showShareSheet = false
+    @State private var shareURL: URL?
     /// Chrome (top action buttons + bottom caption) visibility toggled by
     /// single-tapping the image area, matching the system Photos app.
     @State private var chromeVisible: Bool = true
@@ -133,10 +301,8 @@ struct MessageImageGallery: View {
             copyDone = false
         }
         .sheet(isPresented: $showShareSheet) {
-            if let img = currentImage,
-               let data = img.pngData(),
-               let tmpURL = Self.writeTempImageFile(data: data) {
-                MinisShareSheet(url: tmpURL)
+            if let shareURL {
+                MinisShareSheet(url: shareURL)
             }
         }
         .statusBar(hidden: true)
@@ -157,9 +323,13 @@ struct MessageImageGallery: View {
 
             Button {
                 guard let img = currentImage else { return }
-                UIPasteboard.general.image = img
+                let source = currentItem?.source
                 copyDone = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copyDone = false }
+                Task {
+                    await ImageExport.copy(source: source, displayed: img)
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    copyDone = false
+                }
             } label: {
                 chromeIcon(copyDone ? "checkmark" : "doc.on.doc",
                            tint: copyDone ? .green : nil)
@@ -191,14 +361,23 @@ struct MessageImageGallery: View {
 
             Button {
                 guard let img = currentImage else { return }
-                PrintHelper.printImage(img, jobName: AppLocalized("Image"))
+                let source = currentItem?.source
+                Task {
+                    guard let printable = await ImageExport.printableImage(source: source, displayed: img) else { return }
+                    PrintHelper.printImage(printable, jobName: AppLocalized("Image"))
+                }
             } label: {
                 chromeIcon("printer")
             }
             .disabled(currentImage == nil)
 
             Button {
-                showShareSheet = true
+                guard let img = currentImage else { return }
+                let source = currentItem?.source
+                Task {
+                    shareURL = await ImageExport.shareFile(source: source, displayed: img)
+                    showShareSheet = shareURL != nil
+                }
             } label: {
                 chromeIcon("square.and.arrow.up")
             }
@@ -228,31 +407,15 @@ struct MessageImageGallery: View {
     private func saveCurrentToPhotos() {
         guard let image = currentImage else { return }
         saveStatus = .saving
-        PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
-            guard status == .authorized || status == .limited else {
-                DispatchQueue.main.async { saveStatus = .failed }
-                return
-            }
-            PHPhotoLibrary.shared().performChanges {
-                PHAssetChangeRequest.creationRequestForAsset(from: image)
-            } completionHandler: { success, _ in
-                DispatchQueue.main.async {
-                    saveStatus = success ? .saved : .failed
-                    if success {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                            saveStatus = .idle
-                        }
-                    }
+        // [T-image-save-original] The original file, not the display bitmap.
+        ImageExport.saveToPhotos(source: currentItem?.source, displayed: image) { success in
+            saveStatus = success ? .saved : .failed
+            if success {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    saveStatus = .idle
                 }
             }
         }
-    }
-
-    private static func writeTempImageFile(data: Data) -> URL? {
-        let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("share_gallery_\(UUID().uuidString).png")
-        try? data.write(to: tmp)
-        return tmp
     }
 }
 

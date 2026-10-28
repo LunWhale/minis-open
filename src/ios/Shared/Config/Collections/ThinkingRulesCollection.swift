@@ -177,6 +177,14 @@ struct ThinkingRulesCollection: ConfigCollection {
             description: "Ordered custom-rule ids. First match wins, so index 0 has highest priority.",
             valueSchema: .array(.string()),
             risk: .sensitive, revertable: true,
+            readable: ConfigReadable(.sentence({ old, new in
+                let phrase: ReadableArg = .line(ReadableLine("Thinking rule order for “%@”",
+                                                             [ConfigRefResolver.name(.providerInstance, instanceId)]))
+                return ConfigReadableRenderer.listLine(phrase, old: old, new: new, ordered: true,
+                                                       firstKey: ConfigReadableRenderer.plainFirstKey) {
+                    ConfigRefResolver.name(.thinkingRule(instanceId: instanceId), $0)
+                }.map { [$0] }
+            })),
             reader: {
                 .array(ThinkingRuleCache.shared.rules(for: instanceId)
                     .filter { $0.kind == .custom }
@@ -201,6 +209,53 @@ struct ThinkingRulesCollection: ConfigCollection {
                 Task { _ = await store.reorderThinkingRules(instanceId: instanceId, orderedIds: ids) }
             }
         )
+    }
+
+    // MARK: - [T-config-readable] Readable descriptions
+
+    let readableSubjectFormat = "Thinking rule “%1$@” – %2$@"
+
+    func entityLabel(id: String) -> String? {
+        guard let (inst, rid) = split(id) else { return nil }
+        return rule(inst, rid)?.label
+    }
+
+    func readableForAdd(_ payload: RedactedConfigValue) -> [ReadableLine] {
+        guard case .object(let d) = payload.value else { return [] }
+        let label: String = { if case .string(let s)? = d["label"] { return s }; return "?" }()
+        let provider: ReadableArg = {
+            if case .string(let i)? = d["provider"] { return ConfigRefResolver.name(.providerInstance, i) }
+            return .text("?")
+        }()
+        var lines = [ReadableLine("Add thinking rule “%1$@” to “%2$@”", [.text(label), provider])]
+        if let wf = d["wire_format"], let parsed = try? Self.decodeWireFormat(wf) {
+            lines.append(ReadableLine("Request format: %@", [.text(parsed.displaySummary)]))
+        }
+        return lines
+    }
+
+    func readableForRemove(id: String) -> [ReadableLine] {
+        guard let (inst, rid) = split(id), let r = rule(inst, rid) else { return [] }
+        return [ReadableLine("Delete thinking rule “%1$@” from “%2$@”",
+                             [.text(r.label), ConfigRefResolver.name(.providerInstance, inst)])]
+    }
+
+    /// wire_format JSON → its one-line summary.
+    @MainActor static func wireFormatPhrase(_ v: ConfigValue) -> ReadableArg {
+        if case .null = v { return .key("(none)") }
+        if let wf = try? decodeWireFormat(v) { return .text(wf.displaySummary) }
+        return ConfigReadableRenderer.genericPhrase(v)
+    }
+
+    static let echoTimingLabels: [String: String] = [
+        "everyTurn": "every turn", "afterToolUseOnly": "after tool use only", "never": "never",
+    ]
+
+    @MainActor static func reasoningEchoPhrase(_ v: ConfigValue) -> ReadableArg {
+        guard case .object(let o) = v, case .string(let f)? = o["field"] else { return .key("Off") }
+        var timing: ReadableArg = .text("")
+        if case .string(let t)? = o["timing"] { timing = echoTimingLabels[t].map { .key($0) } ?? .text(t) }
+        return .line(ReadableLine("%1$@ (%2$@)", [.text(f), timing]))
     }
 
     // MARK: - Helpers
@@ -283,6 +338,7 @@ struct ThinkingRulesCollection: ConfigCollection {
             description: "User-visible rule name.",
             valueSchema: .string(maxLength: 200),
             risk: .normal, revertable: true,
+            readable: ConfigReadable(.text()),
             reader: { [self] in rule(inst, rid).map { .string($0.label) } ?? .null },
             writer: { [self] v in
                 guard case .string(let s) = v, !s.isEmpty else {
@@ -303,6 +359,11 @@ struct ThinkingRulesCollection: ConfigCollection {
             description: "\"all\" for every model, or a model-id pattern where * matches any characters.",
             valueSchema: .string(maxLength: 200),
             risk: .sensitive, revertable: true,
+            readable: ConfigReadable(.custom({ v in
+                if case .string("all") = v { return .key("All models") }
+                if case .string(let p) = v { return .text(p) }
+                return ConfigReadableRenderer.genericPhrase(v)
+            }), label: "Applies to"),
             reader: { [self] in
                 guard let r = rule(inst, rid) else { return .null }
                 switch r.scope {
@@ -330,6 +391,7 @@ struct ThinkingRulesCollection: ConfigCollection {
             description: "JSON object {\"kind\":…} describing the fields this rule puts on the request. For qwen models pick by ENDPOINT, not by model name: \"qwenDual\" (enable_thinking + thinking_budget at the root AND inside extra_body) is for Alibaba DashScope itself, while \"qwenRootOnly\" sends a bare root-level enable_thinking with no extra_body and no thinking_budget — use it for self-hosted vLLM/SGLang and any OpenAI-compatible relay, which commonly reject both of those fields with a 400.",
             valueSchema: .json,
             risk: .sensitive, revertable: true,
+            readable: ConfigReadable(.custom(Self.wireFormatPhrase), label: "Request format"),
             reader: { [self] in
                 guard let r = rule(inst, rid), let wf = r.wireFormat else { return .null }
                 return Self.encodeWireFormat(wf)
@@ -351,6 +413,7 @@ struct ThinkingRulesCollection: ConfigCollection {
             description: "JSON {\"field\":\"reasoning_content\",\"timing\":\"everyTurn|afterToolUseOnly|never\"}, or null to disable.",
             valueSchema: .json,
             risk: .normal, revertable: true,
+            readable: ConfigReadable(.custom(Self.reasoningEchoPhrase)),
             reader: { [self] in
                 guard let r = rule(inst, rid), let echo = r.reasoningEcho else { return .null }
                 return .object(["field": .string(echo.fieldName),

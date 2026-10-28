@@ -13,15 +13,44 @@
 //   ShareCoordinator.checkForPendingShare / raisePendingShare / storeBuffer /
 //     setBufferTarget / bufferTargets / consumeBuffer / clearBufferIfStale
 //     (Shared/ShareCoordinator.swift:52-240)
-//   ContentView.processPendingShare (Views/ContentView.swift:4485-4505)
+//   ContentView.processPendingShare (Views/ContentView/ContentView+PendingShare.swift)
 //   ViewModelCache.PendingTransfer + discardPendingTransfer
 //     (Agent/Chat/ChatLifecycleSupport.swift:715-785)
 //   AIChatView.injectPendingTransferIfNeeded + the Move-to sheet callback
-//     (Views/Chat/AIChatView.swift:1082-1130, 1873-1915)
+//     (Views/Chat/AIChatView/AIChatView.swift body, AIChatView+ShareInjection.swift)
 //
 // Standalone (`swift PendingShareRecoveryTests.swift`).
 
 import Foundation
+
+/// The chat page's sources, read as one text: AIChatView.swift (state and
+/// `body`) first, then every other file under Views/Chat/AIChatView/ - the
+/// old single AIChatView.swift was split into them.
+func chatViewSource() -> String {
+    let ios = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let dir = ios.appendingPathComponent("Views/Chat/AIChatView")
+    let main = dir.appendingPathComponent("AIChatView.swift")
+    let rest = (FileManager.default.enumerator(at: dir, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? [])
+        .filter { $0.pathExtension == "swift" && $0.lastPathComponent != "AIChatView.swift" }
+        .sorted { $0.path < $1.path }
+    return ([main] + rest).compactMap { try? String(contentsOf: $0, encoding: .utf8) }.joined(separator: "\n")
+}
+
+/// The home screen sources - Views/ContentView/ plus Views/Settings/SettingsSheet.swift
+/// and AppearanceSettingsView.swift, formerly the single file ContentView.swift -
+/// read as one text with the files in path order.
+func contentViewSource() -> String {
+    let ios = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let dir = ios.appendingPathComponent("Views/ContentView")
+    var files = (FileManager.default.enumerator(at: dir, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? [])
+        .filter { $0.pathExtension == "swift" }
+    files += ["Views/Settings/SettingsSheet.swift", "Views/Settings/AppearanceSettingsView.swift"]
+        .map { ios.appendingPathComponent($0) }
+    return files.sorted { $0.path < $1.path }
+        .compactMap { try? String(contentsOf: $0, encoding: .utf8) }.joined(separator: "\n")
+}
 
 var failures = 0
 func check(_ label: String, _ actual: Bool, _ expected: Bool = true) {
@@ -129,7 +158,7 @@ final class ShareCoordinator {
     }
 }
 
-/// ContentView.processPendingShare (Views/ContentView.swift:4485-4505).
+/// ContentView.processPendingShare (Views/ContentView/ContentView+PendingShare.swift).
 func processPendingShare(_ c: ShareCoordinator) -> String {
     guard let pending = c.disk.loadPendingShare() else {
         let outcome = c.pendingShareBuffer != nil ? "duplicate-raise-noop" : "no-data"
@@ -143,7 +172,7 @@ func processPendingShare(_ c: ShareCoordinator) -> String {
 }
 
 /// The root view's onAppear (MinisApp.swift:423) → ContentView .task
-/// (ContentView.swift:2079-2083): a cold launch with NO url / extra.
+/// (ContentView.body, Views/ContentView/ContentView.swift): a cold launch with NO url / extra.
 func coldLaunch(_ c: ShareCoordinator) -> String {
     c.checkForPendingShare()                      // onAppear
     guard c.hasPendingShare else { return "nothing-pending" }
@@ -181,7 +210,7 @@ final class ViewModelCache {
     static func reset() { pendingTransfer = nil; discardReasons = [] }
 }
 
-/// The Move-to sheet callback (AIChatView.swift:1084-1130): stash, clear the
+/// The Move-to sheet callback (AIChatView/AIChatView.swift, in body): stash, clear the
 /// source composer, and arm the stranded-restore. Returns the restore closure
 /// the production code schedules after `staleAfter`.
 func moveTo(_ targetId: String, from vm: ChatVM, now: Date) -> (stash: PendingTransfer, restoreIfStranded: () -> Bool) {
@@ -206,7 +235,7 @@ func moveTo(_ targetId: String, from vm: ChatVM, now: Date) -> (stash: PendingTr
 
 enum InjectOutcome: Equatable { case notTarget, discardedStale, injected }
 
-/// AIChatView.injectPendingTransferIfNeeded (AIChatView.swift:1873-1915), post-#120.
+/// AIChatView.injectPendingTransferIfNeeded (AIChatView+ShareInjection.swift), post-#120.
 func injectPendingTransferIfNeeded(_ vm: ChatVM, draftId: String?, now: Date) -> InjectOutcome {
     guard let transfer = ViewModelCache.pendingTransfer else { return .notTarget }
     let isTarget = transfer.targetId == vm.sessionId || transfer.targetId == draftId
@@ -396,8 +425,8 @@ func source(_ rel: String) -> String {
 }
 let coord = source("Shared/ShareCoordinator.swift")
 let app = source("MinisApp.swift")
-let cv = source("Views/ContentView.swift")
-let chat = source("Views/Chat/AIChatView.swift")
+let cv = contentViewSource()
+let chat = chatViewSource()
 let life = source("Agent/Chat/ChatLifecycleSupport.swift")
 let deep = source("Shared/DeepLinkRouter.swift")
 if [coord, app, cv, chat, life, deep].contains(where: { $0.isEmpty }) {

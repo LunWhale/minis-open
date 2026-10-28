@@ -22,6 +22,23 @@
 // Standalone (`swift GeminiProviderFactoryChokepointTests.swift`) like its neighbours.
 import Foundation
 
+/// The sources that used to be the single file Agent/Chat/AIChatViewModel.swift -
+/// the class body plus the AIChatViewModel+<Concern>.swift files it was split
+/// into (the older extension files are NOT included) - read as one text.
+func chatViewModelSource() -> String {
+    let chat = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Agent/Chat")
+    let names = ["AIChatViewModel", "AIChatViewModel+Lifecycle", "AIChatViewModel+ContextUsage",
+                 "AIChatViewModel+StreamingUI", "AIChatViewModel+Speech", "AIChatViewModel+AutoPlayAudio",
+                 "AIChatViewModel+SystemPrompt", "AIChatViewModel+Send", "AIChatViewModel+Rerun",
+                 "AIChatViewModel+EditMessage", "AIChatViewModel+Cancel", "AIChatViewModel+PromptQueue",
+                 "AIChatViewModel+DebugDumps", "AIChatViewModel+TurnCompletion", "AIChatViewModel+AgentLoop",
+                 "AIChatViewModel+ThinkingLevel", "LLMProviderError"]
+    return names.compactMap { try? String(contentsOf: chat.appendingPathComponent($0 + ".swift"), encoding: .utf8) }
+        .joined(separator: "\n")
+}
+
 var failures = 0
 func check(_ l: String, _ a: Bool, _ e: Bool = true) {
     if a == e { print("  ✅ \(l)") } else { print("  ❌ \(l) — expected \(e), got \(a)"); failures += 1 }
@@ -69,7 +86,7 @@ do {
     check("the pending map is NOT cleared on apply (a later rebuild needs it too)", factory.contains("Deliberately does NOT clear `pendingThoughtSignatures`"))
     // Every rebuild site goes through the choke point.
     let fb = source("Agent/Chat/AIChatViewModel+Fallback.swift")
-    let vm = source("Agent/Chat/AIChatViewModel.swift")
+    let vm = chatViewModelSource()
     checkEq("three group-fallback rebuilds", fb.components(separatedBy: "currentProvider = await makeAgentProvider(for: nextEntry)").count - 1, 3)
     check("retry-countdown model switch rebuilds via the factory", fb.contains("let newProvider = await makeAgentProvider(for: entry)"))
     check("the loop's initial provider comes from the factory", vm.contains("var provider = await makeAgentProvider(for: entry)"))

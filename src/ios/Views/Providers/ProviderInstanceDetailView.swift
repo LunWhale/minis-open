@@ -16,15 +16,21 @@ struct ProviderInstanceDetailView: View {
     /// [T-thinking-rules-ui-fix] Owned HERE, not inside ThinkingRulesSection: a .sheet on a
     /// Section inside a Form has no stable host and dismissed the whole settings stack.
     @State private var thinkingEditorRequest: ThinkingRuleEditorRequest?
+    /// [T-quota-console-links] The vendor usage page opened from the quota section.
+    @State private var quotaConsoleURL: URL?
     @State private var fetchError: String?
-    @State private var fetchWarnings: [String] = []
-    @State private var fetchSource: String?
+    /// [T-ios-model-refresh-visible] What the last tap on Refresh did.
+    @State private var refreshOutcome: ModelRefreshOutcome?
     @State private var showDeleteConfirm = false
     @State private var showExportShare = false
     @State private var showAddCustomModel = false
     @State private var oauthRefreshTrigger = false
     @State private var editingCustomBaseURL = ""
     @State private var editingCustomUserAgent = ""
+    // [T-sse-idle-timeout] Response idle timeout row (OpenAI-compatible only).
+    @State private var responseIdleSeconds = ResponseIdleTimeoutSetting.defaultSeconds
+    @State private var responseIdleIsCustom = false
+    @State private var responseIdleCustomText = ""
     @State private var showManualTokenInput = false
     @State private var manualTokenInputText = ""
     @State private var editingModelEntry: ModelEntry?
@@ -54,6 +60,9 @@ struct ProviderInstanceDetailView: View {
                     Image(systemName: "square.and.arrow.up")
                 }
             }
+        }
+        .sheet(item: $quotaConsoleURL) { url in
+            MinisLinkPreviewView(url: url, browserPool: nil)
         }
         .sheet(item: $thinkingEditorRequest) { req in
             ThinkingRuleEditorView(
@@ -239,6 +248,14 @@ struct ProviderInstanceDetailView: View {
                 customUserAgentSection(instance)
             }
 
+            // MARK: Response idle timeout (OpenAI-compatible Chat Completions only)
+            // [T-sse-idle-timeout] Not for Codex sign-in (Responses API), nor
+            // for any other provider type: their streams keep the 120 s default.
+            if instance.providerType == .openAI
+                && !(instance.credentialType == .oauth && instance.effectiveCustomBaseURL == nil) {
+                responseIdleTimeoutSection(instance)
+            }
+
             // MARK: API Format (OpenAI only)
             if (instance.providerType == .openAI || instance.providerType == .openAIResponses)
                 && instance.credentialType == .apiKey {
@@ -321,6 +338,12 @@ struct ProviderInstanceDetailView: View {
                 ))
             }
 
+            // MARK: Quota
+            // [T-provider-quota] The account's upstream balance / quota, between
+            // Status and Thinking Rules (design §9.2). Hidden for a disabled
+            // instance or one without a credential.
+            ProviderQuotaSection(instance: instance, consoleURL: $quotaConsoleURL)
+
             // MARK: Thinking Rules (Phase 2 §3)
             // Placed directly above Models because a rule's scope is written against
             // model ids — having the model list in view while authoring a pattern is
@@ -365,18 +388,19 @@ struct ProviderInstanceDetailView: View {
                 }
             } footer: {
                 VStack(alignment: .leading, spacing: 4) {
-                    // Source info (green)
-                    if let source = fetchSource {
-                        Label("Loaded from \(source)", systemImage: "checkmark.circle")
+                    // [T-ios-model-refresh-visible] The result of the last
+                    // Refresh: what was found, or why the list did not change.
+                    if let outcome = refreshOutcome {
+                        let summary = ModelRefreshSummary(outcome)
+                        Label(summary.text, systemImage: summary.systemImage)
                             .font(.caption)
-                            .foregroundStyle(.green)
-                    }
-                    // Warnings (yellow) — diagnostic tips for each fallback step
-                    ForEach(fetchWarnings, id: \.self) { warning in
-                        Label(warning, systemImage: "exclamationmark.triangle")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(summary.isProblem ? .orange : .green)
                             .textSelection(.enabled)
+                        if outcome.source == .kept {
+                            Text(AppLocalized("You may need to add the model ID manually."))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                     // Error (red)
                     if let error = fetchError {
@@ -702,6 +726,76 @@ struct ProviderInstanceDetailView: View {
         }
     }
 
+    // MARK: - Response idle timeout [T-sse-idle-timeout]
+
+    private static func responseIdleLabel(_ seconds: Int) -> String {
+        switch seconds {
+        case 120: return AppLocalized("2 minutes (default)")
+        case 300: return AppLocalized("5 minutes")
+        case 600: return AppLocalized("10 minutes")
+        case 1800: return AppLocalized("30 minutes")
+        case 3600: return AppLocalized("60 minutes")
+        default: return AppLocalized("\(seconds) seconds")
+        }
+    }
+
+    /// Picker tag for "Custom…"; never a stored value.
+    private static let responseIdleCustomTag = -1
+
+    private func responseIdleTimeoutSection(_ instance: ProviderInstance) -> some View {
+        Section {
+            Picker(AppLocalized("Response idle timeout"), selection: Binding(
+                get: { responseIdleIsCustom ? Self.responseIdleCustomTag : responseIdleSeconds },
+                set: { picked in
+                    if picked == Self.responseIdleCustomTag {
+                        responseIdleIsCustom = true
+                        responseIdleCustomText = String(responseIdleSeconds)
+                    } else {
+                        responseIdleIsCustom = false
+                        responseIdleSeconds = picked
+                        ResponseIdleTimeoutSetting.set(picked, forInstanceId: instance.id)
+                    }
+                })) {
+                ForEach(ResponseIdleTimeoutSetting.presets, id: \.self) { seconds in
+                    Text(Self.responseIdleLabel(seconds)).tag(seconds)
+                }
+                Text(AppLocalized("Custom…")).tag(Self.responseIdleCustomTag)
+            }
+            if responseIdleIsCustom {
+                HStack {
+                    Text(AppLocalized("Seconds (30–3600)"))
+                    Spacer()
+                    TextField("120", text: $responseIdleCustomText)
+                        .keyboardType(.numberPad)
+                        .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: 100)
+                        .onSubmit { saveCustomResponseIdle(instance) }
+                        .onDisappear { saveCustomResponseIdle(instance) }
+                        .onChange(of: responseIdleCustomText) { _ in saveCustomResponseIdle(instance) }
+                }
+            }
+        } header: {
+            Text(AppLocalized("Response idle timeout"))
+        } footer: {
+            Text(AppLocalized("How long to wait for the first response, and between pieces of a response, before treating the connection as stalled and retrying. This is not a limit on total generation time: a reply that keeps arriving never times out. Raise it for a local model that needs minutes to process a long context. With a longer value, a connection that really died also takes that long to be noticed. Saved on this device only."))
+        }
+        .onAppear {
+            let stored = ResponseIdleTimeoutSetting.seconds(forInstanceId: instance.id)
+            responseIdleSeconds = stored
+            responseIdleIsCustom = !ResponseIdleTimeoutSetting.presets.contains(stored)
+            responseIdleCustomText = String(stored)
+        }
+    }
+
+    /// Out-of-range or non-numeric input is not stored; the last valid value stays.
+    private func saveCustomResponseIdle(_ instance: ProviderInstance) {
+        guard responseIdleIsCustom,
+              let typed = Int(responseIdleCustomText.trimmingCharacters(in: .whitespaces)),
+              typed >= ResponseIdleTimeoutSetting.minSeconds, typed <= ResponseIdleTimeoutSetting.maxSeconds else { return }
+        responseIdleSeconds = typed
+        ResponseIdleTimeoutSetting.set(typed, forInstanceId: instance.id)
+    }
+
     private func saveCustomUserAgent(_ instance: ProviderInstance) {
         let current = instance.customUserAgent ?? ""
         let trimmed = editingCustomUserAgent.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -974,18 +1068,11 @@ struct ProviderInstanceDetailView: View {
         guard let freshInstance = store.instance(for: instance.id) else { return }
         isFetchingModels = true
         fetchError = nil
-        fetchWarnings = []
-        fetchSource = nil
+        refreshOutcome = nil
         Task {
             defer { isFetchingModels = false }
-            do {
-                let result = try await ProviderConfigStore.fetchModelsWithFallback(freshInstance, forceRefresh: true)
-                store.replaceEntries(for: freshInstance.id, models: result.models)
-                fetchWarnings = result.warnings
-                fetchSource = result.source
-            } catch {
-                fetchError = error.localizedDescription
-            }
+            // Never throws: a failed refresh comes back as `.kept` with the reason.
+            refreshOutcome = await store.refreshModels(for: freshInstance, caller: "refreshModels(detail-view)")
         }
     }
 
@@ -1119,8 +1206,18 @@ struct ProviderInstanceDetailView: View {
             // Only reached when `login` did not throw, so a cancelled or failed
             // sign-in changes nothing. Failure inside the refresh is contained:
             // `refreshModels` logs and returns, leaving the existing entries.
+            //
+            // [T-issue265-reauth-refresh-detached] Fired, not awaited - the
+            // same shape as `addInstance` and the device-code sheets. Awaiting
+            // it here held back `oauthStartSignIn`'s `oauthRefreshTrigger`
+            // toggle until the whole /models fetch (with its models.dev
+            // fallback) finished, so after a successful sign-in the section
+            // kept showing "Not authenticated" for seconds, or for the full
+            // request timeout on a slow network. An unstructured Task is not
+            // tied to this view, so leaving the page does not cancel it; the
+            // store publishes the new entries to every observer when it lands.
             if instance.providerType.oauthSupportsModelDiscovery {
-                await store.refreshModels(for: instance)
+                Task { await store.refreshModels(for: instance) }
             }
         } catch {
             await MainActor.run {
@@ -1598,13 +1695,36 @@ struct ModelEntryDetailSheet: View {
             }
             .navigationTitle("Model Details")
             .navigationBarTitleDisplayMode(.inline)
-            .scrollDismissesKeyboard(.interactively)
+            // [T-ipad-sheet-keyboard-crash] `.immediately`, NOT `.interactively`.
+            // Field crash, iPadOS 27.0 (iPad13,4, 1.15 build 5): editing Context
+            // Window, then dragging this sheet down, aborted in UIKit with an
+            // NSGenericException from +[NSLayoutConstraint _addOrRemoveConstraints:
+            // activate:] under -[UIInputWindowControllerHostingItem
+            // updateViewConstraints], reached from -[UIKeyboardImpl
+            // presentationControllerShouldDismiss:] → showKeyboardWithoutSuppression
+            // Policy → -[UIKeyboard setMinimized:] → maximize. No app frames.
+            //
+            // Interactive keyboard dismissal is what MINIMIZES the keyboard: in a
+            // sheet, the same pull that drags the keyboard down at the top of the
+            // form also drives the sheet's own drag-to-dismiss. The sheet's
+            // shouldDismiss hook then re-shows (maximizes) the keyboard while the
+            // sheet's hierarchy is mid-transition, and re-installing the input
+            // views activates constraints across hierarchies. `.immediately`
+            // hides the keyboard outright on the first scroll, so it is never
+            // left minimized for that path to resurrect.
+            .scrollDismissesKeyboard(.immediately)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        Self.endEditing()
+                        dismiss()
+                    }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Save") { save() }
+                    Button("Save") {
+                        Self.endEditing()
+                        save()
+                    }
                         .font(.body.weight(.semibold))
                 }
             }
@@ -1642,6 +1762,14 @@ struct ModelEntryDetailSheet: View {
                 Text(AppLocalized("This will clear all customizations (including force-enabled thinking) and restore the provider's default values."))
             }
         }
+    }
+
+    /// [T-ipad-sheet-keyboard-crash] Put the keyboard away BEFORE the sheet
+    /// starts dismissing, so no keyboard state is left to be re-shown into a
+    /// hierarchy that is being torn down.
+    private static func endEditing() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
+                                        to: nil, from: nil, for: nil)
     }
 
     /// Format token count into a human-readable string (e.g. "200K tokens", "1M tokens").
@@ -1879,3 +2007,44 @@ private struct ProviderShareSheet: UIViewControllerRepresentable {
     func updateUIViewController(_ vc: UIActivityViewController, context: Context) {}
 }
 
+
+// MARK: - [T-ios-model-refresh-visible] Refresh result line
+
+/// The line under the Models header after a tap on Refresh: what was found,
+/// or why the list did not change. Same three cases as Android's Refresh row.
+struct ModelRefreshSummary {
+    let text: String
+    /// True when the provider's own list was not used.
+    let isProblem: Bool
+    var systemImage: String { isProblem ? "exclamationmark.triangle" : "checkmark.circle" }
+
+    init(_ outcome: ModelRefreshOutcome) {
+        let why = outcome.vendorError ?? "-"
+        switch outcome.source {
+        case .vendor:
+            var line = String(format: AppLocalized("Found %lld models (%lld new, %lld removed)"),
+                              outcome.diff.total, outcome.diff.added, outcome.diff.removed)
+            // A model the provider stopped listing is not deleted at once (its
+            // overrides would go with it); say so, or it looks like the
+            // refresh ignored the provider.
+            if outcome.diff.unlisted > 0 {
+                let days = Int(ProviderConfigStore.modelAbsenceGracePeriod / 86_400)
+                line += " " + String(format: AppLocalized("%lld no longer listed by the provider; kept for %lld days, then removed."),
+                                     outcome.diff.unlisted, days)
+            }
+            text = line
+            isProblem = false
+        case .kept:
+            text = String(format: AppLocalized("Couldn't refresh: %@. The current list was kept."), why)
+            isProblem = true
+        case .modelsDev:
+            text = String(format: AppLocalized("The provider's list was unavailable (%@). Used the public model catalog instead: %lld models."),
+                          why, outcome.diff.total)
+            isProblem = true
+        case .builtIn:
+            text = String(format: AppLocalized("The provider's list was unavailable (%@). Used the built-in model list instead: %lld models."),
+                          why, outcome.diff.total)
+            isProblem = true
+        }
+    }
+}

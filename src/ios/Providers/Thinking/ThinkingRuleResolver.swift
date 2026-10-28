@@ -850,17 +850,15 @@ enum ThinkingRuleResolver {
     ///
     ///   `["effort": "<tier>"]`      → adaptive thinking (Claude 4.6+)
     ///   `["budget_tokens": N]`      → legacy budget thinking (≤4.5)
-    ///   `["disabled": true]`        → adaptive model with thinking OFF; must be sent
-    ///                                 explicitly because those models think by DEFAULT
-    ///                                 when no thinking field is present, which burns a
-    ///                                 small max_tokens entirely on thinking and returns
-    ///                                 empty text. Claude 4.6-4.x ONLY — see
-    ///                                 `modelAcceptsExplicitThinkingDisabled`.
-    ///   `[:]`                       → send nothing. Correct for legacy models (OFF is
-    ///                                 their default) AND for Claude 5+, which rejects
-    ///                                 `thinking.type.disabled` outright and defaults to
-    ///                                 adaptive when the field is absent.
-    ///                                 [T-ios-claude5-thinking-disabled-400]
+    ///   `["disabled": true]`        → thinking OFF on an adaptive model (4.6+); must be
+    ///                                 stated because an absent field lets those models
+    ///                                 think (on Claude 5 at the model's default effort),
+    ///                                 which burns a small max_tokens on thinking or blows
+    ///                                 a latency budget. This is the INTENT only: the wire
+    ///                                 encoding differs per model (disabled / between_tools
+    ///                                 / adaptive + low) — see `AnthropicProvider.offThinking`.
+    ///   `[:]`                       → send nothing. Legacy models only (<= 4.5), where
+    ///                                 OFF is already the default.
     static func anthropicThinkingShape(
         modelId: String,
         supportsReasoning: Bool?,
@@ -879,13 +877,14 @@ enum ThinkingRuleResolver {
             )
             return budget > 0 ? ["budget_tokens": budget] : [:]
         }
-        // [T-ios-claude5-thinking-disabled-400] Note this is NOT `adaptive`:
-        // that is true for 4.6+ AND 5+, but only 4.6-4.x accepts the explicit
-        // disabled value. Claude 5+ 400s on it and treats an absent field as
-        // adaptive — which is exactly what OFF wants.
-        return AnthropicProvider.modelAcceptsExplicitThinkingDisabled(modelId)
-            ? ["disabled": true]
-            : [:]
+        // [T-claude5-thinking-off] Every adaptive model gets the intent, Claude 5+
+        // included: an absent field is NOT off there (it thinks at the default
+        // effort). Which literal reaches the wire is decided per model in
+        // RequestBodyPatcher.injectThinkingConfig via AnthropicProvider.offThinking,
+        // so Claude 5+ never receives the `disabled` value it 400s on.
+        return AnthropicProvider.offThinking(for: modelId) == .omit
+            ? [:]
+            : ["disabled": true]
     }
 
     /// [T-ios-qwen-extra-body-400] The Qwen thinking budget for this level, already

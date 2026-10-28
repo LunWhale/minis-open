@@ -1,0 +1,78 @@
+{
+  "spec": "wireToolId(raw): (1) keep the part before the first '|'; (2) replace every code point outside [A-Za-z0-9_-] with '-'; (3) if the result is empty or longer than 40, use 'call_' + the first 35 hex chars of SHA-256(UTF-8 of the ORIGINAL raw id). Deterministic; applied only when a request is encoded, never to stored history.",
+  "cap": 40,
+  "generator": "src/shared/tool-id/gen_vectors.py",
+  "vectors": [
+    {
+      "name": "pipe keeps the call_id half",
+      "input": "call_abc|fc_def",
+      "expected": "call_abc"
+    },
+    {
+      "name": "already valid id is unchanged",
+      "input": "toolu_01AbC",
+      "expected": "toolu_01AbC"
+    },
+    {
+      "name": "space, CJK, dot and colon become '-'",
+      "input": "call a.b:c中文",
+      "expected": "call-a-b-c--"
+    },
+    {
+      "name": "a non-BMP code point becomes ONE '-'",
+      "input": "call_😀x",
+      "expected": "call_-x"
+    },
+    {
+      "name": "exactly 40 chars is unchanged",
+      "input": "tttttttttttttttttttttttttttttttttttttttt",
+      "expected": "tttttttttttttttttttttttttttttttttttttttt"
+    },
+    {
+      "name": "41 chars becomes the 40-char hash form",
+      "input": "toolu_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expected": "call_5053039d76227e1baaaa0642cbf469b142b"
+    },
+    {
+      "name": "100 chars becomes the 40-char hash form",
+      "input": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "expected": "call_09ecb6ebc8bcefc733f6f2ec44f791abeed"
+    },
+    {
+      "name": "empty string becomes the hash of the empty string",
+      "input": "",
+      "expected": "call_e3b0c44298fc1c149afbf4c8996fb92427a"
+    },
+    {
+      "name": "nothing before the pipe becomes the hash of the whole raw id",
+      "input": "|fc_only",
+      "expected": "call_4e44f5f09a119df382e293aae5227b98455"
+    },
+    {
+      "name": "call_id over 40 hashes the WHOLE raw id",
+      "input": "ccccccccccccccccccccccccccccccccccccccccc|fc_1",
+      "expected": "call_f1473d75017543c94702969ce8089dd5647"
+    },
+    {
+      "name": "Responses combined id keeps its 29-char call_id",
+      "input": "call_Ab3dE5fG7hI9jK1lM3nO5pQ7|fc_0123456789abcdef0123456789abcdef0123456789abcdef",
+      "expected": "call_Ab3dE5fG7hI9jK1lM3nO5pQ7"
+    },
+    {
+      "name": "collision pair A: same call_id as B, different fc_id",
+      "input": "call_dup|fc_one",
+      "expected": "call_dup"
+    },
+    {
+      "name": "collision pair B: same call_id as A, different fc_id",
+      "input": "call_dup|fc_two",
+      "expected": "call_dup"
+    }
+  ],
+  "collision_pairs": [
+    [
+      "call_dup|fc_one",
+      "call_dup|fc_two"
+    ]
+  ]
+}

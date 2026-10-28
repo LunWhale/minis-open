@@ -1,4 +1,5 @@
 import XCTest
+@testable import Minis
 
 /// [T-correction-admission-multisignal] Locks the multi-signal admission rule
 /// against the 35 REAL correction_events captured from the author's device

@@ -30,6 +30,43 @@ enum BackupSecretsImporter {
         var total: Int { providersRestored + envVarsRestored + mcpOAuthRestored }
     }
 
+    /// [T-envvar-backup-values] Write environment variable VALUES from a
+    /// package's secrets.json, never overwriting a value already present.
+    ///
+    /// Called from the Environment Variables category itself, BEFORE it
+    /// creates the variables. The values used to be applied only by the
+    /// Providers category's credential pass, so restoring Environment
+    /// Variables without Providers (or a package that has only that category,
+    /// e.g. from the Android export) created every variable with an EMPTY
+    /// value. With both categories selected it worked only because Providers
+    /// happens to run first. Running it twice is harmless: the second pass
+    /// finds the values present and keeps them.
+    @MainActor
+    @discardableResult
+    static func restoreEnvVarValues(from root: URL) -> (restored: Int, kept: Int) {
+        let url = root.appendingPathComponent("secrets.json")
+        guard let data = try? Data(contentsOf: url),
+              let secrets = try? JSONDecoder().decode(BackupSecrets.self, from: data) else {
+            return (0, 0)
+        }
+        return restoreEnvVarValues(secrets.envVars)
+    }
+
+    @MainActor
+    private static func restoreEnvVarValues(_ envVars: [BackupSecrets.EnvVarSecret]) -> (restored: Int, kept: Int) {
+        var restored = 0, kept = 0
+        for e in envVars {
+            guard let value = decode(e.value) else { continue }
+            if EnvVarStore.loadValueSync(forKey: e.name) == nil {
+                EnvVarStore.saveValueSync(value, forKey: e.name)
+                restored += 1
+            } else {
+                kept += 1
+            }
+        }
+        return (restored, kept)
+    }
+
     /// Read `secrets.json` from an unpacked package root and apply it.
     ///
     /// Returns nil when the package carries no credential section at all —
@@ -91,15 +128,9 @@ enum BackupSecretsImporter {
             if wrote { result.providersRestored += 1 }
         }
 
-        for e in secrets.envVars {
-            guard let value = decode(e.value) else { continue }
-            if EnvVarStore.loadValueSync(forKey: e.name) == nil {
-                EnvVarStore.saveValueSync(value, forKey: e.name)
-                result.envVarsRestored += 1
-            } else {
-                result.envVarsSkippedExisting += 1
-            }
-        }
+        let env = restoreEnvVarValues(secrets.envVars)
+        result.envVarsRestored = env.restored
+        result.envVarsSkippedExisting = env.kept
 
         for m in secrets.mcpOAuth {
             if MCPOAuthController.tokens(server: m.serverId) == nil,

@@ -193,6 +193,7 @@ struct SubAgentsCollection: ConfigCollection {
             description: "Ordered ids of the CUSTOM sub agents. This is the order the assistant sees them in; the built-in one is always first and is not part of this list.",
             valueSchema: .array(.string()),
             risk: .normal, revertable: true,
+            readable: ConfigReadable(.refList(.subAgent, ordered: true)),
             reader: {
                 .array(SubAgentStore.shared.subAgents
                     .filter { !$0.isBuiltIn }
@@ -215,6 +216,41 @@ struct SubAgentsCollection: ConfigCollection {
             }
         )
     }
+
+    // MARK: - [T-config-readable] Readable descriptions
+
+    let readableSubjectFormat = "Sub agent “%1$@” – %2$@"
+
+    func entityLabel(id: String) -> String? {
+        store.subAgent(id: realId(id))?.name
+    }
+
+    func readableForAdd(_ payload: RedactedConfigValue) -> [ReadableLine] {
+        guard case .object(let d) = payload.value else { return [] }
+        let name: String = { if case .string(let s)? = d["name"] { return s }; return "?" }()
+        var lines = [ReadableLine("Create sub agent “%@”", [.text(name)])]
+        if case .string(let g)? = d["model_group"], !g.isEmpty {
+            lines.append(ReadableLine("Model group: %@", [Self.groupPhrase(.string(g))]))
+        }
+        return lines
+    }
+
+    func readableForRemove(id: String) -> [ReadableLine] {
+        guard let def = store.subAgent(id: realId(id)) else { return [] }
+        return [ReadableLine("Delete sub agent “%@”", [.text(def.name)])]
+    }
+
+    /// `model_group` is read back as a group NAME and written as a name or an
+    /// id; "" = Auto.
+    static func groupPhrase(_ v: ConfigValue) -> ReadableArg {
+        guard case .string(let raw) = v else { return ConfigReadableRenderer.genericPhrase(v) }
+        let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if s.isEmpty { return .key("Auto") }
+        if let g = ProviderConfigStore.shared.group(for: s) { return .text(g.name) }
+        return .text(s)
+    }
+
+    static let thinkingLabels = ThinkingLevel.readableLabels.merging(["": "Not set"]) { a, _ in a }
 
     // MARK: - Helpers
 
@@ -272,6 +308,7 @@ struct SubAgentsCollection: ConfigCollection {
             // advertised metadata agree with it.
             access: isBuiltIn ? .readonly : .readwrite,
             risk: .sensitive, revertable: true,
+            readable: ConfigReadable(.text()),
             reader: { [self] in store.subAgent(id: id).map { .string($0.name) } ?? .null },
             writer: { [self] v in
                 guard !isBuiltIn else { throw builtInFieldDenied("name") }
@@ -306,6 +343,7 @@ struct SubAgentsCollection: ConfigCollection {
             // advertised metadata agree with it.
             access: isBuiltIn ? .readonly : .readwrite,
             risk: .sensitive, revertable: true,
+            readable: ConfigReadable(.text(preview: 60)),
             reader: { [self] in store.subAgent(id: id).map { .string($0.description) } ?? .null },
             writer: { [self] v in
                 guard !isBuiltIn else { throw builtInFieldDenied("description") }
@@ -333,6 +371,7 @@ struct SubAgentsCollection: ConfigCollection {
                 : "Standing instructions appended to this sub agent's brief. Only this sub agent uses them. At most \(SubAgentLimits.instructionsMaxLength) characters. Empty to clear.",
             valueSchema: .string(maxLength: SubAgentLimits.instructionsMaxLength),
             risk: .normal, revertable: true,
+            readable: ConfigReadable(.longText),
             reader: { [self] in store.subAgent(id: id).map { .string($0.instructions) } ?? .null },
             writer: { [self] v in
                 guard case .string(let s) = v else { throw ConfigError.typeMismatch(expected: "string") }
@@ -354,6 +393,7 @@ struct SubAgentsCollection: ConfigCollection {
             description: "Model Group this sub agent runs on, by id or name. Empty string = Auto: the assistant chooses per task between this conversation's model, the default group and the light group.",
             valueSchema: .string(),
             risk: .sensitive, revertable: true,
+            readable: ConfigReadable(.custom(Self.groupPhrase)),
             reader: { [self] in
                 guard let def = store.subAgent(id: id) else { return .null }
                 guard let gid = def.modelGroupId else { return .string("") }
@@ -383,6 +423,7 @@ struct SubAgentsCollection: ConfigCollection {
             description: "Reasoning level every run of this sub agent uses, overriding its Model Group's default: \(ThinkingLevel.allCases.filter { $0 != .off }.map(\.rawValue).joined(separator: ", ")). Empty string = not set: follow the Model Group, or the delegating conversation when the model is Auto. Models that cannot reason this hard are clamped to their own ceiling.",
             valueSchema: .string(),
             risk: .sensitive, revertable: true,
+            readable: ConfigReadable(.enumLabels(Self.thinkingLabels)),
             reader: { [self] in
                 guard let def = store.subAgent(id: id) else { return .null }
                 return .string(def.thinkingLevelOverride?.rawValue ?? "")

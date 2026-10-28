@@ -1,0 +1,966 @@
+{
+  "live" : {
+    "anthropic" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 5,
+              "head" : "first",
+              "sha8" : "a7937b64",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 2,
+              "head" : "ok",
+              "sha8" : "2689367b",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 10,
+              "head" : "list files",
+              "sha8" : "ea3cdaac",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_t1-fc_t1",
+            "kind" : "toolUse",
+            "name" : "shell"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_t1-fc_t1",
+            "kind" : "toolResult",
+            "text" : {
+              "chars" : 11,
+              "head" : "a.txt b.txt",
+              "sha8" : "0067b9cc",
+              "tail" : ""
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 515,
+              "head" : "<context-summary>\nThe following is a summary of the earlier conversation that was compacted to save context space.\nTreat it as background context only. The user",
+              "sha8" : "426edcc4",
+              "tail" : "nstruction requires it.\n\nS: listing files\n<\/context-summary>"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 9,
+              "head" : "two files",
+              "sha8" : "177c933a",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      }
+    ],
+    "antigravity" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 5,
+              "head" : "first",
+              "sha8" : "a7937b64",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 2,
+              "head" : "ok",
+              "sha8" : "2689367b",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 10,
+              "head" : "list files",
+              "sha8" : "ea3cdaac",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "shell",
+            "kind" : "toolUse",
+            "name" : "shell"
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "shell",
+            "kind" : "toolResult",
+            "name" : "shell",
+            "text" : {
+              "chars" : 24,
+              "head" : "{\"result\":\"a.txt b.txt\"}",
+              "sha8" : "2d990e94",
+              "tail" : ""
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 515,
+              "head" : "<context-summary>\nThe following is a summary of the earlier conversation that was compacted to save context space.\nTreat it as background context only. The user",
+              "sha8" : "426edcc4",
+              "tail" : "nstruction requires it.\n\nS: listing files\n<\/context-summary>"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 9,
+              "head" : "two files",
+              "sha8" : "177c933a",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      }
+    ],
+    "chat" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 5,
+              "head" : "first",
+              "sha8" : "a7937b64",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 2,
+              "head" : "ok",
+              "sha8" : "2689367b",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 10,
+              "head" : "list files",
+              "sha8" : "ea3cdaac",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_t1|fc_t1",
+            "kind" : "toolUse",
+            "name" : "shell"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_t1|fc_t1",
+            "kind" : "toolResult",
+            "text" : {
+              "chars" : 11,
+              "head" : "a.txt b.txt",
+              "sha8" : "0067b9cc",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "tool"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 515,
+              "head" : "<context-summary>\nThe following is a summary of the earlier conversation that was compacted to save context space.\nTreat it as background context only. The user",
+              "sha8" : "426edcc4",
+              "tail" : "nstruction requires it.\n\nS: listing files\n<\/context-summary>"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 9,
+              "head" : "two files",
+              "sha8" : "177c933a",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      }
+    ],
+    "gemini" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 5,
+              "head" : "first",
+              "sha8" : "a7937b64",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 2,
+              "head" : "ok",
+              "sha8" : "2689367b",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 10,
+              "head" : "list files",
+              "sha8" : "ea3cdaac",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "shell",
+            "kind" : "toolUse",
+            "name" : "shell"
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "shell",
+            "kind" : "toolResult",
+            "name" : "shell",
+            "text" : {
+              "chars" : 24,
+              "head" : "{\"result\":\"a.txt b.txt\"}",
+              "sha8" : "2d990e94",
+              "tail" : ""
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 515,
+              "head" : "<context-summary>\nThe following is a summary of the earlier conversation that was compacted to save context space.\nTreat it as background context only. The user",
+              "sha8" : "426edcc4",
+              "tail" : "nstruction requires it.\n\nS: listing files\n<\/context-summary>"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 9,
+              "head" : "two files",
+              "sha8" : "177c933a",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      }
+    ],
+    "responses" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 5,
+              "head" : "first",
+              "sha8" : "a7937b64",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 2,
+              "head" : "ok",
+              "sha8" : "2689367b",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 10,
+              "head" : "list files",
+              "sha8" : "ea3cdaac",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "reasoning"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_t1",
+            "kind" : "toolUse",
+            "name" : "shell"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_t1",
+            "kind" : "toolResult",
+            "text" : {
+              "chars" : 11,
+              "head" : "a.txt b.txt",
+              "sha8" : "0067b9cc",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "tool"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 515,
+              "head" : "<context-summary>\nThe following is a summary of the earlier conversation that was compacted to save context space.\nTreat it as background context only. The user",
+              "sha8" : "426edcc4",
+              "tail" : "nstruction requires it.\n\nS: listing files\n<\/context-summary>"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 9,
+              "head" : "two files",
+              "sha8" : "177c933a",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      }
+    ]
+  },
+  "restart" : {
+    "anthropic" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 5,
+              "head" : "first",
+              "sha8" : "a7937b64",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 2,
+              "head" : "ok",
+              "sha8" : "2689367b",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 10,
+              "head" : "list files",
+              "sha8" : "ea3cdaac",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_t1-fc_t1",
+            "kind" : "toolUse",
+            "name" : "shell"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_t1-fc_t1",
+            "kind" : "toolResult",
+            "text" : {
+              "chars" : 11,
+              "head" : "a.txt b.txt",
+              "sha8" : "0067b9cc",
+              "tail" : ""
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 515,
+              "head" : "<context-summary>\nThe following is a summary of the earlier conversation that was compacted to save context space.\nTreat it as background context only. The user",
+              "sha8" : "426edcc4",
+              "tail" : "nstruction requires it.\n\nS: listing files\n<\/context-summary>"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 9,
+              "head" : "two files",
+              "sha8" : "177c933a",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      }
+    ],
+    "antigravity" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 5,
+              "head" : "first",
+              "sha8" : "a7937b64",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 2,
+              "head" : "ok",
+              "sha8" : "2689367b",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 10,
+              "head" : "list files",
+              "sha8" : "ea3cdaac",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "shell",
+            "kind" : "toolUse",
+            "name" : "shell"
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "shell",
+            "kind" : "toolResult",
+            "name" : "shell",
+            "text" : {
+              "chars" : 24,
+              "head" : "{\"result\":\"a.txt b.txt\"}",
+              "sha8" : "2d990e94",
+              "tail" : ""
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 515,
+              "head" : "<context-summary>\nThe following is a summary of the earlier conversation that was compacted to save context space.\nTreat it as background context only. The user",
+              "sha8" : "426edcc4",
+              "tail" : "nstruction requires it.\n\nS: listing files\n<\/context-summary>"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 9,
+              "head" : "two files",
+              "sha8" : "177c933a",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      }
+    ],
+    "chat" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 5,
+              "head" : "first",
+              "sha8" : "a7937b64",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 2,
+              "head" : "ok",
+              "sha8" : "2689367b",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 10,
+              "head" : "list files",
+              "sha8" : "ea3cdaac",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_t1|fc_t1",
+            "kind" : "toolUse",
+            "name" : "shell"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_t1|fc_t1",
+            "kind" : "toolResult",
+            "text" : {
+              "chars" : 11,
+              "head" : "a.txt b.txt",
+              "sha8" : "0067b9cc",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "tool"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 515,
+              "head" : "<context-summary>\nThe following is a summary of the earlier conversation that was compacted to save context space.\nTreat it as background context only. The user",
+              "sha8" : "426edcc4",
+              "tail" : "nstruction requires it.\n\nS: listing files\n<\/context-summary>"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 9,
+              "head" : "two files",
+              "sha8" : "177c933a",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      }
+    ],
+    "gemini" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 5,
+              "head" : "first",
+              "sha8" : "a7937b64",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 2,
+              "head" : "ok",
+              "sha8" : "2689367b",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 10,
+              "head" : "list files",
+              "sha8" : "ea3cdaac",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "shell",
+            "kind" : "toolUse",
+            "name" : "shell"
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "shell",
+            "kind" : "toolResult",
+            "name" : "shell",
+            "text" : {
+              "chars" : 24,
+              "head" : "{\"result\":\"a.txt b.txt\"}",
+              "sha8" : "2d990e94",
+              "tail" : ""
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 515,
+              "head" : "<context-summary>\nThe following is a summary of the earlier conversation that was compacted to save context space.\nTreat it as background context only. The user",
+              "sha8" : "426edcc4",
+              "tail" : "nstruction requires it.\n\nS: listing files\n<\/context-summary>"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 9,
+              "head" : "two files",
+              "sha8" : "177c933a",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      }
+    ],
+    "responses" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 5,
+              "head" : "first",
+              "sha8" : "a7937b64",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 2,
+              "head" : "ok",
+              "sha8" : "2689367b",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 10,
+              "head" : "list files",
+              "sha8" : "ea3cdaac",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "reasoning"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_t1",
+            "kind" : "toolUse",
+            "name" : "shell"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_t1",
+            "kind" : "toolResult",
+            "text" : {
+              "chars" : 11,
+              "head" : "a.txt b.txt",
+              "sha8" : "0067b9cc",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "tool"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 515,
+              "head" : "<context-summary>\nThe following is a summary of the earlier conversation that was compacted to save context space.\nTreat it as background context only. The user",
+              "sha8" : "426edcc4",
+              "tail" : "nstruction requires it.\n\nS: listing files\n<\/context-summary>"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 9,
+              "head" : "two files",
+              "sha8" : "177c933a",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      }
+    ]
+  }
+}

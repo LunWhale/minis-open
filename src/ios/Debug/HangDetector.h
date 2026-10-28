@@ -88,6 +88,13 @@ NS_ASSUME_NONNULL_BEGIN
 /// Clear all buffered events without stopping the detector.
 + (void)clearEvents;
 
+/// [T-main-stall-marks] Note a named main-thread event ("nav depth=0",
+/// "list pass sidebar", "chat disappear"). A [MainStall] line for a slow
+/// run-loop span lists the marks made inside that span, so a stall names what
+/// it was doing. Main thread only (ignored elsewhere); a fixed ring, no
+/// allocation, cheap enough for every list pass.
++ (void)mark:(NSString *)label;
+
 @end
 
 NS_ASSUME_NONNULL_END

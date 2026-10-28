@@ -30,7 +30,7 @@
                                        filter:(NSString * _Nullable)filter
                                          page:(NSInteger)page
                                      pageSize:(NSInteger)pageSize;
-+ (NSDictionary * _Nonnull)writeFieldsWithItems:(NSArray<NSDictionary *> * _Nonnull)items
++ (NSDictionary * _Nonnull)writeFieldsWithItems:(NSArray * _Nonnull)items
                                         caption:(NSString * _Nullable)caption
                                        actorRaw:(NSString * _Nonnull)actorRaw
                                       sessionId:(NSString * _Nullable)sessionId;

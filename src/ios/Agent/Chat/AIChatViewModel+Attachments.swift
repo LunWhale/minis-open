@@ -762,15 +762,12 @@ extension AIChatViewModel {
 
             if attachment.kind == .image {
                 if inlinedImages < inlineBudget {
-                    let resized = Self.resizedImageData(data, maxLongEdge: 2000) ?? data
+                    // [T-image-real-seams] Same function as the send path, on
+                    // its own route: no compressor ladder, original MIME kept.
                     let ext = attachment.cacheURL.pathExtension.lowercased()
-                    let mime: String
-                    switch ext {
-                    case "png": mime = resized.count == data.count ? "image/png" : "image/jpeg"
-                    case "gif": mime = "image/gif"
-                    case "webp": mime = "image/webp"
-                    default: mime = "image/jpeg"
-                    }
+                    let inline = Self.inlineAttachmentImage(data, ext: ext, route: .queue)
+                    let resized = inline.final
+                    let mime = inline.mimeType
                     parts.append(.text("[attached image: \(linuxPath)]"))
                     parts.append(.imageData(data: resized, mimeType: mime, linuxPath: linuxPath))
                     inlinedImages += 1

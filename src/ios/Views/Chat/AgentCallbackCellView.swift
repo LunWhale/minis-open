@@ -22,10 +22,19 @@ struct AgentCallbackDetailTarget: Identifiable {
     /// block so the tap opens the SAME ToolLiveSheet frame every other tool
     /// result uses (HelperDetailCard inside), instead of a bespoke list.
     let block: AssistantBlock
+    /// [T-scheduled-task-detail] The chat the card was tapped in. Carried here
+    /// so the sheet's content closure needs nothing from the chat view.
+    var hostSessionId: String?
 
-    init(callback: AgentCallback) {
+    /// [T-scheduled-task-detail] A scheduled fire opens its own task page
+    /// (`ScheduledTaskDetailView`) instead of the agent sheet, which read the
+    /// fire's `status="running"` as an interrupted agent run.
+    var opensScheduledTaskPage: Bool { callback.kind == .scheduled }
+
+    init(callback: AgentCallback, hostSessionId: String? = nil) {
         self.callback = callback
         self.block = callback.syntheticBlock()
+        self.hostSessionId = hostSessionId
     }
 
     /// A real delegate_task block from the transcript (debug RPC path).
@@ -186,6 +195,12 @@ struct AgentCallbackCellView: View {
         return date
     }
 
+    /// [T-scheduled-task-detail] This fire was the task's last: the envelope
+    /// promises no next fire, or nothing was left after it.
+    static func isLastFire(_ cb: AgentCallback) -> Bool {
+        cb.nextFireAt?.isEmpty ?? true || cb.remaining == 0
+    }
+
     /// "in 4 min" / "in 2 hr", localized by the system formatter. Reused rather
     /// than hand-rolled — `RelativeDateTimeFormatter` already covers every
     /// locale this app ships (ListSessionsIntent uses it the same way).
@@ -195,14 +210,12 @@ struct AgentCallbackCellView: View {
         return f.localizedString(for: date, relativeTo: Date())
     }
 
-    private var headline: String {
-        let kindLabel: String = switch callback.kind {
-        case .finished: AppLocalized("Agent result")
-        case .progress: AppLocalized("Agent progress")
-        case .scheduled: AppLocalized("Scheduled task")
-        }
-        return callback.title.isEmpty ? kindLabel : "\(kindLabel) · \(callback.title)"
-    }
+    /// "<kind> · <title>". [T-in-chat-search] Built by ChatSearchDisplayText,
+    /// which also says where the (searched) title starts.
+    private var headline: String { ChatSearchDisplayText.callbackHeadline(callback).text }
+
+    /// [T-in-chat-search] Set by the row that hosts this card.
+    @Environment(\.chatSearchMessageId) private var searchMessageId
 
     private var subline: String {
         // [T-scheduled-task-card] A firing has no status/elapsed worth showing
@@ -222,9 +235,14 @@ struct AgentCallbackCellView: View {
             // the "别让用户以为这条卡片出现后任务就结束了" point.
             if let next = Self.nextFireDate(callback.nextFireAt) {
                 parts.append(String(format: AppLocalized("Next %@"), Self.relativeLabel(next)))
-            } else {
+            } else if Self.isLastFire(callback) {
                 parts.append(AppLocalized("Task complete"))
             }
+            // [T-scheduled-task-detail] Otherwise the next fire time has merely
+            // passed (a card scrolled back to from history). Saying "Task
+            // complete" there was wrong — device run: "Run 1 · 4 left · Task
+            // complete" while the task kept firing. Say nothing about it; the
+            // detail page shows the live state.
             if let t = callback.triggerLabel, !t.isEmpty { parts.append(t) }
             // A one-shot / on-completion job has neither count; fall back to
             // the first line of the prompt so the card is never just a title.
@@ -258,7 +276,9 @@ struct AgentCallbackCellView: View {
             .frame(width: 30, height: 30)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(headline)
+                SearchHighlightText(headline,
+                                    key: searchMessageId.map { ChatSearchUnitKey(messageId: $0, blockId: nil, field: .title) },
+                                    searchOffset: ChatSearchDisplayText.callbackHeadline(callback).titleOffset)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(ChatColors.primaryText)
                     .lineLimit(1)

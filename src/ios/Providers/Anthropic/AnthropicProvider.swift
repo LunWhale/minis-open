@@ -134,31 +134,51 @@ final class AnthropicProvider: LLMProvider {
         return v.major > 4 || (v.major == 4 && v.minor >= 6)
     }
 
-    /// [T-ios-claude5-thinking-disabled-400] Whether this model accepts an
-    /// explicit `thinking: {"type": "disabled"}` on the wire.
+    /// How "thinking off" is encoded on the wire for this model.
     ///
-    /// Claude 4.6-4.x adaptive models DO: they think by default when the field
-    /// is absent, so "thinking off" has to be stated, or a small-max_tokens
-    /// call burns its whole budget on thinking and returns empty text (the
-    /// reason `setThinkingDisabled` exists at all).
+    /// Per-model vendor contract, from the model table in Anthropic's
+    /// "Troubleshooting thinking" doc:
     ///
-    /// Claude 5+ does NOT. The API rejects the value outright:
+    ///     model                      no thinking field   type "disabled"   lowest setting
+    ///     <= 4.5                     off                 -                 omit the field
+    ///     4.6 - 4.x                  off / on            accepted          disabled
+    ///     Sonnet 5                   ON                  accepted          disabled
+    ///     Sonnet 5.5                 ON                  400               between_tools
+    ///     Opus 5                     ON                  accepted <= high  adaptive + low (below)
+    ///     Opus 5.5, Fable/Mythos 5+  always on           400               adaptive + low
     ///
-    ///     [invalid_request_error] "thinking.type.disabled" is not supported
-    ///     for this model. Thinking defaults to adaptive mode when not
-    ///     specified; use "thinking.type.enabled" with "budget_tokens" for
-    ///     extended thinking.
+    /// [T-ios-claude5-thinking-disabled-400] Fable 5 400'd on `disabled`, which led to
+    /// sending NO field for every 5+ model. But an absent field is not off on Claude
+    /// 5: it is adaptive thinking at the model's default effort (high; medium on Opus
+    /// 5.5). [T-claude5-thinking-off] Voice correction on Sonnet 5.5 thought ~4.4s with
+    /// no field and hit its 5s budget before emitting a single text token.
     ///
-    /// So on 5+ the correct encoding of "off" is to send NO thinking field —
-    /// the server's adaptive default handles it. Reported against fable 5
-    /// (Claude Opus 5, official OAuth) where every non-thinking message 400'd.
-    ///
-    /// Deliberately keyed on the version rather than a model allowlist: this is
-    /// a generation-wide API contract change, and an allowlist would 400 again
-    /// on the next Claude 5 variant nobody remembered to add.
-    static func modelAcceptsExplicitThinkingDisabled(_ modelId: String) -> Bool {
-        guard let v = parseClaudeVersion(modelId) else { return false }
-        return v.major == 4 && v.minor >= 6
+    /// Opus 5 does accept `disabled`, but the vendor warns that with thinking disabled
+    /// it leaks tool calls and `<thinking>` tags into text on tool-heavy workloads and
+    /// recommends low effort instead, so it takes `.lowEffort`. An unknown future 5+
+    /// model takes `.lowEffort` too: every adaptive model accepts adaptive thinking,
+    /// while `disabled` and `between_tools` are per-model and 400 where unsupported.
+    enum OffThinking: Equatable {
+        /// Send no thinking field (legacy models, where off is already the default).
+        case omit
+        /// `thinking: {"type": "disabled"}`.
+        case disabled
+        /// `thinking: {"type": "between_tools"}` - no up-front thinking. Sonnet 5.5 only.
+        case betweenTools
+        /// `thinking: {"type": "adaptive"}` + `output_config.effort: "low"` - thinking
+        /// cannot be switched off, so ask for as little as the model allows.
+        case lowEffort
+    }
+
+    static func offThinking(for modelId: String) -> OffThinking {
+        guard let v = parseClaudeVersion(modelId) else { return .omit }
+        if v.major < 4 || (v.major == 4 && v.minor < 6) { return .omit }
+        if v.major == 4 { return .disabled }
+        if v.major == 5, modelId.lowercased().contains("sonnet") {
+            if v.minor == 0 { return .disabled }
+            if v.minor == 5 { return .betweenTools }
+        }
+        return .lowEffort
     }
 
     /// Applies the per-model temperature policy: returns nil if the model rejects temperature.
@@ -214,7 +234,8 @@ final class AnthropicProvider: LLMProvider {
         oauthTokenProvider: @escaping @Sendable () async throws -> String,
         model: LLMModel = .claudeHaiku45,
         basePath: String? = nil,
-        appendV1Suffix: Bool = true
+        appendV1Suffix: Bool = true,
+        quotaInstanceId: String? = nil
     ) {
         let headers = ["oauth-2025-04-20"]
         self.model = model
@@ -228,7 +249,9 @@ final class AnthropicProvider: LLMProvider {
             apiKey: "oauth-placeholder",
             basePath: resolvedBase,
             betaHeaders: headers,
-            httpClient: OAuthHTTPClient(tokenProvider: oauthTokenProvider)
+            // [T-quota-claude-subscription] Tags replies with the instance so their
+            // usage headers update its quota.
+            httpClient: OAuthHTTPClient(tokenProvider: oauthTokenProvider, quotaInstanceId: quotaInstanceId)
         )
     }
 
@@ -424,18 +447,10 @@ final class AnthropicProvider: LLMProvider {
             parts.append("  tools: [\(names.joined(separator: ", "))]")
         }
 
-        // Full request body as pretty JSON (for detailed debugging)
-        if let data = encodedParameter,
-           let json = try? JSONSerialization.jsonObject(with: data),
-           let pretty = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]),
-           let str = String(data: pretty, encoding: .utf8) {
-            let truncated = String(str.prefix(3000))
-            parts.append("  Full Body:")
-            parts.append(truncated)
-            if str.count > 3000 {
-                parts.append("  ... (\(str.count) chars total)")
-            }
-        }
+        // [T-log-redaction] The request body by size and a short head only:
+        // it is chat history, tool output and system prompt, and the log is
+        // exported. debug.llmRequests still has the full captured body.
+        parts.append("  Body: \(LogRedaction.bodySummary(encodedParameter))")
 
         // Messages summary (last 3)
         let recent = parameter.messages.suffix(3)

@@ -221,6 +221,14 @@ final class AntigravityAgentProvider: AgentProvider {
         tools.map { tool in
             var properties: [String: [String: Any]] = [:]
             for (name, param) in tool.parameters {
+                // [T-user-ask] A structured param renders its nested schema in
+                // the Gemini dialect (upper-case types, no array bounds).
+                if let schema = param.schema {
+                    var prop = schema.jsonSchema(uppercaseTypes: true, bounds: false)
+                    prop["description"] = param.description
+                    properties[name] = prop
+                    continue
+                }
                 var prop: [String: Any] = [
                     "type": param.type.geminiType,
                     "description": param.description,

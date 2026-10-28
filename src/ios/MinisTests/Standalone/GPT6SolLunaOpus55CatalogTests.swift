@@ -278,9 +278,13 @@ do {
         let minor = Range(m.range(at: 2), in: lower).flatMap { Int(lower[$0]) } ?? 0
         return (major, minor)
     }
+    // [T-claude5-thinking-off] Ported AnthropicProvider.offThinking(for:): true iff
+    // "thinking off" goes on the wire as the `disabled` literal.
     func acceptsDisabled(_ id: String) -> Bool {
         guard let v = parseClaudeVersion(id) else { return false }
-        return v.major == 4 && v.minor >= 6
+        if v.major < 4 || (v.major == 4 && v.minor < 6) { return false }
+        if v.major == 4 { return true }
+        return v.major == 5 && v.minor == 0 && id.lowercased().contains("sonnet")
     }
 
     check("claude-opus-5-5 does NOT accept thinking.type=disabled",
@@ -300,7 +304,7 @@ do {
 
     // The shipping predicate must still be the one ported above.
     check("the shipping gate is unchanged",
-          anthropic.contains("return v.major == 4 && v.minor >= 6"))
+          anthropic.contains("        if v.major == 4 { return .disabled }\n        if v.major == 5, modelId.lowercased().contains(\"sonnet\") {\n            if v.minor == 0 { return .disabled }"))
 }
 
 print("")

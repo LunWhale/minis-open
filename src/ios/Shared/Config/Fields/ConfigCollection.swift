@@ -53,6 +53,25 @@ protocol ConfigCollection {
     /// Remove a child. Throws if id missing or not removable (e.g.
     /// API-reported model entries can't be deleted, only hidden).
     func remove(id: String) throws
+
+    // MARK: [T-config-readable] Human-readable descriptions — no defaults, so
+    // a new collection does not compile until it says how it reads.
+
+    /// Localization key naming a child's field in a sentence, with the
+    /// child's name as %1$@ and the field label as %2$@, e.g.
+    /// "Group “%1$@” – %2$@".
+    var readableSubjectFormat: String { get }
+
+    /// The child's user-facing name (group name, provider label, …), or nil
+    /// when `id` is not a child. Called before the write, so a removed child
+    /// is still named.
+    func entityLabel(id: String) -> String?
+
+    /// Sentences describing an `add`. The payload is already secret-masked.
+    func readableForAdd(_ payload: RedactedConfigValue) -> [ReadableLine]
+
+    /// Sentences describing a `remove`, rendered BEFORE the removal.
+    func readableForRemove(id: String) -> [ReadableLine]
 }
 
 extension ConfigCollection {

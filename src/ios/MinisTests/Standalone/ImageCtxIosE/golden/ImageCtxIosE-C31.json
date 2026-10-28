@@ -1,0 +1,858 @@
+{
+  "live" : {
+    "anthropic" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "open",
+              "sha8" : "2348f998",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_h1-fc_h1",
+            "kind" : "toolUse",
+            "name" : "browser_use"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_h1-fc_h1",
+            "kind" : "toolResult",
+            "text" : {
+              "chars" : 102,
+              "head" : "Screenshot captured\n  Image: 390x844 (402KB)\n  minis_url: \/var\/minis\/browser\/screenshot_<ts>.jpg",
+              "sha8" : "2acd219a",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 438828,
+              "bytes" : 329120,
+              "fmt" : "jpeg",
+              "h" : 2000,
+              "mime" : "image\/jpeg",
+              "sha256" : "d63dd069f3c90c04",
+              "w" : 924
+            },
+            "inToolResult" : true,
+            "kind" : "image"
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 14,
+              "head" : "I see the page",
+              "sha8" : "865870b0",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "next",
+              "sha8" : "c6c1c9a9",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "antigravity" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "open",
+              "sha8" : "2348f998",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "browser_use",
+            "kind" : "toolUse",
+            "name" : "browser_use"
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "browser_use",
+            "kind" : "toolResult",
+            "name" : "browser_use",
+            "text" : {
+              "chars" : 121,
+              "head" : "{\"result\":\"Screenshot captured\\n  Image: 390x844 (402KB)\\n  minis_url: \\\/var\\\/minis\\\/browser\\\/screenshot_<ts>.jpg\"}",
+              "sha8" : "1382c7de",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 438828,
+              "bytes" : 329120,
+              "fmt" : "jpeg",
+              "h" : 2000,
+              "mime" : "image\/jpeg",
+              "sha256" : "d63dd069f3c90c04",
+              "w" : 924
+            },
+            "kind" : "image"
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 14,
+              "head" : "I see the page",
+              "sha8" : "865870b0",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "next",
+              "sha8" : "c6c1c9a9",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "chat" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "open",
+              "sha8" : "2348f998",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_h1|fc_h1",
+            "kind" : "toolUse",
+            "name" : "browser_use"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_h1|fc_h1",
+            "kind" : "toolResult",
+            "text" : {
+              "chars" : 102,
+              "head" : "Screenshot captured\n  Image: 390x844 (402KB)\n  minis_url: \/var\/minis\/browser\/screenshot_<ts>.jpg",
+              "sha8" : "2acd219a",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "tool"
+      },
+      {
+        "parts" : [
+          {
+            "image" : {
+              "base64Len" : 438828,
+              "bytes" : 329120,
+              "fmt" : "jpeg",
+              "h" : 2000,
+              "mime" : "image\/jpeg",
+              "sha256" : "d63dd069f3c90c04",
+              "w" : 924
+            },
+            "kind" : "image"
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 14,
+              "head" : "I see the page",
+              "sha8" : "865870b0",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "next",
+              "sha8" : "c6c1c9a9",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "gemini" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "open",
+              "sha8" : "2348f998",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "browser_use",
+            "kind" : "toolUse",
+            "name" : "browser_use"
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "browser_use",
+            "kind" : "toolResult",
+            "name" : "browser_use",
+            "text" : {
+              "chars" : 121,
+              "head" : "{\"result\":\"Screenshot captured\\n  Image: 390x844 (402KB)\\n  minis_url: \\\/var\\\/minis\\\/browser\\\/screenshot_<ts>.jpg\"}",
+              "sha8" : "1382c7de",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 438828,
+              "bytes" : 329120,
+              "fmt" : "jpeg",
+              "h" : 2000,
+              "mime" : "image\/jpeg",
+              "sha256" : "d63dd069f3c90c04",
+              "w" : 924
+            },
+            "kind" : "image"
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 14,
+              "head" : "I see the page",
+              "sha8" : "865870b0",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "next",
+              "sha8" : "c6c1c9a9",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "responses" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "open",
+              "sha8" : "2348f998",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "reasoning"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_h1",
+            "kind" : "toolUse",
+            "name" : "browser_use"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_h1",
+            "kind" : "toolResult",
+            "text" : {
+              "chars" : 102,
+              "head" : "Screenshot captured\n  Image: 390x844 (402KB)\n  minis_url: \/var\/minis\/browser\/screenshot_<ts>.jpg",
+              "sha8" : "2acd219a",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "tool"
+      },
+      {
+        "parts" : [
+          {
+            "image" : {
+              "base64Len" : 438828,
+              "bytes" : 329120,
+              "fmt" : "jpeg",
+              "h" : 2000,
+              "mime" : "image\/jpeg",
+              "sha256" : "d63dd069f3c90c04",
+              "w" : 924
+            },
+            "kind" : "image"
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 14,
+              "head" : "I see the page",
+              "sha8" : "865870b0",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "next",
+              "sha8" : "c6c1c9a9",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ]
+  },
+  "restart" : {
+    "anthropic" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "open",
+              "sha8" : "2348f998",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_h1-fc_h1",
+            "kind" : "toolUse",
+            "name" : "browser_use"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_h1-fc_h1",
+            "kind" : "toolResult",
+            "text" : {
+              "chars" : 102,
+              "head" : "Screenshot captured\n  Image: 390x844 (402KB)\n  minis_url: \/var\/minis\/browser\/screenshot_<ts>.jpg",
+              "sha8" : "2acd219a",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 438828,
+              "bytes" : 329120,
+              "fmt" : "jpeg",
+              "h" : 2000,
+              "mime" : "image\/jpeg",
+              "sha256" : "d63dd069f3c90c04",
+              "w" : 924
+            },
+            "inToolResult" : true,
+            "kind" : "image"
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 14,
+              "head" : "I see the page",
+              "sha8" : "865870b0",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "next",
+              "sha8" : "c6c1c9a9",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "antigravity" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "open",
+              "sha8" : "2348f998",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "browser_use",
+            "kind" : "toolUse",
+            "name" : "browser_use"
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "browser_use",
+            "kind" : "toolResult",
+            "name" : "browser_use",
+            "text" : {
+              "chars" : 121,
+              "head" : "{\"result\":\"Screenshot captured\\n  Image: 390x844 (402KB)\\n  minis_url: \\\/var\\\/minis\\\/browser\\\/screenshot_<ts>.jpg\"}",
+              "sha8" : "1382c7de",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 438828,
+              "bytes" : 329120,
+              "fmt" : "jpeg",
+              "h" : 2000,
+              "mime" : "image\/jpeg",
+              "sha256" : "d63dd069f3c90c04",
+              "w" : 924
+            },
+            "kind" : "image"
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 14,
+              "head" : "I see the page",
+              "sha8" : "865870b0",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "next",
+              "sha8" : "c6c1c9a9",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "chat" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "open",
+              "sha8" : "2348f998",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_h1|fc_h1",
+            "kind" : "toolUse",
+            "name" : "browser_use"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_h1|fc_h1",
+            "kind" : "toolResult",
+            "text" : {
+              "chars" : 102,
+              "head" : "Screenshot captured\n  Image: 390x844 (402KB)\n  minis_url: \/var\/minis\/browser\/screenshot_<ts>.jpg",
+              "sha8" : "2acd219a",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "tool"
+      },
+      {
+        "parts" : [
+          {
+            "image" : {
+              "base64Len" : 438828,
+              "bytes" : 329120,
+              "fmt" : "jpeg",
+              "h" : 2000,
+              "mime" : "image\/jpeg",
+              "sha256" : "d63dd069f3c90c04",
+              "w" : 924
+            },
+            "kind" : "image"
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 14,
+              "head" : "I see the page",
+              "sha8" : "865870b0",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "next",
+              "sha8" : "c6c1c9a9",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "gemini" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "open",
+              "sha8" : "2348f998",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "browser_use",
+            "kind" : "toolUse",
+            "name" : "browser_use"
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "browser_use",
+            "kind" : "toolResult",
+            "name" : "browser_use",
+            "text" : {
+              "chars" : 121,
+              "head" : "{\"result\":\"Screenshot captured\\n  Image: 390x844 (402KB)\\n  minis_url: \\\/var\\\/minis\\\/browser\\\/screenshot_<ts>.jpg\"}",
+              "sha8" : "1382c7de",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 438828,
+              "bytes" : 329120,
+              "fmt" : "jpeg",
+              "h" : 2000,
+              "mime" : "image\/jpeg",
+              "sha256" : "d63dd069f3c90c04",
+              "w" : 924
+            },
+            "kind" : "image"
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 14,
+              "head" : "I see the page",
+              "sha8" : "865870b0",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "next",
+              "sha8" : "c6c1c9a9",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "responses" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "open",
+              "sha8" : "2348f998",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "reasoning"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_h1",
+            "kind" : "toolUse",
+            "name" : "browser_use"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_h1",
+            "kind" : "toolResult",
+            "text" : {
+              "chars" : 102,
+              "head" : "Screenshot captured\n  Image: 390x844 (402KB)\n  minis_url: \/var\/minis\/browser\/screenshot_<ts>.jpg",
+              "sha8" : "2acd219a",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "tool"
+      },
+      {
+        "parts" : [
+          {
+            "image" : {
+              "base64Len" : 438828,
+              "bytes" : 329120,
+              "fmt" : "jpeg",
+              "h" : 2000,
+              "mime" : "image\/jpeg",
+              "sha256" : "d63dd069f3c90c04",
+              "w" : 924
+            },
+            "kind" : "image"
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 14,
+              "head" : "I see the page",
+              "sha8" : "865870b0",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "next",
+              "sha8" : "c6c1c9a9",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ]
+  }
+}

@@ -71,7 +71,12 @@ extension AIChatViewModel {
             responseText = "[Tool calls: \(toolSummaries.joined(separator: ", "))]"
         }
 
-        guard !responseText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard !responseText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            // Not an attempt — a later iteration retries. Logged because this
+            // exit was silent when it hid [T-shortcut-bg-title].
+            logger.info("[TitleGen] skip: no assistant text or tool calls to summarise yet (sid=\(sessionId.prefix(8)) msgs=\(messages.count) uiSuspended=\(streamingUIUpdatesSuspended))")
+            return
+        }
 
         // Summary scope: first user + first assistant text (200 chars each);
         // when the session has more than one user turn, also append the last
@@ -535,7 +540,9 @@ extension AIChatViewModel {
         {"decision": "create", "name": "Trip Planning", "description": "Flights, hotels and itineraries for upcoming trips"}
         """
 
-        let provider = await AIChatViewModel.makeAgentProvider(for: entry)
+        // [T-opencode-every-entry] A suggestion spans several sessions, so it
+        // is no single chat's traffic: its own one-off id.
+        let provider = await AIChatViewModel.makeAgentProvider(for: entry, sessionId: OpenCodeChannel.oneOffSessionId())
         var text = ""
         do {
             let stream = try await provider.streamAgentMessage(

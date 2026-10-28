@@ -147,6 +147,27 @@ final class CrashReporter: NSObject, MXMetricManagerSubscriber {
 
     private var launched = false
 
+    // MARK: - Run identity + heartbeat [T-crash-heartbeat]
+
+    /// Identifies THIS process's launch marker. The relaunched process used to
+    /// rewrite the dead run's marker (scenePhase → inactive fires before
+    /// `onAppLaunch` classifies it), so every SIGKILL report showed the new
+    /// process: "inactive since <relaunch time>", 16 MB, 0 sessions - and a
+    /// background CPU kill was filed as a FOREGROUND CRASH. Marker writes
+    /// after launch are now only made to a marker carrying this id.
+    let runId = UUID().uuidString
+
+    static let heartbeatInterval: TimeInterval = 10
+    private let heartbeatQueue = DispatchQueue(label: "com.minis.crashHeartbeat", qos: .utility)
+    private var heartbeatTimer: DispatchSourceTimer?
+    /// heartbeatQueue only.
+    private var lastHeartbeatCPU: (cpuSeconds: Double, at: Date)?
+
+    static var heartbeatURL: URL {
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return support.appendingPathComponent("last_heartbeat.json")
+    }
+
     // MARK: - Log Ring Buffer
 
     private var logRing: [String] = []
@@ -299,7 +320,15 @@ final class CrashReporter: NSObject, MXMetricManagerSubscriber {
         evaluateCrashLoopIfNeeded()
         try? FileManager.default.removeItem(at: Self.hangSnapshotURL)
         try? FileManager.default.removeItem(at: Self.crashStackURL)
+        // [T-crash-signal-refault] Consumed by the report above (if any); a
+        // stale one must not attach itself to a later, unrelated report.
+        // [T-crash-diag-export] Moved, not deleted: the last 5 stay listed under
+        // Settings > Logs > Crash Diagnostics and in its export.
+        Self.archivePreviousCrashContext()
         writeLaunchMarker()
+        // [T-crash-heartbeat] After the previous run's heartbeat was read by
+        // the classification above - the first write replaces it.
+        startHeartbeat()
         // [T-crash-injected-dylib-tag] Scan + cache BEFORE registering the
         // MetricKit subscriber: `didReceive` delivers on a background queue
         // and its report writer reads the cache — priming it here (main
@@ -360,6 +389,7 @@ final class CrashReporter: NSObject, MXMetricManagerSubscriber {
 
     func onWillTerminate() {
         removeLaunchMarker()
+        try? FileManager.default.removeItem(at: Self.heartbeatURL)
         try? FileManager.default.removeItem(at: Self.hangSnapshotURL)
         try? FileManager.default.removeItem(at: Self.crashStackURL)
         logger.info("Launch marker removed (normal termination)")
@@ -367,11 +397,22 @@ final class CrashReporter: NSObject, MXMetricManagerSubscriber {
 
     @MainActor
     func updateMarkerPhase(phase: String) {
+        // [T-crash-breadcrumbs] Every foreground/background switch lands here
+        // (active / inactive / background): one breadcrumb + an extra sample.
+        CrashBreadcrumbs.record("life", detail: phase)
+        ResourceSampler.shared.sampleNow(reason: phase)
         let url = launchMarkerURL
         guard FileManager.default.fileExists(atPath: url.path),
               let data = try? Data(contentsOf: url),
               var marker = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return }
+        // [T-crash-heartbeat] Not our marker yet: it is the previous run's,
+        // still waiting to be classified by onAppLaunch. Leave it alone.
+        guard (marker["runId"] as? String) == runId else {
+            logger.info("[Heartbeat] phase \(phase) before launch classification - previous run's marker left intact")
+            return
+        }
+        recordHeartbeat(reason: phase)
 
         let df = DateFormatter()
         df.dateFormat = "yyyy-MM-dd'T'HH:mm:ssZ"
@@ -518,6 +559,8 @@ final class CrashReporter: NSObject, MXMetricManagerSubscriber {
             // UUID differs from the current run's therefore means "the process
             // was replaced by an install", never "the app crashed".
             "containerId": Self.currentContainerId(),
+            // [T-crash-heartbeat] See `runId`.
+            "runId": runId,
         ]
 
         let url = launchMarkerURL
@@ -552,8 +595,23 @@ final class CrashReporter: NSObject, MXMetricManagerSubscriber {
             markerInfo = json
         }
 
-        let lastPhase = (markerInfo?["lastPhase"] as? String) ?? "unknown"
+        let markedPhase = (markerInfo?["lastPhase"] as? String) ?? "unknown"
         let lastPhaseAt = markerInfo?["lastPhaseAt"] as? String
+        // [T-crash-heartbeat] The dead run's last 10 s sample. Newer than the
+        // last phase change, so its app state wins when the two disagree.
+        let heartbeat = Self.previousHeartbeat(matching: markerInfo)
+        let heartbeatAt = (heartbeat?["at"] as? Double).map { Date(timeIntervalSince1970: $0) }
+        let lastPhase: String = {
+            guard let state = heartbeat?["appState"] as? String, state != markedPhase,
+                  ["active", "inactive", "background"].contains(state) else { return markedPhase }
+            let phaseDf = DateFormatter()
+            phaseDf.dateFormat = "yyyy-MM-dd'T'HH:mm:ssZ"
+            let phaseDate = lastPhaseAt.flatMap { phaseDf.date(from: $0) } ?? .distantPast
+            return (heartbeatAt ?? .distantPast) >= phaseDate ? state : markedPhase
+        }()
+        let governor = heartbeat?["governor"] as? [String: Any]
+        let governorWindow = (governor?["running"] as? Bool) == true ? governor?["windowCPU"] as? Double : nil
+        let heartbeatCPU = heartbeat?["cpuPercent"] as? Int
         let memoryMB = markerInfo?["memoryMB"] as? Int
         let memoryFreeMB = markerInfo?["memoryFreeMB"] as? Int
         let markerBuild = markerInfo?["build"] as? String
@@ -640,7 +698,19 @@ final class CrashReporter: NSObject, MXMetricManagerSubscriber {
                 crashType = "⚠️ FOREGROUND CRASH (SIGKILL — app was in use)"
             }
         } else if lastPhase == "background" {
-            if let rem = bgTaskRemaining, rem > 0 && rem < 5 {
+            if let window = governorWindow, window >= 38 {
+                // [T-crash-heartbeat] iOS kills a background app that bills
+                // 48 CPU-s in 60 s, with no dialog and no stack. 38 is the
+                // governor's RED line: the brake was already on and losing.
+                let cpu = heartbeatCPU.map { ", CPU \($0)%" } ?? ""
+                crashType = "Background CPU limit kill (likely) — \(String(format: "%.1f", window)) of 48 CPU-s used in the last 60 s at the last heartbeat\(cpu)"
+            } else if let cpu = heartbeatCPU, cpu >= 80 {
+                crashType = "Background CPU limit kill (possible) — CPU \(cpu)% at the last heartbeat"
+            } else if let lost = BackgroundKillClassifier.keepAliveLost(heartbeat?["keepAlive"] as? [String: Any]) {
+                // [T-crash-keepalive-heartbeat] Background time was running out
+                // at the last heartbeat and nothing was holding the app.
+                crashType = lost
+            } else if let rem = bgTaskRemaining, rem > 0 && rem < 5 {
                 crashType = "Background Task Timeout (task expired with \(String(format: "%.1f", rem))s left)"
             } else if let mem = memoryMB, mem >= 300 {
                 crashType = "Background Jetsam (high memory: \(mem)MB)"
@@ -689,6 +759,7 @@ final class CrashReporter: NSObject, MXMetricManagerSubscriber {
             savedShellCommands: savedShellCommands,
             lastPhase: lastPhase,
             lastPhaseAt: lastPhaseAt,
+            heartbeat: heartbeat,
             memoryMB: memoryMB,
             memoryFreeMB: memoryFreeMB,
             memoryPressure: memPressure,
@@ -714,7 +785,62 @@ final class CrashReporter: NSObject, MXMetricManagerSubscriber {
         return true
     }
 
+    /// [T-crash-diag-export] Moves last_crash_context.prev.txt (if any) to
+    /// Crumbs/contexts/context-<time>.txt and keeps the newest 5.
+    static func archivePreviousCrashContext() {
+        let fm = FileManager.default
+        let prev = CrashSignalHandler.previousCrashContextPath()
+        guard !prev.isEmpty, fm.fileExists(atPath: prev) else { return }
+        let dir = CrashDiagnostics.contextArchiveDir
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        let df = DateFormatter()
+        df.dateFormat = "yyyyMMdd-HHmmss"
+        let modified = (try? fm.attributesOfItem(atPath: prev)[.modificationDate] as? Date) ?? Date()
+        let dest = dir.appendingPathComponent("context-\(df.string(from: modified)).txt")
+        try? fm.removeItem(at: dest)
+        if (try? fm.moveItem(atPath: prev, toPath: dest.path)) == nil {
+            try? fm.removeItem(atPath: prev)
+        }
+        let names = ((try? fm.contentsOfDirectory(atPath: dir.path)) ?? [])
+            .filter { $0.hasPrefix("context-") }.sorted(by: >)
+        for name in names.dropFirst(5) { try? fm.removeItem(at: dir.appendingPathComponent(name)) }
+    }
+
     // MARK: - MetricKit
+
+    /// [T-crash-breadcrumbs] Saves a MetricKit diagnostic's full JSON next to
+    /// the crash reports and returns the file name.
+    @discardableResult
+    private func saveMetricKitJSON(_ data: Data, kind: String) -> String? {
+        let dir = crashReportsDir
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let df = DateFormatter()
+        df.dateFormat = "yyyyMMdd-HHmmss"
+        let name = "metrickit-\(kind)-\(df.string(from: Date()))-\(UUID().uuidString.prefix(4)).json"
+        do {
+            try data.write(to: dir.appendingPathComponent(name), options: .atomic)
+            return name
+        } catch {
+            logger.warning("[MetricKit] could not save diagnostic JSON: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    /// [T-crash-breadcrumbs] The breadcrumbs of the run a diagnostic belongs to:
+    /// by the pid in its metaData when present, else the newest earlier run
+    /// launched before the payload window ended (approximate - says so).
+    static func breadcrumbsForDiagnostic(_ json: Data, payloadEnd: Date) -> (text: String?, source: String?) {
+        let dict = (try? JSONSerialization.jsonObject(with: json)) as? [String: Any]
+        let meta = dict?["diagnosticMetaData"] as? [String: Any] ?? dict?["metaData"] as? [String: Any]
+        if let pid = (meta?["pid"] as? NSNumber)?.int32Value,
+           let path = CrashBreadcrumbs.previousRunFile(forPid: pid) {
+            return (CrashBreadcrumbs.renderFile(atPath: path), "pid \(pid)")
+        }
+        if let path = CrashBreadcrumbs.previousRunFileCovering(payloadEnd) {
+            return (CrashBreadcrumbs.renderFile(atPath: path), "time match, approximate")
+        }
+        return (nil, nil)
+    }
 
     func didReceive(_ payloads: [MXDiagnosticPayload]) {
         for payload in payloads {
@@ -740,21 +866,18 @@ final class CrashReporter: NSObject, MXMetricManagerSubscriber {
                         stack = lines.joined(separator: "\n")
                     }
 
-                    let liveCommands = ShellCommandRingBuffer.syncSnapshot
-                    let timeFmt = DateFormatter()
-                    timeFmt.dateFormat = "HH:mm:ss"
-                    let savedCmds: [[String: Any]] = liveCommands.map { entry in
-                        var d: [String: Any] = [
-                            "index": entry.index,
-                            "startedAt": timeFmt.string(from: entry.startedAt),
-                            "command": entry.command,
-                            "sessionId": entry.sessionId
-                        ]
-                        if let code = entry.exitCode { d["exitCode"] = code }
-                        if let dur = entry.duration { d["duration"] = dur }
-                        return d
-                    }
-                    writeReport(type: type, callStack: stack, savedShellCommands: savedCmds)
+                    // [T-crash-breadcrumbs] The diagnostic describes an EARLIER
+                    // run. Attaching THIS run's shell-command ring (as before)
+                    // paired that crash with unrelated commands - in raw text.
+                    // Instead keep MetricKit's full JSON and attach the
+                    // breadcrumbs of the run it belongs to: matched by pid when
+                    // the payload carries one, else by the payload's time window.
+                    let diagJSON = diag.jsonRepresentation()
+                    let crumbs = Self.breadcrumbsForDiagnostic(diagJSON, payloadEnd: payload.timeStampEnd)
+                    let savedJSON = saveMetricKitJSON(diagJSON, kind: "crash")
+                    writeReport(type: type, callStack: stack,
+                                breadcrumbs: crumbs.text, breadcrumbsSource: crumbs.source,
+                                metricKitFile: savedJSON)
                 }
             }
 
@@ -812,8 +935,12 @@ final class CrashReporter: NSObject, MXMetricManagerSubscriber {
         type: String,
         callStack: String?,
         savedShellCommands: [[String: Any]] = [],
+        breadcrumbs: String? = nil,
+        breadcrumbsSource: String? = nil,
+        metricKitFile: String? = nil,
         lastPhase: String? = nil,
         lastPhaseAt: String? = nil,
+        heartbeat: [String: Any]? = nil,
         memoryMB: Int? = nil,
         memoryFreeMB: Int? = nil,
         memoryPressure: String? = nil,
@@ -843,13 +970,17 @@ final class CrashReporter: NSObject, MXMetricManagerSubscriber {
         let now = Date()
         let df = DateFormatter()
 
-        let crashDate: Date
+        var crashDate: Date
         if let ts = lastPhaseAt {
             let inputDf = DateFormatter()
             inputDf.dateFormat = "yyyy-MM-dd'T'HH:mm:ssZ"
             crashDate = inputDf.date(from: ts) ?? now
         } else {
             crashDate = now
+        }
+        // [T-crash-heartbeat] The last heartbeat is the closest known time to the death.
+        if let at = heartbeat?["at"] as? Double, Date(timeIntervalSince1970: at) > crashDate, lastPhaseAt != nil {
+            crashDate = Date(timeIntervalSince1970: at)
         }
 
         df.dateFormat = "yyyyMMdd-HHmmss"
@@ -929,6 +1060,10 @@ final class CrashReporter: NSObject, MXMetricManagerSubscriber {
                 report += "\nActive sessions:  \(sessions)"
             }
             report += "\nShell running:    \(runningShellCommand ? "yes" : "no")"
+            // [T-crash-heartbeat] The counters below are read now, in the
+            // relaunched process - they do not describe the crashed run (its
+            // own numbers are in the heartbeat section).
+            report += "\n(next lines sampled at relaunch, not from the crashed run:)"
             // [T-resource-diag] Port/thread-churn accounting. The 2026-09-15
             // PORT_SPACE kills left no in-app trace at all: footprint was 18MB
             // and pressure normal, so every existing field said "healthy".
@@ -979,6 +1114,12 @@ final class CrashReporter: NSObject, MXMetricManagerSubscriber {
             } else if let provider = lastAPIProvider {
                 report += "\nLast API:         \(provider)"
             }
+        }
+
+        if let heartbeat {
+            report += Self.heartbeatReportSection(heartbeat)
+        } else if lastPhase != nil {
+            report += "\n\n--- Last Heartbeat ---\n(none from the crashed run)"
         }
 
         // WebView section
@@ -1039,8 +1180,17 @@ final class CrashReporter: NSObject, MXMetricManagerSubscriber {
             }
         }
 
-        let logLines = logRingSnapshot()
-        report += "\n--- Last \(logLines.count) Log Lines (before exit) ---\n"
+        // [T-crash-heartbeat] The ring is this process's; the crashed run's
+        // tail comes from its heartbeat. Without one, say whose lines these are.
+        let heartbeatLog = heartbeat?["logTail"] as? [String]
+        let logLines = heartbeatLog ?? logRingSnapshot()
+        if heartbeatLog != nil {
+            report += "\n--- Last \(logLines.count) Log Lines (crashed run, at its last heartbeat) ---\n"
+        } else if lastPhase != nil {
+            report += "\n--- Last \(logLines.count) Log Lines (THIS launch, not the crashed run - see that day's log file) ---\n"
+        } else {
+            report += "\n--- Last \(logLines.count) Log Lines (before exit) ---\n"
+        }
         if logLines.isEmpty {
             report += "(none recorded)\n"
         } else {
@@ -1055,10 +1205,28 @@ final class CrashReporter: NSObject, MXMetricManagerSubscriber {
             report += hangSnapshot + "\n"
         }
 
+        // [T-crash-breadcrumbs] What the crashed run was doing just before.
+        if let breadcrumbs, !breadcrumbs.isEmpty {
+            report += "\n--- Breadcrumbs (\(breadcrumbsSource ?? "?")) ---\n"
+            report += breadcrumbs + "\n"
+        }
+        if let metricKitFile {
+            report += "\nMetricKit JSON: \(metricKitFile)\n"
+        }
+
         let crashStack = (try? String(contentsOf: Self.crashStackURL, encoding: .utf8)) ?? ""
         if !crashStack.isEmpty {
             report += "\n--- Signal/Exception Crash Stack ---\n"
             report += crashStack + "\n"
+        }
+
+        // [T-crash-signal-refault] The fault address and registers the signal
+        // handler recorded, which the system report can lose.
+        let signalContext = (try? String(contentsOfFile: CrashSignalHandler.previousCrashContextPath(),
+                                         encoding: .utf8)) ?? ""
+        if !signalContext.isEmpty {
+            report += "\n--- Signal Context (si_addr / pc / lr / sp / far / esr) ---\n"
+            report += signalContext + "\n"
         }
 
         report += "\n--- MetricKit Call Stack ---\n"
@@ -1094,3 +1262,235 @@ final class CrashReporter: NSObject, MXMetricManagerSubscriber {
         }
     }
 }
+
+// MARK: - Runtime heartbeat [T-crash-heartbeat]
+
+/// What the app was doing in the seconds before it died, for SIGKILL reports.
+///
+/// A SIGKILL leaves no stack and runs no code, and the launch marker is only
+/// rewritten on foreground/background switches - the background CPU kills of
+/// 2026-10-07/08 came ~50 s after the last switch, so the marker could not
+/// show the 100%+ CPU, the RED governor or the sub-agents that were running.
+/// Every 10 s (and on each switch) one small JSON file is rewritten with the
+/// numbers that decide a kill: footprint, CPU, threads, thermal state, the
+/// background CPU governor's window, the running agents and their current
+/// tool, the running shell commands and the last log lines. The next launch
+/// reads it into the crash report.
+///
+/// Cost: two task_info calls, one task_threads, one small atomic file write
+/// on a utility queue, plus a few property reads on the main thread.
+extension CrashReporter {
+    func startHeartbeat() {
+        guard heartbeatTimer == nil else { return }
+        let t = DispatchSource.makeTimerSource(queue: .main)
+        t.schedule(deadline: .now() + 2, repeating: Self.heartbeatInterval, leeway: .seconds(2))
+        t.setEventHandler { [weak self] in
+            MainActor.assumeIsolated { self?.recordHeartbeat(reason: "tick") }
+        }
+        t.resume()
+        heartbeatTimer = t
+    }
+
+    /// Collects the main-thread state, then samples and writes off the main thread.
+    @MainActor
+    func recordHeartbeat(reason: String) {
+        let appState: String
+        switch UIApplication.shared.applicationState {
+        case .active: appState = "active"
+        case .inactive: appState = "inactive"
+        case .background: appState = "background"
+        @unknown default: appState = "unknown"
+        }
+        let tracker = SessionActivityTracker.shared
+        let now = Date()
+        let sessions: [[String: Any]] = tracker.resolvedBusySessionIds.sorted().prefix(12).map { sid in
+            let info = tracker.sessionToolInfo[sid]
+            var d: [String: Any] = ["id": String(sid.prefix(8))]
+            if let info {
+                d["title"] = String(info.title.prefix(40))
+                d["tool"] = info.toolName
+                d["status"] = String(info.toolStatus.prefix(80))
+                if info.lastToolChange != .distantPast {
+                    d["toolForS"] = Int(now.timeIntervalSince(info.lastToolChange))
+                }
+            }
+            return d
+        }
+        let mainState: [String: Any] = [
+            "appState": appState,
+            "sessions": sessions,
+            "busyCount": tracker.resolvedBusySessionIds.count,
+            "lowPower": ProcessInfo.processInfo.isLowPowerModeEnabled,
+            // [T-crash-keepalive-heartbeat]
+            "keepAlive": BackgroundKeepAliveManager.shared.keepAliveHeartbeat,
+        ]
+        heartbeatQueue.async { [self] in
+            writeHeartbeat(reason: reason, mainState: mainState, at: now)
+        }
+    }
+
+    /// heartbeatQueue only.
+    private func writeHeartbeat(reason: String, mainState: [String: Any], at now: Date) {
+        var hb = mainState
+        hb["runId"] = runId
+        hb["pid"] = Int(ProcessInfo.processInfo.processIdentifier)
+        hb["at"] = now.timeIntervalSince1970
+        hb["reason"] = reason
+        let vm = ResourceSampler.vmInfo()
+        hb["footprintMB"] = Int(vm.footprint >> 20)
+        hb["availMB"] = Int(os_proc_available_memory() >> 20)
+        hb["threads"] = ResourceSampler.threadCount()
+        let cpu = Self.processCPUSeconds()
+        if let last = lastHeartbeatCPU, cpu > 0 {
+            let wall = now.timeIntervalSince(last.at)
+            if wall > 0.5 {
+                // Percent of one core, as Instruments and the [CPUTop] log show it.
+                hb["cpuPercent"] = Int((cpu - last.cpuSeconds) / wall * 100)
+            }
+        }
+        if cpu > 0 { lastHeartbeatCPU = (cpu, now) }
+        hb["thermal"] = Self.thermalName(ProcessInfo.processInfo.thermalState)
+        let kernel = ISHKernel.shared
+        if kernel.isBooted {
+            hb["governor"] = kernel.backgroundCPUGovernorStatus()
+        }
+        hb["shellRunning"] = ShellCommandRingBuffer.syncSnapshot
+            .filter { $0.exitCode == nil && $0.exitedAt == nil }
+            .suffix(6)
+            .map { e -> [String: Any] in
+                ["command": String(e.command.prefix(160)),
+                 "session": String(e.sessionId.prefix(8)),
+                 "runningForS": Int(now.timeIntervalSince(e.startedAt))]
+            }
+        hb["logTail"] = logRingSnapshot()
+        guard let data = try? JSONSerialization.data(withJSONObject: hb) else { return }
+        try? data.write(to: Self.heartbeatURL, options: .atomic)
+    }
+
+    /// The previous run's last heartbeat, if it belongs to the run that wrote `marker`.
+    static func previousHeartbeat(matching marker: [String: Any]?) -> [String: Any]? {
+        guard let data = try? Data(contentsOf: heartbeatURL),
+              let hb = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        // Markers from builds before the run id: fall back to the pid.
+        if let markerRun = marker?["runId"] as? String {
+            return (hb["runId"] as? String) == markerRun ? hb : nil
+        }
+        if let markerPid = marker?["pid"] as? Int, let hbPid = hb["pid"] as? Int {
+            return markerPid == hbPid ? hb : nil
+        }
+        return nil
+    }
+
+    /// Process CPU time (live + exited threads), seconds; what iOS bills.
+    static func processCPUSeconds() -> Double {
+        var basic = mach_task_basic_info()
+        var bcount = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size / MemoryLayout<natural_t>.size)
+        let kr1 = withUnsafeMutablePointer(to: &basic) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(bcount)) {
+                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &bcount)
+            }
+        }
+        var times = task_thread_times_info()
+        var tcount = mach_msg_type_number_t(MemoryLayout<task_thread_times_info>.size / MemoryLayout<natural_t>.size)
+        let kr2 = withUnsafeMutablePointer(to: &times) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(tcount)) {
+                task_info(mach_task_self_, task_flavor_t(TASK_THREAD_TIMES_INFO), $0, &tcount)
+            }
+        }
+        guard kr1 == KERN_SUCCESS, kr2 == KERN_SUCCESS else { return 0 }
+        func secs(_ t: time_value_t) -> Double { Double(t.seconds) + Double(t.microseconds) / 1e6 }
+        return secs(basic.user_time) + secs(basic.system_time) + secs(times.user_time) + secs(times.system_time)
+    }
+
+    static func thermalName(_ s: ProcessInfo.ThermalState) -> String {
+        switch s {
+        case .nominal: return "nominal"
+        case .fair: return "fair"
+        case .serious: return "serious"
+        case .critical: return "critical"
+        @unknown default: return "unknown"
+        }
+    }
+
+    /// Report section for the dead run's last heartbeat.
+    static func heartbeatReportSection(_ hb: [String: Any]) -> String {
+        let at = Date(timeIntervalSince1970: hb["at"] as? Double ?? 0)
+        let tf = DateFormatter()
+        tf.dateFormat = "HH:mm:ss"
+        // Written every 10 s while the process runs, so the death came after
+        // this - usually within ~10 s, later only if the app was suspended.
+        var out = "\n\n--- Last Heartbeat of the crashed run (written \(tf.string(from: at)), every \(Int(heartbeatInterval))s while running) ---"
+        out += "\nApp state:        \(hb["appState"] as? String ?? "?") (sample: \(hb["reason"] as? String ?? "?"))"
+        out += "\nFootprint:        \(hb["footprintMB"] as? Int ?? -1) MB, system avail \(hb["availMB"] as? Int ?? -1) MB"
+        if let cpu = hb["cpuPercent"] as? Int {
+            out += "\nCPU (last ~10s):  \(cpu)% of one core"
+        }
+        out += "\nThreads:          \(hb["threads"] as? Int ?? -1)"
+        out += "\nThermal:          \(hb["thermal"] as? String ?? "?")   low power: \((hb["lowPower"] as? Bool ?? false) ? "on" : "off")"
+        if let gov = hb["governor"] as? [String: Any], gov["running"] as? Bool == true {
+            out += String(format: "\nBG CPU governor:  zone=%@ window=%.1f of 48 CPU-s/60s rate=%.2f CPU-s/s, %.0fs in background",
+                          gov["zone"] as? String ?? "?", gov["windowCPU"] as? Double ?? 0,
+                          gov["rate"] as? Double ?? 0, gov["secondsInBackground"] as? Double ?? 0)
+        } else {
+            out += "\nBG CPU governor:  not running"
+        }
+        if let line = BackgroundKillClassifier.heartbeatLine(hb["keepAlive"] as? [String: Any]) {
+            out += "\nKeep-alive:       \(line)"
+        }
+        let sessions = hb["sessions"] as? [[String: Any]] ?? []
+        out += "\nRunning agents:   \(hb["busyCount"] as? Int ?? sessions.count)"
+        for s in sessions {
+            let age = (s["toolForS"] as? Int).map { " (\($0)s)" } ?? ""
+            out += "\n  [\(s["id"] as? String ?? "?")] \(s["title"] as? String ?? "") — \(s["tool"] as? String ?? "?"): \(s["status"] as? String ?? "")\(age)"
+        }
+        let shells = hb["shellRunning"] as? [[String: Any]] ?? []
+        out += "\nRunning shell:    \(shells.isEmpty ? "none" : "\(shells.count)")"
+        for c in shells {
+            out += "\n  [\(c["session"] as? String ?? "?")] +\(c["runningForS"] as? Int ?? 0)s  \(c["command"] as? String ?? "")"
+        }
+        return out
+    }
+}
+
+// BEGIN BackgroundKillClassifier
+/// [T-crash-keepalive-heartbeat] Reads the keep-alive state the heartbeat
+/// recorded (`BackgroundKeepAliveManager.keepAliveHeartbeat`).
+enum BackgroundKillClassifier {
+    /// Background time at or under this at the last heartbeat (written every
+    /// 10 s) means the app was inside its final ~30 s grant.
+    static let lowBackgroundTime = 20
+
+    /// The crash type when the app ran out of background time with nothing
+    /// holding it, or nil when the heartbeat does not show that.
+    static func keepAliveLost(_ keepAlive: [String: Any]?) -> String? {
+        guard let k = keepAlive,
+              let remaining = k["bgRemaining"] as? Int, remaining >= 0, remaining <= lowBackgroundTime,
+              k["continued"] as? Bool != true, k["audioPlaying"] as? Bool != true else { return nil }
+        let left = "\(remaining) s of background time left at the last heartbeat"
+        guard k["configured"] as? Bool == true else {
+            return "Background time ran out (likely) — no keep-alive was active; \(left)"
+        }
+        var why = "keep-alive audio was not playing"
+        if k["audioInterruption"] as? String == "began", let ago = k["audioInterruptionAgoS"] as? Int {
+            why += " (interrupted \(ago) s earlier, e.g. by a call, and not restored)"
+        }
+        return "Background time ran out (likely) — \(why); \(left)"
+    }
+
+    /// One line for the "Last Heartbeat" section of a report.
+    static func heartbeatLine(_ keepAlive: [String: Any]?) -> String? {
+        guard let k = keepAlive else { return nil }
+        let remaining = k["bgRemaining"] as? Int ?? -1
+        var parts = [
+            "audio=\(k["audioPlaying"] as? Bool == true ? "playing" : "not playing")"
+                + (k["configured"] as? Bool == true ? "" : " (off in Settings)"),
+            "continued task=\(k["continued"] as? Bool == true ? "running" : "no")",
+            "background time=\(remaining < 0 ? "unlimited" : "\(remaining) s")",
+        ]
+        if let kind = k["audioInterruption"] as? String, let ago = k["audioInterruptionAgoS"] as? Int {
+            parts.append("last audio interruption \(kind) \(ago) s ago")
+        }
+        return parts.joined(separator: ", ")
+    }
+}
+// END BackgroundKillClassifier

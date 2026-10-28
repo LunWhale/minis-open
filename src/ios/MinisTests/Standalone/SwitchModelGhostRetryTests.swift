@@ -25,6 +25,23 @@
 
 import Foundation
 
+/// The sources that used to be the single file Agent/Chat/AIChatViewModel.swift -
+/// the class body plus the AIChatViewModel+<Concern>.swift files it was split
+/// into (the older extension files are NOT included) - read as one text.
+func chatViewModelSource() -> String {
+    let chat = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Agent/Chat")
+    let names = ["AIChatViewModel", "AIChatViewModel+Lifecycle", "AIChatViewModel+ContextUsage",
+                 "AIChatViewModel+StreamingUI", "AIChatViewModel+Speech", "AIChatViewModel+AutoPlayAudio",
+                 "AIChatViewModel+SystemPrompt", "AIChatViewModel+Send", "AIChatViewModel+Rerun",
+                 "AIChatViewModel+EditMessage", "AIChatViewModel+Cancel", "AIChatViewModel+PromptQueue",
+                 "AIChatViewModel+DebugDumps", "AIChatViewModel+TurnCompletion", "AIChatViewModel+AgentLoop",
+                 "AIChatViewModel+ThinkingLevel", "LLMProviderError"]
+    return names.compactMap { try? String(contentsOf: chat.appendingPathComponent($0 + ".swift"), encoding: .utf8) }
+        .joined(separator: "\n")
+}
+
 var failures = 0
 func ck(_ l: String, _ ok: Bool) {
     if ok { print("  ✅ \(l)") } else { print("  ❌ \(l)"); failures += 1 }
@@ -240,7 +257,7 @@ ck("isProcessing untouched", !idle.isProcessing)
 print("\n▶️  source invariants")
 
 func read(_ p: String) -> String? { try? String(contentsOfFile: p, encoding: .utf8) }
-guard let vm = read("../../Agent/Chat/AIChatViewModel.swift"),
+guard let vm = Optional(chatViewModelSource()), !vm.isEmpty,
       let titleGen = read("../../Agent/Chat/AIChatViewModel+TitleGeneration.swift"),
       let picker = read("../../Views/Providers/SessionModelPicker.swift") else {
     print("  ❌ could not read sources"); failures += 1; exit(1)

@@ -88,9 +88,9 @@ struct SessionMCPsView: View {
             List {
                 if store.servers.isEmpty {
                     Section {
-                        Text("No MCP servers configured. Add servers in Settings → MCP Integrations.")
-                            .foregroundStyle(.secondary)
-                            .font(.subheadline)
+                        SessionOverrideEmptyCard(systemImage: "square.stack.3d.up",
+                                                 title: AppLocalized("No MCP servers"),
+                                                 subtitle: AppLocalized("Add servers in Settings → MCP Integrations."))
                     }
                 } else if filteredServers.isEmpty {
                     Section {
@@ -99,26 +99,41 @@ struct SessionMCPsView: View {
                             .font(.subheadline)
                     }
                 } else {
-                    Section(footer: Text("Toggles override the server's default for this session only.")) {
+                    Section {
                         ForEach(filteredServers) { server in
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(server.id).font(.body)
-                                    if let note = server.note, !note.isEmpty {
-                                        Text(note)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                            .lineLimit(2)
+                            // [T-session-mcp-detail] A tap opens the read-only
+                            // detail; the toggle keeps its own tap target.
+                            NavigationLink {
+                                SessionMCPDetailView(server: server)
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(server.id).font(.body)
+                                        if let note = server.note, !note.isEmpty {
+                                            Text(note)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                                .lineLimit(2)
+                                        }
                                     }
+                                    Spacer()
+                                    Toggle("", isOn: Binding(
+                                        get: { isEnabled(server) },
+                                        set: { setOverride(server, $0) }
+                                    ))
+                                    .labelsHidden()
                                 }
-                                Spacer()
-                                Toggle("", isOn: Binding(
-                                    get: { isEnabled(server) },
-                                    set: { setOverride(server, $0) }
-                                ))
-                                .labelsHidden()
                             }
                         }
+                    } header: {
+                        let scope = filteredServers
+                        SessionBulkToggleHeader(
+                            availability: SessionBulkToggleRules.availability(scope.map { isEnabled($0) })
+                        ) { applyToAll(scope, enabled: $0) }
+                    } footer: {
+                        SessionOverrideListFooter(
+                            note: Text("Toggles override the server's default for this session only."),
+                            searchQuery: searchQuery)
                     }
                 }
             }
@@ -128,21 +143,136 @@ struct SessionMCPsView: View {
                         prompt: Text(AppLocalized("Search MCP servers")))
             .onAppear { store.load() }
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    if !filteredServers.isEmpty {
-                        let scope = filteredServers
-                        let allEnabled = scope.allSatisfy { isEnabled($0) }
-                        Button(allEnabled ? "Disable All" : "Enable All") {
-                            let newValue = !allEnabled
-                            applyToAll(scope, enabled: newValue)
-                        }
-                        .font(.subheadline)
-                    }
-                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
                 }
             }
         }
+    }
+}
+
+// BEGIN MCPServerDetailRules
+/// What the read-only server detail shows, kept free of SwiftUI for tests.
+enum MCPServerDetailRules {
+    /// The config does not record whether a URL server speaks Streamable HTTP
+    /// or SSE, so a URL server is shown as both, like the Android sheet.
+    static func transportLabel(isSTDIO: Bool) -> String {
+        isSTDIO ? "STDIO" : "HTTP / SSE"
+    }
+
+    /// Header / env-var NAMES, sorted. Only the keys are read: the values
+    /// routinely hold API keys and this sheet sits over a chat that may be
+    /// screen-shared, so they never reach the UI.
+    static func secretNames(_ map: [String: String]?) -> [String] {
+        guard let map else { return [] }
+        return map.keys.sorted()
+    }
+
+    /// Args joined for display, or nil when there are none.
+    static func argsLine(_ args: [String]?) -> String? {
+        guard let args, !args.isEmpty else { return nil }
+        return args.joined(separator: " ")
+    }
+
+    static func trimmedNote(_ note: String?) -> String? {
+        let t = (note ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? nil : t
+    }
+}
+// END MCPServerDetailRules
+
+/// [T-session-mcp-detail] Read-only detail of one MCP server, opened from the
+/// in-chat sheet (Android 3109967bc has the same page). Nothing here writes
+/// the config, exports it, or reads a header / env value.
+private struct SessionMCPDetailView: View {
+    let server: MCPServerConfig
+    @State private var authorized = false
+
+    var body: some View {
+        let headerNames = MCPServerDetailRules.secretNames(server.headers)
+        let envNames = MCPServerDetailRules.secretNames(server.env)
+        List {
+            Section {
+                LabeledContent(AppLocalized("Transport"),
+                               value: MCPServerDetailRules.transportLabel(isSTDIO: server.isSTDIO))
+                if server.isSTDIO {
+                    detailRow(AppLocalized("Command"), server.command ?? "")
+                    if let args = MCPServerDetailRules.argsLine(server.args) {
+                        detailRow(AppLocalized("Arguments"), args)
+                    }
+                    LabeledContent(AppLocalized("Startup timeout (seconds)"),
+                                   value: server.startupTimeoutSeconds.map(String.init) ?? AppLocalized("Default 60"))
+                } else {
+                    let url = server.url ?? ""
+                    // Long-press copies the URL, like a skill's source URL.
+                    detailRow(AppLocalized("Server URL"), url, selectable: false)
+                        .modifier(SkillSourceURLContextMenu(url: url.isEmpty ? nil : url,
+                                                            title: AppLocalized("Copy URL")) {})
+                    if server.oauth != nil {
+                        LabeledContent("OAuth",
+                                       value: authorized ? AppLocalized("Authorized") : AppLocalized("Not authorized"))
+                    }
+                }
+            }
+
+            if let note = MCPServerDetailRules.trimmedNote(server.note) {
+                Section(AppLocalized("Note")) {
+                    Text(note).textSelection(.enabled)
+                }
+            }
+
+            if !headerNames.isEmpty {
+                Section {
+                    namesText(headerNames)
+                } header: {
+                    Text(AppLocalized("Custom Headers"))
+                } footer: {
+                    if envNames.isEmpty { valuesHiddenNote }
+                }
+            }
+            if !envNames.isEmpty {
+                Section {
+                    namesText(envNames)
+                } header: {
+                    Text(AppLocalized("Environment Variables"))
+                } footer: {
+                    valuesHiddenNote
+                }
+            }
+        }
+        .navigationTitle(server.id)
+        .navigationBarTitleDisplayMode(.inline)
+        .task(id: server.id) {
+            guard server.oauth != nil else { return }
+            authorized = MCPOAuthController.isAuthorized(server: server.id)
+        }
+    }
+
+    private var valuesHiddenNote: some View {
+        Text(AppLocalized("Values are hidden because they can contain keys. View or edit them in Settings → MCP Integrations."))
+    }
+
+    private func namesText(_ names: [String]) -> some View {
+        Text(names.joined(separator: "\n"))
+            .font(.system(.subheadline, design: .monospaced))
+            .textSelection(.enabled)
+    }
+
+    /// Label above a full-width monospaced value. Not selectable when the row
+    /// carries a long-press menu, which text selection would otherwise take.
+    @ViewBuilder
+    private func detailRow(_ label: String, _ value: String, selectable: Bool = true) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            if selectable {
+                Text(value).font(.system(.subheadline, design: .monospaced)).textSelection(.enabled)
+            } else {
+                Text(value).font(.system(.subheadline, design: .monospaced))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
     }
 }

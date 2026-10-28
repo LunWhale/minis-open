@@ -31,6 +31,88 @@ struct EnvVarEntry: Identifiable, Codable {
     }
 }
 
+// BEGIN EnvVarStateBook
+/// [T-envvar-disable] Which variables are switched off, by entry id.
+///
+/// Deliberately NOT a field of `EnvVarEntry` / env-vars.json: builds that
+/// predate this feature rewrite env-vars.json (an edit, the legacy whole-file
+/// iCloud merge, a downgrade) with only the fields they know, and would drop
+/// it. Kept in its own file (env-vars-state.json) and synced as its own
+/// record type (EnvVarStateItem), the state is something older builds never
+/// read, write or delete.
+///
+/// Keyed by entry id, not by name: a rename keeps the state, two entries that
+/// share a name keep their own, and deleting a variable drops its state, so a
+/// variable created later under the same name (a new id) starts enabled.
+/// A missing record means enabled.
+struct EnvVarStateBook: Codable, Equatable {
+    struct Record: Codable, Equatable {
+        var enabled: Bool
+        /// The state's own clock - independent of the value / note clock.
+        var updatedAt: Date
+        /// Name at the time of the change; diagnostics only.
+        var key: String
+    }
+
+    private(set) var records: [String: Record] = [:]
+
+    func isEnabled(_ id: String) -> Bool { records[id]?.enabled ?? true }
+    func record(_ id: String) -> Record? { records[id] }
+
+    /// A change made on this device. Its clock is the later of now and just
+    /// after the newest state this device has seen for the variable, so the
+    /// user's latest switch always wins against everything already known here
+    /// even when this device's wall clock is behind a peer's.
+    @discardableResult
+    mutating func setEnabled(_ enabled: Bool, id: String, key: String, now: Date) -> Record {
+        let floor = records[id].map { $0.updatedAt.addingTimeInterval(0.001) } ?? .distantPast
+        let record = Record(enabled: enabled, updatedAt: max(now, floor), key: key)
+        records[id] = record
+        return record
+    }
+
+    /// A state that arrived from another device. A record without the field
+    /// or its clock changes nothing - a missing value is not "enable". The
+    /// strictly newer clock wins; a tie keeps the local state.
+    @discardableResult
+    mutating func applyRemote(id: String, key: String, enabled: Bool?, updatedAt: Date?) -> Bool {
+        guard let enabled, let updatedAt else { return false }
+        if let local = records[id], local.updatedAt >= updatedAt { return false }
+        records[id] = Record(enabled: enabled, updatedAt: updatedAt, key: key)
+        return true
+    }
+
+    /// The variable itself was deleted.
+    mutating func remove(_ id: String) { records[id] = nil }
+
+    mutating func rename(_ id: String, to key: String) { records[id]?.key = key }
+}
+
+/// [T-envvar-disable] One line of a backup's data/env_vars.json. Same fields
+/// as `EnvVarEntry` plus `enabled`, which an older backup (or an older
+/// Android build) does not have - read as enabled.
+struct EnvVarBackupEntry: Codable, Equatable {
+    var id: String
+    var key: String
+    var createdAt: Date
+    var note: String
+    var enabled: Bool
+
+    init(id: String, key: String, createdAt: Date, note: String, enabled: Bool) {
+        self.id = id; self.key = key; self.createdAt = createdAt; self.note = note; self.enabled = enabled
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        key = try c.decode(String.self, forKey: .key)
+        createdAt = try c.decode(Date.self, forKey: .createdAt)
+        note = (try? c.decode(String.self, forKey: .note)) ?? ""
+        enabled = (try? c.decodeIfPresent(Bool.self, forKey: .enabled)) ?? true
+    }
+}
+// END EnvVarStateBook
+
 // MARK: - EnvVarStore
 
 @MainActor
@@ -38,9 +120,34 @@ final class EnvVarStore: ObservableObject {
     static let shared = EnvVarStore()
 
     @Published private(set) var entries: [EnvVarEntry] = []
+    /// [T-envvar-disable] Enabled / disabled state, see EnvVarStateBook.
+    @Published private(set) var stateBook = EnvVarStateBook()
 
     private let fileURL: URL
     nonisolated private static let keychainService = "com.openminis.app.envvar"
+
+    /// [T-envvar-disable] env-vars-state.json, beside env-vars.json.
+    nonisolated static var stateFileURL: URL {
+        FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("MinisChat/env-vars-state.json")
+    }
+
+    nonisolated static func loadStateBook() -> EnvVarStateBook {
+        guard let data = try? Data(contentsOf: stateFileURL),
+              let book = try? JSONDecoder().decode(EnvVarStateBook.self, from: data) else {
+            return EnvVarStateBook()
+        }
+        return book
+    }
+
+    private func saveStateBook() {
+        do {
+            let data = try JSONEncoder().encode(stateBook)
+            try data.write(to: Self.stateFileURL, options: .atomic)
+        } catch {
+            logger.error("Failed to save env var state: \(error)")
+        }
+    }
 
     init() {
         let libraryURL = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
@@ -48,6 +155,7 @@ final class EnvVarStore: ObservableObject {
         try? FileManager.default.createDirectory(at: baseURL, withIntermediateDirectories: true)
         self.fileURL = baseURL.appendingPathComponent("env-vars.json")
         self.entries = Self.loadEntries(from: fileURL)
+        self.stateBook = Self.loadStateBook()
         scheduleLegacyRecordCleanupIfNeeded()
     }
 
@@ -105,6 +213,7 @@ final class EnvVarStore: ObservableObject {
     /// Reload entries from disk (e.g. after iCloud sync merges new data).
     func reloadFromDisk() {
         entries = Self.loadEntries(from: fileURL)
+        stateBook = Self.loadStateBook()
         // [T-envvar-redactor-reload-invalidate] The iCloud whole-file merger
         // (CloudSyncEngine.mergeEnvVars) rewrites env-vars.json directly and
         // then calls this. When the new key's value already arrived via iCloud
@@ -148,12 +257,24 @@ final class EnvVarStore: ObservableObject {
         ) }
     }
 
+    /// [T-envvar-disable] Queue the variable's EnvVarStateItem record.
+    fileprivate func markStateDirty(entryId: String, operation: String = "upsert") {
+        Task { await ChatStore.shared.markDirty(
+            recordType: "EnvVarStateItem",
+            recordId: entryId,
+            operation: operation
+        ) }
+    }
+
     /// Re-emit per-key markDirty for every current entry. Used by
     /// markAllLocalForReupload and any post-restore path that doesn't
     /// know which keys changed.
     func markAllEntriesDirty() {
         for entry in entries {
             markEntryDirty(entryId: entry.id, operation: "upsert")
+            if stateBook.record(entry.id) != nil {
+                markStateDirty(entryId: entry.id, operation: "upsert")
+            }
         }
     }
 
@@ -306,11 +427,120 @@ final class EnvVarStore: ObservableObject {
 
     /// Strip invisible/control characters that iOS paste can introduce (e.g. \u{9b} CSI).
     /// Keeps only printable ASCII and common whitespace (space, tab).
-    private static func sanitizeValue(_ value: String) -> String {
-        String(value.unicodeScalars.filter { scalar in
+    ///
+    /// [T-shortcut-envvar] Shortcut-stored variables (`MINIS_SHORTCUT_OPT_*`)
+    /// hold captured text — an SMS, a note — so they keep Unicode and line
+    /// breaks; the ASCII-only rule is for pasted API keys and tokens. Routed
+    /// by key so that editing such a variable in Settings (even just its
+    /// note, which re-saves the value) cannot strip it.
+    private static func sanitizeValue(_ value: String, forKey key: String) -> String {
+        if isShortcutKey(key) { return sanitizeShortcutValue(value) }
+        return String(value.unicodeScalars.filter { scalar in
             // Allow printable ASCII (0x20-0x7E) and tab (0x09)
             (scalar.value >= 0x20 && scalar.value <= 0x7E) || scalar.value == 0x09
         })
+    }
+
+    // MARK: - Shortcut-stored variables [T-shortcut-envvar]
+
+    /// Every variable the "Save Environment Variable to Minis" Shortcuts
+    /// action writes is named `MINIS_SHORTCUT_OPT_<SUFFIX>`.
+    nonisolated static let shortcutKeyPrefix = "MINIS_SHORTCUT_OPT_"
+
+    /// Largest value the action accepts, in UTF-8 bytes. Well inside what a
+    /// synchronizable Keychain item and its iCloud sync record carry, and far
+    /// below Linux's 128 KiB per-variable exec limit (MAX_ARG_STRLEN), so the
+    /// shell always starts. Longer input is refused, never cut: a truncated
+    /// SMS can silently lose the one line that mattered.
+    nonisolated static let shortcutValueMaxBytes = 32 * 1024
+
+    /// Longest suffix accepted, in characters.
+    nonisolated static let shortcutSuffixMaxLength = 64
+
+    nonisolated static func isShortcutKey(_ key: String) -> Bool {
+        key.hasPrefix(shortcutKeyPrefix)
+    }
+
+    // Kept byte-identical with MinisTests/Standalone/ShortcutEnvVarTests.swift.
+    // BEGIN shortcutEnvVar
+    /// The variable name for a user-typed suffix, or nil when the suffix is
+    /// unusable. Trimmed, upper-cased, spaces / hyphens / dots become `_`, and
+    /// a prefix the user typed themselves is not doubled. What is left must be
+    /// 1…64 of A–Z, 0–9, `_`.
+    nonisolated static func shortcutKey(forSuffix raw: String) -> String? {
+        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        s = String(s.map { " -.".contains($0) ? "_" : $0 })
+        if s.hasPrefix(shortcutKeyPrefix) { s.removeFirst(shortcutKeyPrefix.count) }
+        guard !s.isEmpty, s.count <= shortcutSuffixMaxLength,
+              s.unicodeScalars.allSatisfy({ ("A"..."Z").contains($0) || ("0"..."9").contains($0) || $0 == "_" })
+        else { return nil }
+        return shortcutKeyPrefix + s
+    }
+
+    /// Text captured by a Shortcut, made safe for an environment variable
+    /// without losing content: CRLF / CR become LF, and control characters
+    /// other than LF and tab are dropped (NUL would end the C string the
+    /// shell receives). Everything else — CJK, emoji, quotes, `$` — stays;
+    /// the value reaches the shell through the process environment, not as
+    /// shell text, so nothing needs escaping.
+    nonisolated static func sanitizeShortcutValue(_ value: String) -> String {
+        let unified = value.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+        return String(unified.unicodeScalars.filter { scalar in
+            scalar == "\n" || scalar == "\t" || scalar.properties.generalCategory != .control
+        })
+    }
+    // END shortcutEnvVar
+
+    enum ShortcutSaveError: LocalizedError {
+        case invalidSuffix
+        case emptyText
+        case tooLarge(bytes: Int)
+        case storageFailed
+
+        var errorDescription: String? {
+            switch self {
+            case .invalidSuffix:
+                return AppLocalized("The name suffix may use only letters, digits and underscores (1–64 characters), e.g. SMS_CODE.")
+            case .emptyText:
+                return AppLocalized("There is no text to save.")
+            case .tooLarge(let bytes):
+                return String(format: AppLocalized("The text is too long to save (%lld KB). The limit is 32 KB."),
+                              Int64((bytes + 1023) / 1024))
+            case .storageFailed:
+                return AppLocalized("Minis could not save the variable to the Keychain. Try again after unlocking your device.")
+            }
+        }
+    }
+
+    /// [T-shortcut-envvar] Create or update `MINIS_SHORTCUT_OPT_<suffix>`
+    /// with `text`. Same storage as a variable added in Settings — key list in
+    /// env-vars.json, value in the synchronizable Keychain, iCloud-synced —
+    /// so every session's shell sees it from its next command, and the user
+    /// can edit or delete it under Settings → Environment Variables. Saving
+    /// the same name again replaces the value and keeps the user's note.
+    /// Returns the variable name and whether it was newly created.
+    @discardableResult
+    func saveFromShortcut(suffix: String, text: String) throws -> (key: String, created: Bool) {
+        guard let key = Self.shortcutKey(forSuffix: suffix) else { throw ShortcutSaveError.invalidSuffix }
+        let value = Self.sanitizeShortcutValue(text)
+        guard !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw ShortcutSaveError.emptyText }
+        let bytes = value.utf8.count
+        guard bytes <= Self.shortcutValueMaxBytes else { throw ShortcutSaveError.tooLarge(bytes: bytes) }
+        // Value first: a failed Keychain write must not leave a list entry
+        // pointing at a blank value (same rule as add / update).
+        guard Self.saveValue(value, forKey: key) else { throw ShortcutSaveError.storageFailed }
+        if let idx = entries.firstIndex(where: { $0.key == key }) {
+            saveEntries()
+            markEntryDirty(entryId: entries[idx].id, operation: "upsert")
+            logger.info("[ShortcutEnvVar] updated \(key) (\(bytes) bytes)")
+            return (key, false)
+        }
+        let entry = EnvVarEntry(key: key, note: AppLocalized("Saved by the Shortcuts action “Save Environment Variable to Minis”."))
+        entries.append(entry)
+        saveEntries()
+        markEntryDirty(entryId: entry.id, operation: "upsert")
+        logger.info("[ShortcutEnvVar] created \(key) (\(bytes) bytes)")
+        return (key, true)
     }
 
     // MARK: - Public API
@@ -325,7 +555,7 @@ final class EnvVarStore: ObservableObject {
             return
         }
 
-        let cleanValue = Self.sanitizeValue(value)
+        let cleanValue = Self.sanitizeValue(value, forKey: trimmedKey)
         // Commit the value to the Keychain FIRST. If it fails, don't insert a
         // list entry — otherwise the variable shows up with a blank value.
         guard Self.saveValue(cleanValue, forKey: trimmedKey) else {
@@ -357,7 +587,7 @@ final class EnvVarStore: ObservableObject {
             Self.deleteValue(forKey: oldKey)
         }
 
-        let cleanValue = Self.sanitizeValue(value)
+        let cleanValue = Self.sanitizeValue(value, forKey: trimmedKey)
         // Commit the new value FIRST; only mutate the entry (and persist the
         // key rename) once the Keychain write succeeds, so a failed write
         // never leaves the list pointing at a blanked value. On key rename the
@@ -369,6 +599,12 @@ final class EnvVarStore: ObservableObject {
         }
         entries[idx].key = trimmedKey
         if let note { entries[idx].note = note }
+        if oldKey != trimmedKey, stateBook.record(id) != nil {
+            // [T-envvar-disable] Keyed by id, so a rename keeps the state;
+            // only the diagnostic name follows.
+            stateBook.rename(id, to: trimmedKey)
+            saveStateBook()
+        }
         saveEntries()
         markEntryDirty(entryId: entries[idx].id, operation: "upsert")
         logger.info("Updated env var: \(trimmedKey)")
@@ -395,7 +631,73 @@ final class EnvVarStore: ObservableObject {
         // hard-delete it via applyEnvVarItemDeletion. The recordId is the
         // entry UUID, not the key — same as upsert path.
         markEntryDirty(entryId: id, operation: "delete")
+        // [T-envvar-disable] The state goes with the variable, so a variable
+        // created later under the same name starts enabled.
+        if stateBook.record(id) != nil {
+            stateBook.remove(id)
+            saveStateBook()
+            markStateDirty(entryId: id, operation: "delete")
+        }
         logger.info("Deleted env var: \(key)")
+    }
+
+    // MARK: - Enabled / disabled [T-envvar-disable]
+
+    func isEnabled(id: String) -> Bool { stateBook.isEnabled(id) }
+
+    func stateRecord(id: String) -> EnvVarStateBook.Record? { stateBook.record(id) }
+
+    /// Switch a variable on or off. A disabled variable keeps its value and
+    /// note and stays in the list, but is not put into any shell or process
+    /// environment and does not resolve as a `$$NAME` reference. Its value is
+    /// still masked in tool output (EnvVarRedactor reads every entry).
+    func setEnabled(id: String, _ enabled: Bool) {
+        guard let entry = entries.first(where: { $0.id == id }) else { return }
+        guard stateBook.isEnabled(id) != enabled else { return }
+        stateBook.setEnabled(enabled, id: id, key: entry.key, now: Date())
+        saveStateBook()
+        markStateDirty(entryId: id, operation: "upsert")
+        logger.info("Env var \(entry.key) \(enabled ? "enabled" : "disabled")")
+    }
+
+    /// Apply an inbound EnvVarStateItem. The entry may not have arrived yet;
+    /// the state is kept for its id either way.
+    @discardableResult
+    func applyRemoteState(id: String, key: String, enabled: Bool?, updatedAt: Date?) -> Bool {
+        guard stateBook.applyRemote(id: id, key: key, enabled: enabled, updatedAt: updatedAt) else { return false }
+        saveStateBook()
+        logger.info("[EnvVarStore] applyRemoteState id=\(id.prefix(8)) key=\(key) enabled=\(enabled.map(String.init) ?? "nil")")
+        return true
+    }
+
+    /// A peer deleted the state record. Only meaningful together with the
+    /// variable itself; with the variable still here, the missing record is
+    /// not "enable", so the local state stays.
+    func applyRemoteStateDeletion(id: String) {
+        guard !entries.contains(where: { $0.id == id }), stateBook.record(id) != nil else { return }
+        stateBook.remove(id)
+        saveStateBook()
+    }
+
+    /// Names held by more than one entry (created on two devices before they
+    /// synced). The list marks them; they share one Keychain value.
+    var duplicateKeys: Set<String> {
+        var seen: Set<String> = [], dupes: Set<String> = []
+        for e in entries where !seen.insert(e.key).inserted { dupes.insert(e.key) }
+        return dupes
+    }
+
+    /// For `$$NAME` references: false only when the name exists and every
+    /// entry holding it is disabled. Reads the files, so callable off main.
+    nonisolated static func isKeyEnabledSync(_ key: String) -> Bool {
+        let url = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("MinisChat/env-vars.json")
+        guard let data = try? Data(contentsOf: url),
+              let entries = try? JSONDecoder().decode([EnvVarEntry].self, from: data) else { return true }
+        let holders = entries.filter { $0.key == key }
+        guard !holders.isEmpty else { return true }
+        let book = loadStateBook()
+        return holders.contains { book.isEnabled($0.id) }
     }
 
     func value(forKey key: String) -> String? {
@@ -476,6 +778,12 @@ final class EnvVarStore: ObservableObject {
         entries.remove(at: idx)
         Self.deleteValue(forKey: key)
         saveEntries()
+        // [T-envvar-disable] The variable is gone; so is its state (no
+        // re-queue: the peer that deleted it deletes the state record too).
+        if stateBook.record(id) != nil {
+            stateBook.remove(id)
+            saveStateBook()
+        }
         logger.info("[EnvVarStore] applyRemoteDeletion id=\(id.prefix(8)) key=\(key)")
     }
 
@@ -489,7 +797,10 @@ final class EnvVarStore: ObservableObject {
               let entries = try? JSONDecoder().decode([EnvVarEntry].self, from: data) else {
             return dict
         }
-        for entry in entries {
+        // [T-envvar-disable] A disabled variable is not put into any
+        // environment. Its Keychain value is untouched.
+        let book = Self.loadStateBook()
+        for entry in entries where book.isEnabled(entry.id) {
             if let val = Self.loadValue(forKey: entry.key) {
                 dict[entry.key] = val
             }

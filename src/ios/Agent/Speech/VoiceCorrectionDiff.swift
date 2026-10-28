@@ -10,11 +10,45 @@ enum VoiceCorrectionDiff {
 
     // MARK: - Diff helpers
 
-    /// Share of characters that changed, by Levenshtein over the raw text.
+    /// Share of the text that changed, by Levenshtein over edit units: each CJK character
+    /// or symbol is one unit, and each run of ASCII letters/digits is ONE unit.
+    ///
+    /// [T-voice-mixed-term-restore] Counting raw characters made restoring an English
+    /// term look like a rewrite: "看看遗穴" -> "看看Issue" is one word swapped, but 5 of 7
+    /// characters differ (0.71 > 0.5) and the correction was thrown away. A Latin word is
+    /// one spoken word, so it is one unit here (2 of 4 = 0.5, accepted).
     static func charChangeRatio(from: String, to: String) -> Double {
-        if from.isEmpty && to.isEmpty { return 0 }
-        let distance = PinyinNormalizer.levenshtein(Array(from), Array(to))
-        return Double(distance) / Double(max(from.count, to.count, 1))
+        let a = editUnits(from), b = editUnits(to)
+        if a.isEmpty && b.isEmpty { return 0 }
+        return Double(levenshtein(a, b)) / Double(max(a.count, b.count, 1))
+    }
+
+    static func editUnits(_ text: String) -> [String] {
+        var units: [String] = []
+        var word = ""
+        for c in text {
+            if c.isASCII && (c.isLetter || c.isNumber) { word.append(c); continue }
+            if !word.isEmpty { units.append(word); word = "" }
+            units.append(String(c))
+        }
+        if !word.isEmpty { units.append(word) }
+        return units
+    }
+
+    private static func levenshtein(_ a: [String], _ b: [String]) -> Int {
+        if a.isEmpty { return b.count }
+        if b.isEmpty { return a.count }
+        var previous = Array(0...b.count)
+        var current = [Int](repeating: 0, count: b.count + 1)
+        for i in 1...a.count {
+            current[0] = i
+            for j in 1...b.count {
+                current[j] = min(previous[j] + 1, current[j - 1] + 1,
+                                 previous[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1))
+            }
+            swap(&previous, &current)
+        }
+        return previous[b.count]
     }
 
     /// The substitutions between two texts, as (was, became) pairs — this is what the UI

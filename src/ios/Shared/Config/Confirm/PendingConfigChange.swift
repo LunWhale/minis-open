@@ -17,6 +17,9 @@ struct PendingConfigChangeItem: Identifiable {
     /// Verb shown in the row (set / add / remove / hide / show / revert).
     let verb: String
     let risk: ConfigRisk
+    /// [T-config-readable] Human-readable description of this row, shown
+    /// under the raw old → new. User-facing only; never sent to the CLI.
+    let readable: ReadableSummary?
     /// Per-row reject toggle, defaults true (allow).
     var isApproved: Bool = true
 }

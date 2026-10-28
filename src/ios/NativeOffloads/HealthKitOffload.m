@@ -262,23 +262,39 @@ static NSOperationQueue *authQueue(void) {
     return q;
 }
 
+// BEGIN HKTypeSanitizers
 // [T-ios-healthkit-share-types-auth-crash] Drop types that HealthKit never
 // permits as *share* (write) types, so they don't reach
 // requestAuthorizationToShareTypes: and trip
-// -_throwIfAuthorizationDisallowedForSharing: (which raises an uncaught ObjC
-// exception → SIGABRT on iOS 26.5). The structurally read-only classes are
-// HKCharacteristicType (biological sex, blood type, DOB, …) and
-// HKActivitySummaryType (the activity rings) — these can only ever be read.
-// Any further per-version restriction is still backstopped by the @try/@catch
-// around the request call. Returns nil if nothing remains shareable.
+// -_throwIfAuthorizationDisallowedForSharing: (which raises an ObjC
+// NSInvalidArgumentException synchronously, before any prompt). Structurally
+// never shareable, whatever the identifier:
+//   HKCharacteristicType   biological sex, blood type, date of birth, …
+//   HKActivitySummaryType  the activity rings
+//   HKCorrelationType      blood pressure, food — [GH#393] HealthKit only
+//                          accepts the constituent quantity types; the
+//                          correlation itself may never be requested
+//   HKClinicalType         health records (read-only by design)
+//   HKElectrocardiogramType ECG recordings (only Apple Watch writes them)
+// Per-identifier restrictions (e.g. Apple Exercise Time, only Apple devices
+// write it) are not listed here: they change between iOS releases, so they
+// are reported through the NoffHKAuthRejected path below instead of guessed.
+// Returns nil if nothing remains shareable.
+static BOOL hkTypeNeverShareable(HKObjectType *t) {
+    return [t isKindOfClass:[HKCharacteristicType class]]
+        || [t isKindOfClass:[HKActivitySummaryType class]]
+        || [t isKindOfClass:[HKCorrelationType class]]
+        || [t isKindOfClass:[HKClinicalType class]]
+        || [t isKindOfClass:[HKElectrocardiogramType class]];
+}
+
 static NSSet<HKSampleType *> *sanitizeShareTypes(NSSet<HKSampleType *> *shareTypes) {
     if (shareTypes.count == 0) return shareTypes;
     NSMutableSet<HKSampleType *> *filtered = [NSMutableSet setWithCapacity:shareTypes.count];
     for (HKSampleType *t in shareTypes) {
-        if ([t isKindOfClass:[HKCharacteristicType class]] ||
-            [t isKindOfClass:[HKActivitySummaryType class]]) {
-            NSLog(@"[healthkit/auth] dropping non-shareable (read-only) type from shareTypes: %@",
-                  t.identifier);
+        if (hkTypeNeverShareable(t)) {
+            NSLog(@"[healthkit/auth] dropping non-shareable type from shareTypes: %@ (%@)",
+                  t.identifier, NSStringFromClass([t class]));
             continue;
         }
         [filtered addObject:t];
@@ -286,17 +302,45 @@ static NSSet<HKSampleType *> *sanitizeShareTypes(NSSet<HKSampleType *> *shareTyp
     return filtered.count > 0 ? [filtered copy] : nil;
 }
 
-static BOOL requestHealthKitAccess(NSSet<HKObjectType *> *readTypes,
-                                    NSSet<HKSampleType *> *shareTypes,
-                                    NSString **outError) {
+// [GH#393] A correlation type is refused in the READ set too ("Authorization to
+// read the following types is disallowed"); reading a correlation is authorized
+// through its constituent quantity types, which callers must list themselves.
+static NSSet<HKObjectType *> *sanitizeReadTypes(NSSet<HKObjectType *> *readTypes) {
+    if (readTypes.count == 0) return readTypes;
+    NSMutableSet<HKObjectType *> *filtered = [NSMutableSet setWithCapacity:readTypes.count];
+    for (HKObjectType *t in readTypes) {
+        if ([t isKindOfClass:[HKCorrelationType class]]) {
+            NSLog(@"[healthkit/auth] dropping correlation type from readTypes: %@ — request its constituent types",
+                  t.identifier);
+            continue;
+        }
+        [filtered addObject:t];
+    }
+    return filtered.count > 0 ? [filtered copy] : nil;
+}
+// END HKTypeSanitizers
+
+/// Outcome of an authorization request. `Rejected` is NOT a permission answer:
+/// HealthKit refused the request itself (it raised while validating the type
+/// sets, before any prompt), so no Settings change can fix it.
+typedef NS_ENUM(NSInteger, NoffHKAuthResult) {
+    NoffHKAuthGranted = 0,
+    NoffHKAuthDenied,
+    NoffHKAuthRejected,
+};
+
+static NoffHKAuthResult requestHealthKitAccessResult(NSSet<HKObjectType *> *readTypes,
+                                                 NSSet<HKSampleType *> *shareTypes,
+                                                 NSString **outError) {
     if (![HKHealthStore isHealthDataAvailable]) {
         if (outError) *outError = @"HealthKit is not available on this device";
-        return NO;
+        return NoffHKAuthDenied;
     }
 
-    // Strip structurally read-only types before they can reach
-    // requestAuthorizationToShareTypes: and raise an uncaught exception.
+    // Strip types HealthKit refuses structurally before they can reach
+    // requestAuthorizationToShareTypes: and raise.
     shareTypes = sanitizeShareTypes(shareTypes);
+    readTypes = sanitizeReadTypes(readTypes);
 
     uint64_t tid = 0;
     pthread_threadid_np(NULL, &tid);
@@ -308,6 +352,7 @@ static BOOL requestHealthKitAccess(NSSet<HKObjectType *> *readTypes,
 
     __block BOOL granted = NO;
     __block NSError *authError = nil;
+    __block NSException *rejection = nil;
 
     // Create a blocking operation that runs on the serial auth queue.
     // The operation itself dispatches to main for the actual HK call,
@@ -347,15 +392,18 @@ static BOOL requestHealthKitAccess(NSSet<HKObjectType *> *readTypes,
                     dispatch_semaphore_signal(sem);
                 }];
             } @catch (NSException *ex) {
-                NSLog(@"[healthkit/auth] [tid=%llu] EXCEPTION from requestAuthorizationToShareTypes "
-                       "(likely a share type disallowed for writing on this iOS version): %@ — %@",
+                // [GH#393] This is HealthKit refusing the REQUEST (a type it never
+                // lets apps ask for), not the user denying access. It used to be
+                // dressed up as HKErrorAuthorizationDenied, so the caller printed
+                // authorization_denied + "enable it in Settings" — advice that can
+                // never work, which is how a correlation type in shareTypes went
+                // unnoticed. Keep the exception so the caller reports it as what
+                // it is.
+                NSLog(@"[healthkit/auth] [tid=%llu] REQUEST REJECTED by HealthKit validation "
+                       "(a type in the read/share sets can never be requested): %@ — %@",
                       tid, ex.name, ex.reason ?: @"(no reason)");
                 granted = NO;
-                authError = [NSError errorWithDomain:HKErrorDomain
-                                                code:HKErrorAuthorizationDenied
-                                            userInfo:@{NSLocalizedDescriptionKey:
-                    [NSString stringWithFormat:@"HealthKit rejected the authorization request: %@",
-                        ex.reason ?: ex.name]}];
+                rejection = ex;
                 dispatch_semaphore_signal(sem);
             }
         });
@@ -382,15 +430,49 @@ static BOOL requestHealthKitAccess(NSSet<HKObjectType *> *readTypes,
     // until all prior auth operations complete and this one finishes.
     [authQueue() addOperations:@[op] waitUntilFinished:YES];
 
-    NSLog(@"[healthkit/auth] [tid=%llu] auth queue returned (granted=%d)", tid, granted);
+    NSLog(@"[healthkit/auth] [tid=%llu] auth queue returned (granted=%d rejected=%d)",
+          tid, granted, rejection != nil);
 
+    if (rejection) {
+        if (outError) {
+            *outError = [NSString stringWithFormat:
+                @"HealthKit refused this request: %@. This is not a permission setting — "
+                 "HealthKit does not let apps request this access (for example, writing a type "
+                 "that only Apple devices record), so changing Settings will not help.",
+                rejection.reason ?: rejection.name];
+        }
+        return NoffHKAuthRejected;
+    }
     if (!granted && outError) {
         NSString *reason = authError.localizedDescription ?: @"HealthKit access not granted";
         *outError = [NSString stringWithFormat:
             @"%@. To grant access, open Settings > Health > Data Access & Devices > Minis "
              "and enable the required categories.", reason];
     }
-    return granted;
+    return granted ? NoffHKAuthGranted : NoffHKAuthDenied;
+}
+
+/// Boolean form for the retry paths, which re-request types that were already
+/// accepted once (so a rejection cannot newly appear there).
+static BOOL requestHealthKitAccess(NSSet<HKObjectType *> *readTypes,
+                                    NSSet<HKSampleType *> *shareTypes,
+                                    NSString **outError) {
+    return requestHealthKitAccessResult(readTypes, shareTypes, outError) == NoffHKAuthGranted;
+}
+
+/// Emit the JSON error for a failed authorization and return the exit code:
+/// a real denial stays authorization_denied; a request HealthKit refused
+/// outright is invalid_args, with HealthKit's own reason.
+static int hkEmitAuthFailure(int stdout_fd, NSString *command, NoffHKAuthResult result,
+                             NSString *authErr, BOOL compact, BOOL quiet) {
+    if (result == NoffHKAuthRejected) {
+        noff_emit_json(stdout_fd, noff_json_error(TOOL_NAME, command,
+                       NOFF_ERR_INVALID_ARGS, authErr), compact, quiet);
+        return NOFF_EXIT_INVALID_ARGS;
+    }
+    noff_emit_json(stdout_fd, noff_json_error(TOOL_NAME, command,
+                   NOFF_ERR_AUTHORIZATION_DENIED, authErr), compact, quiet);
+    return NOFF_EXIT_AUTH_DENIED;
 }
 
 // Detect HealthKit authorization errors returned by saveObject. HealthKit
@@ -409,7 +491,7 @@ static BOOL isHealthKitAuthError(NSError *err) {
 // old instance), re-run requestAuthorization, and try saving again. This
 // matches what users expect after toggling a permission on in Settings.
 static BOOL saveWithAuthRetry(HKObject *sample,
-                               HKSampleType *type,
+                               NSSet<HKSampleType *> *shareTypes,
                                NSError **outError) {
     __block BOOL success = NO;
     __block NSError *saveErr = nil;
@@ -431,8 +513,7 @@ static BOOL saveWithAuthRetry(HKObject *sample,
     NSLog(@"[healthkit/auth] save failed with auth error — rebuilding HKHealthStore and retrying");
     resetHealthStore();
     NSString *authErr = nil;
-    if (!requestHealthKitAccess([NSSet setWithObject:type],
-                                 [NSSet setWithObject:type], &authErr)) {
+    if (!requestHealthKitAccess(shareTypes, shareTypes, &authErr)) {
         if (outError) {
             *outError = [NSError errorWithDomain:HKErrorDomain
                                             code:HKErrorAuthorizationDenied
@@ -825,10 +906,9 @@ static NSString *workoutActivityTypeName(HKWorkoutActivityType type) {
 static int cmd_steps(int argc, char **argv, int stdout_fd, BOOL compact, BOOL quiet) {
     HKQuantityType *stepType = [HKQuantityType quantityTypeForIdentifier:HKQuantityTypeIdentifierStepCount];
     NSString *authErr = nil;
-    if (!requestHealthKitAccess([NSSet setWithObject:stepType], nil, &authErr)) {
-        noff_emit_json(stdout_fd, noff_json_error(TOOL_NAME, @"steps",
-                       NOFF_ERR_AUTHORIZATION_DENIED, authErr), compact, quiet);
-        return NOFF_EXIT_AUTH_DENIED;
+    NoffHKAuthResult auth = requestHealthKitAccessResult([NSSet setWithObject:stepType], nil, &authErr);
+    if (auth != NoffHKAuthGranted) {
+        return hkEmitAuthFailure(stdout_fd, @"steps", auth, authErr, compact, quiet);
     }
 
     NSDate *start, *end;
@@ -884,10 +964,9 @@ static int cmd_steps(int argc, char **argv, int stdout_fd, BOOL compact, BOOL qu
 static int cmd_heart_rate(int argc, char **argv, int stdout_fd, BOOL compact, BOOL quiet) {
     HKQuantityType *hrType = [HKQuantityType quantityTypeForIdentifier:HKQuantityTypeIdentifierHeartRate];
     NSString *authErr = nil;
-    if (!requestHealthKitAccess([NSSet setWithObject:hrType], nil, &authErr)) {
-        noff_emit_json(stdout_fd, noff_json_error(TOOL_NAME, @"heart-rate",
-                       NOFF_ERR_AUTHORIZATION_DENIED, authErr), compact, quiet);
-        return NOFF_EXIT_AUTH_DENIED;
+    NoffHKAuthResult auth = requestHealthKitAccessResult([NSSet setWithObject:hrType], nil, &authErr);
+    if (auth != NoffHKAuthGranted) {
+        return hkEmitAuthFailure(stdout_fd, @"heart-rate", auth, authErr, compact, quiet);
     }
 
     NSDate *start, *end;
@@ -941,10 +1020,9 @@ static int cmd_heart_rate(int argc, char **argv, int stdout_fd, BOOL compact, BO
 static int cmd_sleep(int argc, char **argv, int stdout_fd, BOOL compact, BOOL quiet) {
     HKCategoryType *sleepType = [HKCategoryType categoryTypeForIdentifier:HKCategoryTypeIdentifierSleepAnalysis];
     NSString *authErr = nil;
-    if (!requestHealthKitAccess([NSSet setWithObject:sleepType], nil, &authErr)) {
-        noff_emit_json(stdout_fd, noff_json_error(TOOL_NAME, @"sleep",
-                       NOFF_ERR_AUTHORIZATION_DENIED, authErr), compact, quiet);
-        return NOFF_EXIT_AUTH_DENIED;
+    NoffHKAuthResult auth = requestHealthKitAccessResult([NSSet setWithObject:sleepType], nil, &authErr);
+    if (auth != NoffHKAuthGranted) {
+        return hkEmitAuthFailure(stdout_fd, @"sleep", auth, authErr, compact, quiet);
     }
 
     NSDate *start, *end;
@@ -1014,10 +1092,9 @@ static int cmd_sleep(int argc, char **argv, int stdout_fd, BOOL compact, BOOL qu
 static int cmd_workouts(int argc, char **argv, int stdout_fd, BOOL compact, BOOL quiet) {
     HKWorkoutType *workoutType = [HKWorkoutType workoutType];
     NSString *authErr = nil;
-    if (!requestHealthKitAccess([NSSet setWithObject:workoutType], nil, &authErr)) {
-        noff_emit_json(stdout_fd, noff_json_error(TOOL_NAME, @"workouts",
-                       NOFF_ERR_AUTHORIZATION_DENIED, authErr), compact, quiet);
-        return NOFF_EXIT_AUTH_DENIED;
+    NoffHKAuthResult auth = requestHealthKitAccessResult([NSSet setWithObject:workoutType], nil, &authErr);
+    if (auth != NoffHKAuthGranted) {
+        return hkEmitAuthFailure(stdout_fd, @"workouts", auth, authErr, compact, quiet);
     }
 
     NSDate *start, *end;
@@ -1174,10 +1251,9 @@ static int cmd_cadence(int argc, char **argv, int stdout_fd, BOOL compact, BOOL 
 
     NSSet *readTypes = [NSSet setWithObjects:cadenceType, strideLenType, runCadenceType, stepCountType, nil];
     NSString *authErr = nil;
-    if (!requestHealthKitAccess(readTypes, nil, &authErr)) {
-        noff_emit_json(stdout_fd, noff_json_error(TOOL_NAME, @"cadence",
-                       NOFF_ERR_AUTHORIZATION_DENIED, authErr), compact, quiet);
-        return NOFF_EXIT_AUTH_DENIED;
+    NoffHKAuthResult auth = requestHealthKitAccessResult(readTypes, nil, &authErr);
+    if (auth != NoffHKAuthGranted) {
+        return hkEmitAuthFailure(stdout_fd, @"cadence", auth, authErr, compact, quiet);
     }
 
     NSDate *start, *end;
@@ -1252,10 +1328,9 @@ static int cmd_cadence(int argc, char **argv, int stdout_fd, BOOL compact, BOOL 
 static int cmd_elevation(int argc, char **argv, int stdout_fd, BOOL compact, BOOL quiet) {
     HKQuantityType *flightsType = [HKQuantityType quantityTypeForIdentifier:HKQuantityTypeIdentifierFlightsClimbed];
     NSString *authErr = nil;
-    if (!requestHealthKitAccess([NSSet setWithObject:flightsType], nil, &authErr)) {
-        noff_emit_json(stdout_fd, noff_json_error(TOOL_NAME, @"elevation",
-                       NOFF_ERR_AUTHORIZATION_DENIED, authErr), compact, quiet);
-        return NOFF_EXIT_AUTH_DENIED;
+    NoffHKAuthResult auth = requestHealthKitAccessResult([NSSet setWithObject:flightsType], nil, &authErr);
+    if (auth != NoffHKAuthGranted) {
+        return hkEmitAuthFailure(stdout_fd, @"elevation", auth, authErr, compact, quiet);
     }
 
     NSDate *start, *end;
@@ -1316,10 +1391,9 @@ static int cmd_elevation(int argc, char **argv, int stdout_fd, BOOL compact, BOO
 static int cmd_weight(int argc, char **argv, int stdout_fd, BOOL compact, BOOL quiet) {
     HKQuantityType *weightType = [HKQuantityType quantityTypeForIdentifier:HKQuantityTypeIdentifierBodyMass];
     NSString *authErr = nil;
-    if (!requestHealthKitAccess([NSSet setWithObject:weightType], nil, &authErr)) {
-        noff_emit_json(stdout_fd, noff_json_error(TOOL_NAME, @"weight",
-                       NOFF_ERR_AUTHORIZATION_DENIED, authErr), compact, quiet);
-        return NOFF_EXIT_AUTH_DENIED;
+    NoffHKAuthResult auth = requestHealthKitAccessResult([NSSet setWithObject:weightType], nil, &authErr);
+    if (auth != NoffHKAuthGranted) {
+        return hkEmitAuthFailure(stdout_fd, @"weight", auth, authErr, compact, quiet);
     }
 
     NSDate *start, *end;
@@ -1377,10 +1451,9 @@ static int cmd_weight(int argc, char **argv, int stdout_fd, BOOL compact, BOOL q
 static int cmd_blood_oxygen(int argc, char **argv, int stdout_fd, BOOL compact, BOOL quiet) {
     HKQuantityType *spo2Type = [HKQuantityType quantityTypeForIdentifier:HKQuantityTypeIdentifierOxygenSaturation];
     NSString *authErr = nil;
-    if (!requestHealthKitAccess([NSSet setWithObject:spo2Type], nil, &authErr)) {
-        noff_emit_json(stdout_fd, noff_json_error(TOOL_NAME, @"blood-oxygen",
-                       NOFF_ERR_AUTHORIZATION_DENIED, authErr), compact, quiet);
-        return NOFF_EXIT_AUTH_DENIED;
+    NoffHKAuthResult auth = requestHealthKitAccessResult([NSSet setWithObject:spo2Type], nil, &authErr);
+    if (auth != NoffHKAuthGranted) {
+        return hkEmitAuthFailure(stdout_fd, @"blood-oxygen", auth, authErr, compact, quiet);
     }
 
     NSDate *start, *end;
@@ -1433,10 +1506,9 @@ static int cmd_blood_oxygen(int argc, char **argv, int stdout_fd, BOOL compact, 
 static int cmd_blood_glucose(int argc, char **argv, int stdout_fd, BOOL compact, BOOL quiet) {
     HKQuantityType *bgType = [HKQuantityType quantityTypeForIdentifier:HKQuantityTypeIdentifierBloodGlucose];
     NSString *authErr = nil;
-    if (!requestHealthKitAccess([NSSet setWithObject:bgType], nil, &authErr)) {
-        noff_emit_json(stdout_fd, noff_json_error(TOOL_NAME, @"blood-glucose",
-                       NOFF_ERR_AUTHORIZATION_DENIED, authErr), compact, quiet);
-        return NOFF_EXIT_AUTH_DENIED;
+    NoffHKAuthResult auth = requestHealthKitAccessResult([NSSet setWithObject:bgType], nil, &authErr);
+    if (auth != NoffHKAuthGranted) {
+        return hkEmitAuthFailure(stdout_fd, @"blood-glucose", auth, authErr, compact, quiet);
     }
 
     NSDate *start, *end;
@@ -1504,10 +1576,9 @@ static int cmd_blood_glucose(int argc, char **argv, int stdout_fd, BOOL compact,
 static int cmd_hrv(int argc, char **argv, int stdout_fd, BOOL compact, BOOL quiet) {
     HKQuantityType *hrvType = [HKQuantityType quantityTypeForIdentifier:HKQuantityTypeIdentifierHeartRateVariabilitySDNN];
     NSString *authErr = nil;
-    if (!requestHealthKitAccess([NSSet setWithObject:hrvType], nil, &authErr)) {
-        noff_emit_json(stdout_fd, noff_json_error(TOOL_NAME, @"hrv",
-                       NOFF_ERR_AUTHORIZATION_DENIED, authErr), compact, quiet);
-        return NOFF_EXIT_AUTH_DENIED;
+    NoffHKAuthResult auth = requestHealthKitAccessResult([NSSet setWithObject:hrvType], nil, &authErr);
+    if (auth != NoffHKAuthGranted) {
+        return hkEmitAuthFailure(stdout_fd, @"hrv", auth, authErr, compact, quiet);
     }
 
     NSDate *start, *end;
@@ -1560,10 +1631,9 @@ static int cmd_hrv(int argc, char **argv, int stdout_fd, BOOL compact, BOOL quie
 static int cmd_resting_heart_rate(int argc, char **argv, int stdout_fd, BOOL compact, BOOL quiet) {
     HKQuantityType *rhrType = [HKQuantityType quantityTypeForIdentifier:HKQuantityTypeIdentifierRestingHeartRate];
     NSString *authErr = nil;
-    if (!requestHealthKitAccess([NSSet setWithObject:rhrType], nil, &authErr)) {
-        noff_emit_json(stdout_fd, noff_json_error(TOOL_NAME, @"resting-heart-rate",
-                       NOFF_ERR_AUTHORIZATION_DENIED, authErr), compact, quiet);
-        return NOFF_EXIT_AUTH_DENIED;
+    NoffHKAuthResult auth = requestHealthKitAccessResult([NSSet setWithObject:rhrType], nil, &authErr);
+    if (auth != NoffHKAuthGranted) {
+        return hkEmitAuthFailure(stdout_fd, @"resting-heart-rate", auth, authErr, compact, quiet);
     }
 
     NSDate *start, *end;
@@ -1617,10 +1687,9 @@ static int cmd_resting_heart_rate(int argc, char **argv, int stdout_fd, BOOL com
 static int cmd_vo2_max(int argc, char **argv, int stdout_fd, BOOL compact, BOOL quiet) {
     HKQuantityType *vo2Type = [HKQuantityType quantityTypeForIdentifier:HKQuantityTypeIdentifierVO2Max];
     NSString *authErr = nil;
-    if (!requestHealthKitAccess([NSSet setWithObject:vo2Type], nil, &authErr)) {
-        noff_emit_json(stdout_fd, noff_json_error(TOOL_NAME, @"vo2-max",
-                       NOFF_ERR_AUTHORIZATION_DENIED, authErr), compact, quiet);
-        return NOFF_EXIT_AUTH_DENIED;
+    NoffHKAuthResult auth = requestHealthKitAccessResult([NSSet setWithObject:vo2Type], nil, &authErr);
+    if (auth != NoffHKAuthGranted) {
+        return hkEmitAuthFailure(stdout_fd, @"vo2-max", auth, authErr, compact, quiet);
     }
 
     NSDate *start, *end;
@@ -1691,10 +1760,9 @@ static int cmd_nutrition(int argc, char **argv, int stdout_fd, int stderr_fd, BO
 
     HKQuantityType *qType = [HKQuantityType quantityTypeForIdentifier:typeId];
     NSString *authErr = nil;
-    if (!requestHealthKitAccess([NSSet setWithObject:qType], nil, &authErr)) {
-        noff_emit_json(stdout_fd, noff_json_error(TOOL_NAME, @"nutrition",
-                       NOFF_ERR_AUTHORIZATION_DENIED, authErr), compact, quiet);
-        return NOFF_EXIT_AUTH_DENIED;
+    NoffHKAuthResult auth = requestHealthKitAccessResult([NSSet setWithObject:qType], nil, &authErr);
+    if (auth != NoffHKAuthGranted) {
+        return hkEmitAuthFailure(stdout_fd, @"nutrition", auth, authErr, compact, quiet);
     }
 
     NSDate *start, *end;
@@ -1757,10 +1825,9 @@ static int cmd_nutrition(int argc, char **argv, int stdout_fd, int stderr_fd, BO
 static int cmd_summary(int argc, char **argv, int stdout_fd, BOOL compact, BOOL quiet) {
     HKActivitySummaryType *summaryType = [HKActivitySummaryType activitySummaryType];
     NSString *authErr = nil;
-    if (!requestHealthKitAccess([NSSet setWithObject:summaryType], nil, &authErr)) {
-        noff_emit_json(stdout_fd, noff_json_error(TOOL_NAME, @"summary",
-                       NOFF_ERR_AUTHORIZATION_DENIED, authErr), compact, quiet);
-        return NOFF_EXIT_AUTH_DENIED;
+    NoffHKAuthResult auth = requestHealthKitAccessResult([NSSet setWithObject:summaryType], nil, &authErr);
+    if (auth != NoffHKAuthGranted) {
+        return hkEmitAuthFailure(stdout_fd, @"summary", auth, authErr, compact, quiet);
     }
 
     // Default to 7 days for summary
@@ -2805,14 +2872,17 @@ static int cmd_log_blood_pressure(int argc, char **argv, int stdout_fd, BOOL com
     HKQuantityType *diaType = [HKQuantityType quantityTypeForIdentifier:HKQuantityTypeIdentifierBloodPressureDiastolic];
     HKCorrelationType *bpType = [HKCorrelationType correlationTypeForIdentifier:HKCorrelationTypeIdentifierBloodPressure];
 
-    // Request authorization for all three types in one prompt. Correlation
-    // share-auth piggybacks on the constituent quantity types.
-    NSSet *writeTypes = [NSSet setWithObjects:sysType, diaType, bpType, nil];
+    // [GH#393] Authorize the two constituent quantity types only. HealthKit
+    // refuses a correlation type in either set — passing bpType here raised
+    // NSInvalidArgumentException on every call, which surfaced as
+    // authorization_denied no matter what the user allowed in Settings. Write
+    // access to both halves is what saving the correlation needs; bpType is
+    // only the container the samples are saved in.
+    NSSet *writeTypes = [NSSet setWithObjects:sysType, diaType, nil];
     NSString *authErr = nil;
-    if (!requestHealthKitAccess(writeTypes, writeTypes, &authErr)) {
-        noff_emit_json(stdout_fd, noff_json_error(TOOL_NAME, @"log-blood-pressure",
-                       NOFF_ERR_AUTHORIZATION_DENIED, authErr), compact, quiet);
-        return NOFF_EXIT_AUTH_DENIED;
+    NoffHKAuthResult auth = requestHealthKitAccessResult(writeTypes, writeTypes, &authErr);
+    if (auth != NoffHKAuthGranted) {
+        return hkEmitAuthFailure(stdout_fd, @"log-blood-pressure", auth, authErr, compact, quiet);
     }
 
     NSString *dateStr = noff_find_arg(argc, argv, "--date");
@@ -2847,11 +2917,10 @@ static int cmd_log_blood_pressure(int argc, char **argv, int stdout_fd, BOOL com
     }
 
     // Save the correlation; HealthKit persists the contained quantity samples
-    // as part of the atomic write. saveWithAuthRetry's second arg is only used
-    // to re-request authorization on -25300; passing sysType is sufficient
-    // because the retry path requests both constituent types via the set.
+    // as part of the atomic write. The retry path re-requests BOTH halves: the
+    // save needs write access to each.
     NSError *saveErr = nil;
-    if (!saveWithAuthRetry(bpCorrelation, sysType, &saveErr)) {
+    if (!saveWithAuthRetry(bpCorrelation, writeTypes, &saveErr)) {
         BOOL authDenied = isHealthKitAuthError(saveErr);
         NSString *msg = saveErr.localizedDescription ?: @"Failed to save blood-pressure correlation";
         if (authDenied) {
@@ -2928,11 +2997,10 @@ static int cmd_log(int argc, char **argv, int stdout_fd, int stderr_fd, BOOL com
 
         HKQuantityType *qType = [HKQuantityType quantityTypeForIdentifier:typeId];
         NSString *authErr = nil;
-        if (!requestHealthKitAccess([NSSet setWithObject:qType],
-                                     [NSSet setWithObject:qType], &authErr)) {
-            noff_emit_json(stdout_fd, noff_json_error(TOOL_NAME, @"log",
-                           NOFF_ERR_AUTHORIZATION_DENIED, authErr), compact, quiet);
-            return NOFF_EXIT_AUTH_DENIED;
+        NoffHKAuthResult auth = requestHealthKitAccessResult([NSSet setWithObject:qType],
+                                     [NSSet setWithObject:qType], &authErr);
+        if (auth != NoffHKAuthGranted) {
+            return hkEmitAuthFailure(stdout_fd, @"log", auth, authErr, compact, quiet);
         }
 
         NSString *dateStr = noff_find_arg(argc, argv, "--date");
@@ -2954,7 +3022,7 @@ static int cmd_log(int argc, char **argv, int stdout_fd, int stderr_fd, BOOL com
         }
 
         NSError *saveErr = nil;
-        if (!saveWithAuthRetry(sample, qType, &saveErr)) {
+        if (!saveWithAuthRetry(sample, [NSSet setWithObject:qType], &saveErr)) {
             BOOL authDenied = isHealthKitAuthError(saveErr);
             NSString *msg = saveErr.localizedDescription ?: @"Failed to save sample";
             if (authDenied) {
@@ -3001,11 +3069,10 @@ static int cmd_log(int argc, char **argv, int stdout_fd, int stderr_fd, BOOL com
 
         HKCategoryType *cType = [HKCategoryType categoryTypeForIdentifier:catId];
         NSString *authErr = nil;
-        if (!requestHealthKitAccess([NSSet setWithObject:cType],
-                                     [NSSet setWithObject:cType], &authErr)) {
-            noff_emit_json(stdout_fd, noff_json_error(TOOL_NAME, @"log",
-                           NOFF_ERR_AUTHORIZATION_DENIED, authErr), compact, quiet);
-            return NOFF_EXIT_AUTH_DENIED;
+        NoffHKAuthResult auth = requestHealthKitAccessResult([NSSet setWithObject:cType],
+                                     [NSSet setWithObject:cType], &authErr);
+        if (auth != NoffHKAuthGranted) {
+            return hkEmitAuthFailure(stdout_fd, @"log", auth, authErr, compact, quiet);
         }
 
         NSDate *startDate, *endDate;
@@ -3037,7 +3104,7 @@ static int cmd_log(int argc, char **argv, int stdout_fd, int stderr_fd, BOOL com
         }
 
         NSError *saveErr = nil;
-        if (!saveWithAuthRetry(sample, cType, &saveErr)) {
+        if (!saveWithAuthRetry(sample, [NSSet setWithObject:cType], &saveErr)) {
             BOOL authDenied = isHealthKitAuthError(saveErr);
             NSString *msg = saveErr.localizedDescription ?: @"Failed to save category sample";
             if (authDenied) {
@@ -3134,11 +3201,10 @@ static int cmd_delete(int argc, char **argv, int stdout_fd, int stderr_fd, BOOL 
 
     // Authorization: deleting needs share (write) access, same as log.
     NSString *authErr = nil;
-    if (!requestHealthKitAccess([NSSet setWithObject:sampleType],
-                                 [NSSet setWithObject:sampleType], &authErr)) {
-        noff_emit_json(stdout_fd, noff_json_error(TOOL_NAME, @"delete",
-                       NOFF_ERR_AUTHORIZATION_DENIED, authErr), compact, quiet);
-        return NOFF_EXIT_AUTH_DENIED;
+    NoffHKAuthResult auth = requestHealthKitAccessResult([NSSet setWithObject:sampleType],
+                                 [NSSet setWithObject:sampleType], &authErr);
+    if (auth != NoffHKAuthGranted) {
+        return hkEmitAuthFailure(stdout_fd, @"delete", auth, authErr, compact, quiet);
     }
 
     // Build predicate: --id takes precedence over date range.
@@ -3261,10 +3327,9 @@ static int cmd_delete(int argc, char **argv, int stdout_fd, int stderr_fd, BOOL 
 static int cmd_basal_energy(int argc, char **argv, int stdout_fd, BOOL compact, BOOL quiet) {
     HKQuantityType *basalType = [HKQuantityType quantityTypeForIdentifier:HKQuantityTypeIdentifierBasalEnergyBurned];
     NSString *authErr = nil;
-    if (!requestHealthKitAccess([NSSet setWithObject:basalType], nil, &authErr)) {
-        noff_emit_json(stdout_fd, noff_json_error(TOOL_NAME, @"basal-energy",
-                       NOFF_ERR_AUTHORIZATION_DENIED, authErr), compact, quiet);
-        return NOFF_EXIT_AUTH_DENIED;
+    NoffHKAuthResult auth = requestHealthKitAccessResult([NSSet setWithObject:basalType], nil, &authErr);
+    if (auth != NoffHKAuthGranted) {
+        return hkEmitAuthFailure(stdout_fd, @"basal-energy", auth, authErr, compact, quiet);
     }
 
     NSDate *start, *end;
@@ -3355,10 +3420,9 @@ static int cmd_characteristic(int argc, char **argv, int stdout_fd, BOOL compact
     }
 
     NSString *authErr = nil;
-    if (!requestHealthKitAccess(readSet, nil, &authErr)) {
-        noff_emit_json(stdout_fd, noff_json_error(TOOL_NAME, @"characteristic",
-                       NOFF_ERR_AUTHORIZATION_DENIED, authErr), compact, quiet);
-        return NOFF_EXIT_AUTH_DENIED;
+    NoffHKAuthResult auth = requestHealthKitAccessResult(readSet, nil, &authErr);
+    if (auth != NoffHKAuthGranted) {
+        return hkEmitAuthFailure(stdout_fd, @"characteristic", auth, authErr, compact, quiet);
     }
 
     NSMutableDictionary *data = [NSMutableDictionary dictionary];
@@ -3448,10 +3512,9 @@ static int cmd_ecg(int argc, char **argv, int stdout_fd, BOOL compact, BOOL quie
     if (@available(iOS 14.0, *)) {
         HKElectrocardiogramType *ecgType = [HKObjectType electrocardiogramType];
         NSString *authErr = nil;
-        if (!requestHealthKitAccess([NSSet setWithObject:ecgType], nil, &authErr)) {
-            noff_emit_json(stdout_fd, noff_json_error(TOOL_NAME, @"ecg",
-                           NOFF_ERR_AUTHORIZATION_DENIED, authErr), compact, quiet);
-            return NOFF_EXIT_AUTH_DENIED;
+        NoffHKAuthResult auth = requestHealthKitAccessResult([NSSet setWithObject:ecgType], nil, &authErr);
+        if (auth != NoffHKAuthGranted) {
+            return hkEmitAuthFailure(stdout_fd, @"ecg", auth, authErr, compact, quiet);
         }
 
         NSDate *start, *end;
@@ -3523,10 +3586,9 @@ static int cmd_audiogram(int argc, char **argv, int stdout_fd, BOOL compact, BOO
     if (@available(iOS 13.0, *)) {
         HKSampleType *audioType = [HKObjectType audiogramSampleType];
         NSString *authErr = nil;
-        if (!requestHealthKitAccess([NSSet setWithObject:audioType], nil, &authErr)) {
-            noff_emit_json(stdout_fd, noff_json_error(TOOL_NAME, @"audiogram",
-                           NOFF_ERR_AUTHORIZATION_DENIED, authErr), compact, quiet);
-            return NOFF_EXIT_AUTH_DENIED;
+        NoffHKAuthResult auth = requestHealthKitAccessResult([NSSet setWithObject:audioType], nil, &authErr);
+        if (auth != NoffHKAuthGranted) {
+            return hkEmitAuthFailure(stdout_fd, @"audiogram", auth, authErr, compact, quiet);
         }
 
         NSDate *start, *end;
@@ -3584,10 +3646,9 @@ static int cmd_vision_rx(int argc, char **argv, int stdout_fd, BOOL compact, BOO
     if (@available(iOS 16.0, *)) {
         HKSampleType *visionType = [HKObjectType visionPrescriptionType];
         NSString *authErr = nil;
-        if (!requestHealthKitAccess([NSSet setWithObject:visionType], nil, &authErr)) {
-            noff_emit_json(stdout_fd, noff_json_error(TOOL_NAME, @"vision-rx",
-                           NOFF_ERR_AUTHORIZATION_DENIED, authErr), compact, quiet);
-            return NOFF_EXIT_AUTH_DENIED;
+        NoffHKAuthResult auth = requestHealthKitAccessResult([NSSet setWithObject:visionType], nil, &authErr);
+        if (auth != NoffHKAuthGranted) {
+            return hkEmitAuthFailure(stdout_fd, @"vision-rx", auth, authErr, compact, quiet);
         }
 
         NSDate *start, *end;
@@ -3650,10 +3711,9 @@ static int cmd_assessment(int argc, char **argv, int stdout_fd, BOOL compact, BO
         if (wantPHQ && phqType) [readSet addObject:phqType];
 
         NSString *authErr = nil;
-        if (!requestHealthKitAccess(readSet, nil, &authErr)) {
-            noff_emit_json(stdout_fd, noff_json_error(TOOL_NAME, @"assessment",
-                           NOFF_ERR_AUTHORIZATION_DENIED, authErr), compact, quiet);
-            return NOFF_EXIT_AUTH_DENIED;
+        NoffHKAuthResult auth = requestHealthKitAccessResult(readSet, nil, &authErr);
+        if (auth != NoffHKAuthGranted) {
+            return hkEmitAuthFailure(stdout_fd, @"assessment", auth, authErr, compact, quiet);
         }
 
         NSDate *start, *end;
@@ -3738,10 +3798,9 @@ static int cmd_state_of_mind(int argc, char **argv, int stdout_fd, BOOL compact,
     if (@available(iOS 18.0, *)) {
         HKSampleType *somType = [HKObjectType stateOfMindType];
         NSString *authErr = nil;
-        if (!requestHealthKitAccess([NSSet setWithObject:somType], nil, &authErr)) {
-            noff_emit_json(stdout_fd, noff_json_error(TOOL_NAME, @"state-of-mind",
-                           NOFF_ERR_AUTHORIZATION_DENIED, authErr), compact, quiet);
-            return NOFF_EXIT_AUTH_DENIED;
+        NoffHKAuthResult auth = requestHealthKitAccessResult([NSSet setWithObject:somType], nil, &authErr);
+        if (auth != NoffHKAuthGranted) {
+            return hkEmitAuthFailure(stdout_fd, @"state-of-mind", auth, authErr, compact, quiet);
         }
 
         NSDate *start, *end;
@@ -3973,10 +4032,9 @@ static int cmd_batch(int argc, char **argv, int stdout_fd, BOOL compact, BOOL qu
 
     // One authorization prompt for all requested metrics.
     NSString *authErr = nil;
-    if (!requestHealthKitAccess(readSet, nil, &authErr)) {
-        noff_emit_json(stdout_fd, noff_json_error(TOOL_NAME, @"batch",
-                       NOFF_ERR_AUTHORIZATION_DENIED, authErr), compact, quiet);
-        return NOFF_EXIT_AUTH_DENIED;
+    NoffHKAuthResult auth = requestHealthKitAccessResult(readSet, nil, &authErr);
+    if (auth != NoffHKAuthGranted) {
+        return hkEmitAuthFailure(stdout_fd, @"batch", auth, authErr, compact, quiet);
     }
 
     NSDate *start, *end;

@@ -194,7 +194,17 @@ func parseClaudeVersion(_ modelId: String) -> (major: Int, minor: Int)? {
     return (major, minor)
 }
 func modelUsesAdaptiveThinking(_ id: String) -> Bool { guard let v = parseClaudeVersion(id) else { return false }; return v.major > 4 || (v.major == 4 && v.minor >= 6) }
-func modelAcceptsExplicitThinkingDisabled(_ id: String) -> Bool { guard let v = parseClaudeVersion(id) else { return false }; return v.major == 4 && v.minor >= 6 }
+enum OffThinking: Equatable { case omit, disabled, betweenTools, lowEffort }
+func offThinking(for modelId: String) -> OffThinking {
+    guard let v = parseClaudeVersion(modelId) else { return .omit }
+    if v.major < 4 || (v.major == 4 && v.minor < 6) { return .omit }
+    if v.major == 4 { return .disabled }
+    if v.major == 5, modelId.lowercased().contains("sonnet") {
+        if v.minor == 0 { return .disabled }
+        if v.minor == 5 { return .betweenTools }
+    }
+    return .lowEffort
+}
 func thinkingEffort(for level: ThinkingLevel) -> String { switch level { case .off, .low: return "low"; case .medium: return "medium"; case .high: return "high"; case .xhigh: return "xhigh"; case .max: return "max" } }
 func anthropicThinkingShape(modelId: String, supportsReasoning: Bool?, level: ThinkingLevel, maxTokens: Int) -> [String: Any] {
     let adaptive = modelUsesAdaptiveThinking(modelId)
@@ -202,12 +212,18 @@ func anthropicThinkingShape(modelId: String, supportsReasoning: Bool?, level: Th
         if adaptive { return ["effort": thinkingEffort(for: level)] }
         return ["budget_tokens": min(32768, maxTokens - 1)]
     }
-    return modelAcceptsExplicitThinkingDisabled(modelId) ? ["disabled": true] : [:]
+    return offThinking(for: modelId) == .omit ? [:] : ["disabled": true]
 }
-/// The wire-side re-derivation in RequestBodyPatcher.injectThinkingConfig.
+/// The wire-side re-derivation in RequestBodyPatcher.injectThinkingConfig: the
+/// body fields an off intent (with no enable intent) writes, or nil for none.
 func wireThinkingField(modelId: String, disabledIntent: Bool) -> [String: Any]? {
-    guard disabledIntent, modelUsesAdaptiveThinking(modelId), modelAcceptsExplicitThinkingDisabled(modelId) else { return nil }
-    return ["type": "disabled"]
+    guard disabledIntent else { return nil }
+    switch offThinking(for: modelId) {
+    case .omit: return nil
+    case .disabled: return ["thinking": ["type": "disabled"]]
+    case .betweenTools: return ["thinking": ["type": "between_tools"]]
+    case .lowEffort: return ["thinking": ["type": "adaptive", "display": "summarized"], "output_config": ["effort": "low"]]
+    }
 }
 
 // MARK: - Row 6: DeepSeek rule matching
@@ -398,16 +414,22 @@ do {
     check("supportsReasoning == false vetoes the echo gate", !veto.include && !veto.placeholder)
 }
 
-print("▶️  5. Claude 5 with thinking off: no `thinking.type=disabled`")
+print("▶️  5. thinking off per model: never a literal the model 400s on, never an absent field on Claude 5")
 do {
-    checkEq("claude-fable-5 off → empty shape (absent field = adaptive default)", anthropicThinkingShape(modelId: "claude-fable-5", supportsReasoning: true, level: .off, maxTokens: 8192).keys.sorted(), [])
-    checkEq("claude-opus-5 off → empty shape", anthropicThinkingShape(modelId: "claude-opus-5", supportsReasoning: true, level: .off, maxTokens: 8192).keys.sorted(), [])
-    checkEq("claude-fable-5-1 off → empty shape", anthropicThinkingShape(modelId: "claude-fable-5-1", supportsReasoning: true, level: .off, maxTokens: 8192).keys.sorted(), [])
-    checkEq("claude-opus-4-6 off → explicit disabled (server default is ON)", anthropicThinkingShape(modelId: "claude-opus-4-6", supportsReasoning: true, level: .off, maxTokens: 8192).keys.sorted(), ["disabled"])
-    checkEq("claude-opus-4.8 (dotted) off → explicit disabled", anthropicThinkingShape(modelId: "anthropic/claude-opus-4.8", supportsReasoning: true, level: .off, maxTokens: 8192).keys.sorted(), ["disabled"])
+    // [T-claude5-thinking-off] An absent field is NOT off on Claude 5 (adaptive at the
+    // default effort — Sonnet 5.5 voice correction timed out on it), so every adaptive
+    // model states the intent; the wire picks the literal from Anthropic's model table.
+    for id in ["claude-fable-5", "claude-opus-5", "claude-fable-5-1", "claude-sonnet-5-5", "claude-opus-4-6", "anthropic/claude-opus-4.8"] {
+        checkEq("\(id) off → explicit off intent", anthropicThinkingShape(modelId: id, supportsReasoning: true, level: .off, maxTokens: 8192).keys.sorted(), ["disabled"])
+    }
     checkEq("claude-sonnet-4-5 off → nothing (legacy default is off)", anthropicThinkingShape(modelId: "claude-sonnet-4-5", supportsReasoning: true, level: .off, maxTokens: 8192).keys.sorted(), [])
-    check("wire re-derivation agrees: Claude 5 never gets the literal", wireThinkingField(modelId: "claude-fable-5", disabledIntent: true) == nil)
-    checkEq("wire re-derivation agrees: 4.6 gets it", json(wireThinkingField(modelId: "claude-opus-4-6", disabledIntent: true)!), #"{"type":"disabled"}"#)
+    checkEq("wire: 4.6 → disabled", json(wireThinkingField(modelId: "claude-opus-4-6", disabledIntent: true)!), #"{"thinking":{"type":"disabled"}}"#)
+    checkEq("wire: Sonnet 5 → disabled", json(wireThinkingField(modelId: "claude-sonnet-5", disabledIntent: true)!), #"{"thinking":{"type":"disabled"}}"#)
+    checkEq("wire: Sonnet 5.5 → between_tools", json(wireThinkingField(modelId: "claude-sonnet-5-5", disabledIntent: true)!), #"{"thinking":{"type":"between_tools"}}"#)
+    for id in ["claude-fable-5", "claude-opus-5", "claude-opus-5-5"] {
+        checkEq("wire: \(id) → adaptive + low, never the disabled literal", json(wireThinkingField(modelId: id, disabledIntent: true)!), #"{"output_config":{"effort":"low"},"thinking":{"display":"summarized","type":"adaptive"}}"#)
+    }
+    check("wire: legacy 4.5 writes nothing", wireThinkingField(modelId: "claude-sonnet-4-5", disabledIntent: true) == nil)
     checkEq("claude 5 ON → adaptive effort", anthropicThinkingShape(modelId: "claude-fable-5", supportsReasoning: true, level: .high, maxTokens: 8192)["effort"] as? String, "high")
     checkEq("claude 4.5 ON → budget", anthropicThinkingShape(modelId: "claude-sonnet-4-5", supportsReasoning: true, level: .medium, maxTokens: 8192).keys.sorted(), ["budget_tokens"])
     check("non-Claude id on the Anthropic protocol (MiniMax-M3) → no disabled literal", anthropicThinkingShape(modelId: "MiniMax-M3", supportsReasoning: true, level: .off, maxTokens: 8192).isEmpty)
@@ -454,9 +476,9 @@ do {
         check("Anthropic: echo gated on the interleaved field, not the toggle", anth.contains("let echoReasoning           = modelMayReason && modelRequiresInterleave"))
         check("Anthropic: never on the official endpoint", anth.contains("!provider.isOfficialAnthropicEndpoint,"))
         check("patcher splices thinking at content[0]", http.contains("contentArray.insert([\n                \"type\": \"thinking\",\n                \"thinking\": thinkingText,\n            ], at: 0)"))
-        check("Claude 5 excluded from the disabled literal (resolver)", res.contains("return AnthropicProvider.modelAcceptsExplicitThinkingDisabled(modelId)\n            ? [\"disabled\": true]\n            : [:]"))
-        check("Claude 5 excluded from the disabled literal (wire)", http.contains("AnthropicProvider.modelAcceptsExplicitThinkingDisabled(modelId),"))
-        check("accepts-disabled is 4.6 ≤ v < 5", ap.contains("return v.major == 4 && v.minor >= 6"))
+        check("resolver states off for every non-legacy model", res.contains("return AnthropicProvider.offThinking(for: modelId) == .omit\n            ? [:]\n            : [\"disabled\": true]"))
+        check("wire encodes off per model", http.contains("switch AnthropicProvider.offThinking(for: modelId) {") && http.contains("thinking = [\"type\": \"between_tools\"]") && http.contains("effort = \"low\""))
+        check("offThinking ports the shipped table", ap.contains("        if v.major == 4 { return .disabled }\n        if v.major == 5, modelId.lowercased().contains(\"sonnet\") {\n            if v.minor == 0 { return .disabled }\n            if v.minor == 5 { return .betweenTools }\n        }\n        return .lowEffort"))
         check("deepseek-flash sibling rule registered", res.contains("scope: .modelPattern(\"deepseek-flash*\")"))
         // [T-ios-cerebras-reasoning-400] issue #361.
         check("chat: Cerebras also forbids the field",

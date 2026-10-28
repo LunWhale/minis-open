@@ -20,6 +20,23 @@
 // Android twin: app/src/test/java/com/openminis/app/data/CompactionDecisionTest.kt
 import Foundation
 
+/// The sources that used to be the single file Agent/Chat/AIChatViewModel.swift -
+/// the class body plus the AIChatViewModel+<Concern>.swift files it was split
+/// into (the older extension files are NOT included) - read as one text.
+func chatViewModelSource() -> String {
+    let chat = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Agent/Chat")
+    let names = ["AIChatViewModel", "AIChatViewModel+Lifecycle", "AIChatViewModel+ContextUsage",
+                 "AIChatViewModel+StreamingUI", "AIChatViewModel+Speech", "AIChatViewModel+AutoPlayAudio",
+                 "AIChatViewModel+SystemPrompt", "AIChatViewModel+Send", "AIChatViewModel+Rerun",
+                 "AIChatViewModel+EditMessage", "AIChatViewModel+Cancel", "AIChatViewModel+PromptQueue",
+                 "AIChatViewModel+DebugDumps", "AIChatViewModel+TurnCompletion", "AIChatViewModel+AgentLoop",
+                 "AIChatViewModel+ThinkingLevel", "LLMProviderError"]
+    return names.compactMap { try? String(contentsOf: chat.appendingPathComponent($0 + ".swift"), encoding: .utf8) }
+        .joined(separator: "\n")
+}
+
 var failures = 0
 func check(_ label: String, _ cond: Bool) {
     print(cond ? "  ✅ \(label)" : "  ❌ \(label) — expected true, got false")
@@ -43,7 +60,8 @@ func source(_ rel: String) -> String {
 // MARK: - Port (verbatim; [0] checks it against Agent/Chat/ContextPolicy.swift)
 
 enum Port {
-    static let calibrationRange: ClosedRange<Double> = 0.8...3.0
+    static let calibrationRange: ClosedRange<Double> = 0.8...8.0
+    static let estimatorVersion = 3
     static let uncalibratedModelMargin = 1.2
     static let calibrationFallRate = 0.3
 
@@ -52,6 +70,9 @@ enum Port {
 
     struct CalibrationSample: Equatable {
         let reported: Int, estimated: Int, fixedTokens: Int, modelId: String?
+        var estimatorVersion: Int? = nil
+
+        var isCurrent: Bool { (estimatorVersion ?? 1) >= Port.estimatorVersion }
     }
 
     struct CalibrationState: Equatable {
@@ -105,6 +126,10 @@ enum Port {
     static func replayCalibration(_ samples: [CalibrationSample]) -> CalibrationState {
         var state = CalibrationState()
         for s in samples {
+            // [T-ctx-count-reasoning] A pair from an older estimator would
+            // replay its (too high) ratio onto an estimate that already
+            // contains what the ratio was compensating for.
+            guard s.isCurrent else { continue }
             guard let sample = calibrationRatio(reported: s.reported, estimated: s.estimated) else { continue }
             state.samples += 1
             if let model = s.modelId {
@@ -177,7 +202,8 @@ do {
         check("\(name) is verbatim", p != nil && p == q)
     }
     check("constants unchanged",
-          prod.contains("static let calibrationRange: ClosedRange<Double> = 0.8...3.0")
+          prod.contains("static let calibrationRange: ClosedRange<Double> = 0.8...8.0")
+          && prod.contains("static let estimatorVersion = 3")
           && prod.contains("static let uncalibratedModelMargin = 1.2")
           && prod.contains("static let calibrationFallRate = 0.3"))
 }
@@ -310,14 +336,14 @@ do {
     checkClose("unknown window: the stated count is trusted",
                Port.ratioAfterOverflow(current: 1.0, estimated: 100_000, requested: 200_000, window: 0), 2.0)
     checkClose("capped at the calibration ceiling",
-               Port.ratioAfterOverflow(current: 1.0, estimated: 10_000, requested: 500_000, window: window), 3.0)
+               Port.ratioAfterOverflow(current: 1.0, estimated: 10_000, requested: 500_000, window: window), 8.0)
 }
 
 // MARK: - [3] Reload / revert: replay and carry-over
 
 print("\n══ [3] reload replays the transcript; revert keeps what memory learned ══")
 func sample(_ reported: Int, _ estimated: Int = 100_000, model: String? = "a", fixed: Int = 9_000) -> Port.CalibrationSample {
-    .init(reported: reported, estimated: estimated, fixedTokens: fixed, modelId: model)
+    .init(reported: reported, estimated: estimated, fixedTokens: fixed, modelId: model, estimatorVersion: Port.estimatorVersion)
 }
 do {
     let samples = [sample(140_000), sample(100_000), sample(120_000), sample(90_000), sample(150_000)]
@@ -397,7 +423,7 @@ do {
 
 print("\n══ [5] the view model routes its decisions through these functions ══")
 do {
-    let vm = source("Agent/Chat/AIChatViewModel.swift")
+    let vm = chatViewModelSource()
     let compaction = source("Agent/Chat/AIChatViewModel+Compaction.swift")
     let persist = source("Agent/Chat/AIChatViewModel+Persistence.swift")
     check("in-loop exits use the shared table",

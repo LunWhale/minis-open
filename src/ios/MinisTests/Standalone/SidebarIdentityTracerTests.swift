@@ -22,6 +22,21 @@
 
 import Foundation
 
+/// The home screen sources - Views/ContentView/ plus Views/Settings/SettingsSheet.swift
+/// and AppearanceSettingsView.swift, formerly the single file ContentView.swift -
+/// read as one text with the files in path order.
+func contentViewSource() -> String {
+    let ios = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let dir = ios.appendingPathComponent("Views/ContentView")
+    var files = (FileManager.default.enumerator(at: dir, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? [])
+        .filter { $0.pathExtension == "swift" }
+    files += ["Views/Settings/SettingsSheet.swift", "Views/Settings/AppearanceSettingsView.swift"]
+        .map { ios.appendingPathComponent($0) }
+    return files.sorted { $0.path < $1.path }
+        .compactMap { try? String(contentsOf: $0, encoding: .utf8) }.joined(separator: "\n")
+}
+
 var failures = 0
 func check(_ l: String, _ a: Bool, _ e: Bool = true) {
     if a == e { print("  ✅ \(l)") } else { print("  ❌ \(l) — expected \(e), got \(a)"); failures += 1 }
@@ -30,7 +45,7 @@ func checkEq<T: Equatable>(_ l: String, _ a: T, _ b: T) {
     if a == b { print("  ✅ \(l)") } else { print("  ❌ \(l)\n     expected: \(b)\n     actual:   \(a)"); failures += 1 }
 }
 
-// MARK: - Model of the tracer's classification (mirrors ContentView.swift)
+// MARK: - Model of the tracer's classification (mirrors Views/ContentView/Sidebar/SidebarIdentityTracer.swift)
 
 struct Transition: Equatable {
     var sectionsRemoved: Set<String> = []
@@ -144,8 +159,9 @@ check("array compare short-circuits fast enough for a body pass", dt < 1.0)
 // MARK: - 6. Source invariants
 
 print("\n▶️  source invariants")
-let path = "../../Views/ContentView.swift"
-guard let src = try? String(contentsOfFile: path, encoding: .utf8) else {
+let path = "Views/ContentView/"
+let src = contentViewSource()
+guard !src.isEmpty else {
     print("  ❌ could not read \(path)"); failures += 1; exit(1)
 }
 

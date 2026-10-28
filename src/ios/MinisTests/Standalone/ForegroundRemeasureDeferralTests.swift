@@ -34,6 +34,19 @@
 // pure functions).
 import Foundation
 
+/// [T-messagelist-v3-split] CollectionViewMessageListV3.swift became the folder
+/// Agent/MessageList/CollectionViewMessageListV3/ (code moved verbatim); read all
+/// of it as one text, the way the single file used to be read.
+func messageListV3Source() -> String {
+    let ios = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let dir = ios.appendingPathComponent("Agent/MessageList/CollectionViewMessageListV3")
+    let files = (FileManager.default.enumerator(at: dir, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? [])
+        .filter { $0.pathExtension == "swift" }
+    return files.sorted { $0.path < $1.path }
+        .compactMap { try? String(contentsOf: $0, encoding: .utf8) }.joined(separator: "\n")
+}
+
 var failures = 0
 func check(_ label: String, _ cond: Bool) {
     print(cond ? "  ✅ \(label)" : "  ❌ \(label) — expected true, got false")
@@ -59,7 +72,7 @@ func codeOnly(_ src: String) -> String {
         .joined(separator: "\n")
 }
 
-let listRaw = source("Agent/MessageList/CollectionViewMessageListV3.swift")
+let listRaw = messageListV3Source()
 guard !listRaw.isEmpty else {
     print("  ⏭  sources not readable from \(#filePath)")
     exit(0)

@@ -194,7 +194,7 @@ ck("the cap exists", coord.contains("static let kMaxPartialOutputChars"))
 
 // Ordering: the notice must be appended to the output, not prepended.
 ck("notice is appended after the output",
-   coord.contains("timedOutput += \"\\n\\n\" + notice"))
+   coord.contains("return kept + \"\\n\\n\" + notice"))
 
 // The pre-start failure branch has no output to preserve and must stay as-is.
 ck("the pid<0 branch is untouched", coord.contains("errorMsg = \"Command timed out\""))

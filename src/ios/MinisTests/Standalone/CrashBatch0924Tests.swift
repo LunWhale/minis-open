@@ -15,6 +15,33 @@
 
 import Foundation
 
+/// [T-messagelist-v3-split] CollectionViewMessageListV3.swift became the folder
+/// Agent/MessageList/CollectionViewMessageListV3/ (code moved verbatim); read all
+/// of it as one text, the way the single file used to be read.
+func messageListV3Source() -> String {
+    let ios = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let dir = ios.appendingPathComponent("Agent/MessageList/CollectionViewMessageListV3")
+    let files = (FileManager.default.enumerator(at: dir, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? [])
+        .filter { $0.pathExtension == "swift" }
+    return files.sorted { $0.path < $1.path }
+        .compactMap { try? String(contentsOf: $0, encoding: .utf8) }.joined(separator: "\n")
+}
+
+/// The chat page's sources, read as one text: AIChatView.swift (state and
+/// `body`) first, then every other file under Views/Chat/AIChatView/ - the
+/// old single AIChatView.swift was split into them.
+func chatViewSource() -> String {
+    let ios = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let dir = ios.appendingPathComponent("Views/Chat/AIChatView")
+    let main = dir.appendingPathComponent("AIChatView.swift")
+    let rest = (FileManager.default.enumerator(at: dir, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? [])
+        .filter { $0.pathExtension == "swift" && $0.lastPathComponent != "AIChatView.swift" }
+        .sorted { $0.path < $1.path }
+    return ([main] + rest).compactMap { try? String(contentsOf: $0, encoding: .utf8) }.joined(separator: "\n")
+}
+
 var failures = 0
 func check(_ label: String, _ actual: Bool, _ expected: Bool = true) {
     if actual == expected { print("  ✅ \(label)") }
@@ -26,8 +53,8 @@ let root = URL(fileURLWithPath: #filePath)
 func src(_ rel: String) -> String {
     (try? String(contentsOf: root.appendingPathComponent(rel), encoding: .utf8)) ?? ""
 }
-let chat = src("Views/Chat/AIChatView.swift")
-let list = src("Agent/MessageList/CollectionViewMessageListV3.swift")
+let chat = chatViewSource()
+let list = messageListV3Source()
 check("sources found", !chat.isEmpty && !list.isEmpty)
 
 func slice(_ text: String, from start: String, to end: String) -> String {
@@ -73,9 +100,9 @@ let channel = slice(chat, from: "final class ComposerActionChannel {", to: "\n}"
 check("channel type exists and is a class", !channel.isEmpty)
 check("unwired channel answers 'not consumed' (keys keep default behaviour)",
       channel.contains("func send(_ action: Action) -> Bool { handler?(action) ?? false }"))
-check("channel is @State-held", chat.contains("@State private var composerActions = ComposerActionChannel()"))
+check("channel is @State-held", chat.contains("@State var composerActions = ComposerActionChannel()"))
 check("channel is wired on appear", chat.contains(".onAppear {\n            wireComposerActions()"))
-let wire = slice(chat, from: "private func wireComposerActions() {", to: "\n    }\n")
+let wire = slice(chat, from: "func wireComposerActions() {", to: "\n    }\n")
 for call in ["handleReturnKey()", "handleArrowUp()", "handleArrowDown()", "handleTabKey()", "handleCaretChange(caret)"] {
     check("wiring dispatches to \(call)", wire.contains(call))
 }

@@ -25,7 +25,7 @@ enum SwiftMathRenderer {
     /// Read from the key window because that is where BOTH inputs land: the
     /// system appearance, and the in-app Theme override, which
     /// `ContentView`'s `appearanceMode` picker writes straight onto
-    /// `window.overrideUserInterfaceStyle` (ContentView.swift:6948). Reading
+    /// `window.overrideUserInterfaceStyle` (Views/Settings/AppearanceSettingsView.swift). Reading
     /// `UITraitCollection.current` instead would miss the override whenever the
     /// user's theme disagrees with the system.
     ///
@@ -171,6 +171,144 @@ enum SwiftMathRenderer {
         return result
     }
 
+    // MARK: - Fitting to the line width
+
+    /// [T-math-overflow-wrap] Render `latex` so it is no wider than `maxWidth`.
+    ///
+    /// A formula wider than the line used to be drawn at full width and simply
+    /// clipped at the screen edge. Instead:
+    /// - Unicode-fallback formulas (anything with CJK) are text, so they wrap
+    ///   like text at `maxWidth`.
+    /// - SwiftMath formulas break into rows before top-level relations
+    ///   (`=`, `\approx`, `<`, …), packing as many terms per row as fit.
+    /// - A row that still does not fit (one huge term) is scaled down.
+    /// Returns nil when the formula cannot be rendered at all. Main thread for
+    /// the SwiftMath path (MTMathUILabel is UIKit); off-main it only scales.
+    static func renderFitting(latex: String, displayMode: Bool, fontSize: CGFloat = 17,
+                              maxWidth: CGFloat) -> SwiftMathRenderResult? {
+        _ = cacheSetup
+        let width = floor(maxWidth)
+        guard width > 20 else { return nil }
+        let key = ("W\(Int(width)):" + cacheKey(latex: latex, displayMode: displayMode, fontSize: fontSize)) as NSString
+        if let cached = cache.object(forKey: key) { return cached }
+
+        let result: SwiftMathRenderResult
+        if let full = render(latex: latex, displayMode: displayMode, fontSize: fontSize) {
+            if full.size.width <= width { return full }
+            guard Thread.isMainThread else { return scaled(full, toWidth: width) }
+            result = wrapAtRelations(latex: latex, full: full, displayMode: displayMode,
+                                     fontSize: fontSize, width: width)
+        } else if let wrapped = renderFallback(latex: latex, displayMode: displayMode,
+                                               fontSize: fontSize, wrapWidth: width) {
+            // A single unbreakable run can still exceed the width.
+            result = wrapped.size.width <= width ? wrapped : scaled(wrapped, toWidth: width)
+        } else {
+            return nil
+        }
+        if Thread.isMainThread { cache.setObject(result, forKey: key) }
+        return result
+    }
+
+    private static func wrapAtRelations(latex: String, full: SwiftMathRenderResult, displayMode: Bool,
+                                        fontSize: CGFloat, width: CGFloat) -> SwiftMathRenderResult {
+        let pieces = splitAtTopLevelRelations(latex)
+        guard pieces.count > 1 else { return scaled(full, toWidth: width) }
+        var rows: [SwiftMathRenderResult] = []
+        var current = ""
+        for piece in pieces {
+            let candidate = current + piece
+            if !current.isEmpty,
+               let r = render(latex: candidate, displayMode: displayMode, fontSize: fontSize),
+               r.size.width > width {
+                guard let row = render(latex: current, displayMode: displayMode, fontSize: fontSize) else {
+                    return scaled(full, toWidth: width)
+                }
+                rows.append(row)
+                current = piece
+            } else {
+                current = candidate
+            }
+        }
+        guard let last = render(latex: current, displayMode: displayMode, fontSize: fontSize) else {
+            return scaled(full, toWidth: width)
+        }
+        rows.append(last)
+        return stack(rows.map { $0.size.width > width ? scaled($0, toWidth: width) : $0 },
+                     centered: displayMode, width: width, gap: ceil(fontSize * 0.25))
+    }
+
+    /// Relations a formula may break before. Commands must not be followed by
+    /// a letter, so `\le` does not match `\left`.
+    private static let breakRelations = ["\\Leftrightarrow", "\\Rightarrow", "\\approx", "\\equiv",
+                                         "\\neq", "\\leq", "\\geq", "\\ne", "\\le", "\\ge",
+                                         "=", "<", ">"]
+
+    /// Split `latex` before every relation that sits at brace depth 0 and
+    /// outside `\left…\right`. Environments are left whole: their `&` / `\\`
+    /// layout must not be cut apart.
+    static func splitAtTopLevelRelations(_ latex: String) -> [String] {
+        guard !latex.contains("\\begin") else { return [latex] }
+        let chars = Array(latex)
+        var pieces: [String] = []
+        var current = ""
+        var depth = 0, leftRight = 0
+        var i = 0
+        func matches(_ token: String, at index: Int) -> Bool {
+            let t = Array(token)
+            guard index + t.count <= chars.count, Array(chars[index..<index + t.count]) == t else { return false }
+            if t.first == "\\", index + t.count < chars.count, chars[index + t.count].isLetter { return false }
+            return true
+        }
+        while i < chars.count {
+            let c = chars[i]
+            if c == "\\" && i + 1 < chars.count && (chars[i + 1] == "{" || chars[i + 1] == "}") {
+                current.append(c); current.append(chars[i + 1]); i += 2; continue
+            }
+            if c == "{" { depth += 1 } else if c == "}" { depth = max(0, depth - 1) }
+            if matches("\\left", at: i) { leftRight += 1 } else if matches("\\right", at: i) { leftRight = max(0, leftRight - 1) }
+            if depth == 0 && leftRight == 0 && !current.trimmingCharacters(in: .whitespaces).isEmpty,
+               let token = breakRelations.first(where: { matches($0, at: i) }) {
+                pieces.append(current)
+                current = token
+                i += token.count
+                continue
+            }
+            current.append(c)
+            i += 1
+        }
+        if !current.isEmpty { pieces.append(current) }
+        return pieces
+    }
+
+    static func scaled(_ r: SwiftMathRenderResult, toWidth width: CGFloat) -> SwiftMathRenderResult {
+        guard r.size.width > width, r.size.width > 0 else { return r }
+        let f = width / r.size.width
+        let size = CGSize(width: width, height: ceil(r.size.height * f))
+        let image = UIGraphicsImageRenderer(size: size).image { _ in
+            r.image.draw(in: CGRect(origin: .zero, size: size))
+        }
+        return SwiftMathRenderResult(image: image, size: size, baselineFromBottom: r.baselineFromBottom * f)
+    }
+
+    /// Rows stacked top to bottom; the baseline is the last row's, so an
+    /// inline formula's final row sits on the surrounding text's baseline.
+    private static func stack(_ rows: [SwiftMathRenderResult], centered: Bool, width: CGFloat,
+                              gap: CGFloat) -> SwiftMathRenderResult {
+        let w = min(width, rows.map(\.size.width).max() ?? 0)
+        let h = rows.map(\.size.height).reduce(0, +) + gap * CGFloat(rows.count - 1)
+        let size = CGSize(width: ceil(w), height: ceil(h))
+        let image = UIGraphicsImageRenderer(size: size).image { _ in
+            var y: CGFloat = 0
+            for row in rows {
+                let x = centered ? (size.width - row.size.width) / 2 : 0
+                row.image.draw(in: CGRect(x: x, y: y, width: row.size.width, height: row.size.height))
+                y += row.size.height + gap
+            }
+        }
+        return SwiftMathRenderResult(image: image, size: size,
+                                     baselineFromBottom: rows.last?.baselineFromBottom ?? 0)
+    }
+
     // MARK: - Internal
 
     private static func cacheKey(latex: String, displayMode: Bool, fontSize: CGFloat) -> String {
@@ -242,8 +380,10 @@ enum SwiftMathRenderer {
     /// Render a LaTeX formula to UIImage by converting to Unicode text
     /// and drawing with the system font. Handles CJK inside \text{} and
     /// common math operators that SwiftMath's Latin Modern font can't show.
-    static func renderFallback(latex: String, displayMode: Bool, fontSize: CGFloat = 17) -> SwiftMathRenderResult? {
-        let key = ("F:" + cacheKey(latex: latex, displayMode: displayMode, fontSize: fontSize)) as NSString
+    static func renderFallback(latex: String, displayMode: Bool, fontSize: CGFloat = 17,
+                               wrapWidth: CGFloat? = nil) -> SwiftMathRenderResult? {
+        let wrapTag = wrapWidth.map { "W\(Int($0)):" } ?? ""
+        let key = ("F:" + wrapTag + cacheKey(latex: latex, displayMode: displayMode, fontSize: fontSize)) as NSString
         if let cached = cache.object(forKey: key) { return cached }
 
         let unicode = latexToUnicode(latex)
@@ -261,7 +401,9 @@ enum SwiftMathRenderer {
         // giant wall of text laid straight into the transcript. The closing
         // searches no longer cross code boundaries, but keep a ceiling here so
         // any future runaway degrades into a clipped block rather than a page.
-        let constraintWidth: CGFloat = displayMode ? 600 : 2000
+        // [T-math-overflow-wrap] With a wrap width the text lays out in lines
+        // like body text instead of one line wider than the screen.
+        let constraintWidth: CGFloat = wrapWidth.map { max(1, $0 - 4) } ?? (displayMode ? 600 : 2000)
         let maxHeight: CGFloat = displayMode ? 2000 : 200
         let boundingRect = attributed.boundingRect(
             with: CGSize(width: constraintWidth, height: maxHeight),

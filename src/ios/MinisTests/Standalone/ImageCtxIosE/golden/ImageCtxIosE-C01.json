@@ -1,0 +1,446 @@
+{
+  "live" : {
+    "anthropic" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 30,
+              "head" : "What is the capital of France?",
+              "sha8" : "115049a2",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 6,
+              "head" : "Paris.",
+              "sha8" : "bdff8c41",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 13,
+              "head" : "And of Italy?",
+              "sha8" : "095af5e1",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "antigravity" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 30,
+              "head" : "What is the capital of France?",
+              "sha8" : "115049a2",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 6,
+              "head" : "Paris.",
+              "sha8" : "bdff8c41",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 13,
+              "head" : "And of Italy?",
+              "sha8" : "095af5e1",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "chat" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 30,
+              "head" : "What is the capital of France?",
+              "sha8" : "115049a2",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 6,
+              "head" : "Paris.",
+              "sha8" : "bdff8c41",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 13,
+              "head" : "And of Italy?",
+              "sha8" : "095af5e1",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "gemini" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 30,
+              "head" : "What is the capital of France?",
+              "sha8" : "115049a2",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 6,
+              "head" : "Paris.",
+              "sha8" : "bdff8c41",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 13,
+              "head" : "And of Italy?",
+              "sha8" : "095af5e1",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "responses" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 30,
+              "head" : "What is the capital of France?",
+              "sha8" : "115049a2",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 6,
+              "head" : "Paris.",
+              "sha8" : "bdff8c41",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 13,
+              "head" : "And of Italy?",
+              "sha8" : "095af5e1",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ]
+  },
+  "restart" : {
+    "anthropic" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 30,
+              "head" : "What is the capital of France?",
+              "sha8" : "115049a2",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 6,
+              "head" : "Paris.",
+              "sha8" : "bdff8c41",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 13,
+              "head" : "And of Italy?",
+              "sha8" : "095af5e1",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "antigravity" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 30,
+              "head" : "What is the capital of France?",
+              "sha8" : "115049a2",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 6,
+              "head" : "Paris.",
+              "sha8" : "bdff8c41",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 13,
+              "head" : "And of Italy?",
+              "sha8" : "095af5e1",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "chat" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 30,
+              "head" : "What is the capital of France?",
+              "sha8" : "115049a2",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 6,
+              "head" : "Paris.",
+              "sha8" : "bdff8c41",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 13,
+              "head" : "And of Italy?",
+              "sha8" : "095af5e1",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "gemini" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 30,
+              "head" : "What is the capital of France?",
+              "sha8" : "115049a2",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 6,
+              "head" : "Paris.",
+              "sha8" : "bdff8c41",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 13,
+              "head" : "And of Italy?",
+              "sha8" : "095af5e1",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "responses" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 30,
+              "head" : "What is the capital of France?",
+              "sha8" : "115049a2",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 6,
+              "head" : "Paris.",
+              "sha8" : "bdff8c41",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 13,
+              "head" : "And of Italy?",
+              "sha8" : "095af5e1",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ]
+  }
+}

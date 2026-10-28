@@ -215,6 +215,44 @@ let minisDocumentExtensions: Set<String> = [
     "rtf", "rtfd",
 ]
 
+/// [T-minis-folder-link] Where the in-app file browser should be rooted for a
+/// resolved minis:// folder, and how to label that root: the namespace
+/// directory (`/var/minis/<host>`, or `/var/minis/mounts/<name>` for a user
+/// mount), so the breadcrumb reads like the path the agent wrote and the user
+/// can walk up to the namespace but not out of it. Mirrors the bases
+/// `resolveMinisFileURL` resolves against; when the folder is somehow not
+/// under the expected base, the browser is rooted at the folder itself.
+@MainActor
+func minisFolderBrowseRoot(url: URL, resolved: URL, sessionId: String?) -> (root: URL, label: String) {
+    let host = url.host ?? ""
+    let components = url.path.split(separator: "/").map(String.init)
+    var label = "/var/minis/\(host)"
+    let base: URL?
+    switch host {
+    case "skills": base = AIChatViewModel.minisSkillsPersistentDir
+    case "memory": base = AIChatViewModel.minisMemoryPersistentDir
+    case "shared": base = AIChatViewModel.minisSharedPersistentDir
+    case "mounts":
+        if let name = components.first {
+            label += "/\(name)"
+            base = MountedFoldersManager.shared.resolvedURL(forName: name)
+        } else {
+            base = nil
+        }
+    default:
+        base = (sessionId ?? AIChatViewModel.activeSessionId).map {
+            AIChatViewModel.minisPersistentBase
+                .appendingPathComponent($0, isDirectory: true)
+                .appendingPathComponent(host, isDirectory: true)
+        }
+    }
+    let folderPath = resolved.standardized.path
+    if let base, folderPath == base.standardized.path || folderPath.hasPrefix(base.standardized.path + "/") {
+        return (base, label)
+    }
+    return (resolved, resolved.lastPathComponent)
+}
+
 /// Resolve a minis:// URL to a host filesystem URL.
 /// Maps directly to persistent storage: Library/MinisChat/minis/<sessionId>/<subdir>/<path>
 /// No dependency on iSH boot or bind mounts.
@@ -689,7 +727,8 @@ private struct MinisImageView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .onTapGesture { showFullscreen = true }
                 .fullScreenCover(isPresented: $showFullscreen) {
-                    ImagePreviewView(image: image)
+                    // [T-image-save-original] Export the file, not this 2048-px bitmap.
+                    ImagePreviewView(image: image, source: .markdown(url.absoluteString))
                 }
         } else {
             // Fixed-height placeholder prevents layout jumps when LazyVStack recycles
@@ -787,7 +826,7 @@ struct MinisImageFilePreviewView: View {
 
     var body: some View {
         if let image = loadedImage {
-            ImagePreviewView(image: image)
+            ImagePreviewView(image: image, source: .file(fileURL))
         } else {
             ZStack {
                 Color.black.ignoresSafeArea()

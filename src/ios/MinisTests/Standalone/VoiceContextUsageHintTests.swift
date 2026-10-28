@@ -9,6 +9,20 @@
 // Standalone (`swift VoiceContextUsageHintTests.swift`) like its neighbours.
 import Foundation
 
+/// The chat page's sources, read as one text: AIChatView.swift (state and
+/// `body`) first, then every other file under Views/Chat/AIChatView/ - the
+/// old single AIChatView.swift was split into them.
+func chatViewSource() -> String {
+    let ios = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let dir = ios.appendingPathComponent("Views/Chat/AIChatView")
+    let main = dir.appendingPathComponent("AIChatView.swift")
+    let rest = (FileManager.default.enumerator(at: dir, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? [])
+        .filter { $0.pathExtension == "swift" && $0.lastPathComponent != "AIChatView.swift" }
+        .sorted { $0.path < $1.path }
+    return ([main] + rest).compactMap { try? String(contentsOf: $0, encoding: .utf8) }.joined(separator: "\n")
+}
+
 var failures = 0
 func check(_ l: String, _ a: Bool, _ e: Bool = true) {
     if a == e { print("  ✅ \(l)") } else { print("  ❌ \(l) — expected \(e), got \(a)"); failures += 1 }
@@ -18,10 +32,10 @@ func checkEq<T: Equatable>(_ l: String, _ a: T, _ b: T) {
 }
 
 print("▶️  AttributedString segment location (as used by highlightedUsageLine)")
-let text = "上下文已用 62% · 124k / 200k"
+let text = "上下文 62% · 124k/200k"
 var attributed = AttributedString(text)
 var tinted = 0
-for segment in ["62%", "124k / 200k"] {
+for segment in ["62%", "124k/200k"] {
     if let r = attributed.range(of: segment) {
         attributed[r].inlinePresentationIntent = .stronglyEmphasized   // stand-in for the tint
         tinted += 1
@@ -35,7 +49,7 @@ print("\n▶️  source invariants")
 let root = "../../"
 func src(_ p: String) -> String { (try? String(contentsOfFile: root + p, encoding: .utf8)) ?? "" }
 let voice = src("Views/Chat/Voice/InlineVoiceInputView.swift")
-let view = src("Views/Chat/AIChatView.swift")
+let view = chatViewSource()
 let bar = src("Views/Chat/ChatInputBar.swift")
 check("sources readable", !voice.isEmpty && !view.isEmpty && !bar.isEmpty)
 

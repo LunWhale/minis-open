@@ -142,4 +142,14 @@ NSString *_Nullable noff_read_stdin(int stdin_fd);
 /// Use from Swift to safely call UIKit methods that may throw NSInternalInconsistencyException.
 BOOL noff_try_objc(void (NS_NOESCAPE ^_Nonnull block)(void));
 
+/// [T-browser-pool-caller-session] The fs_context of the guest task running
+/// this handler (`current->group->fs_context`): the per-session token
+/// ISHExecutionCoordinator stamps on every command's task group
+/// (MinisFsRouter.context(for:)). 0 when there is none (interactive terminal,
+/// kernel-internal tasks). Identifies the chat that ISSUED the command, which
+/// the process-wide `mountedSessionIdSnapshot` does not once shells from
+/// several chats run concurrently. MUST be called on the handler's own guest
+/// thread, before any hop to another queue.
+uint64_t noff_current_fs_context(void);
+
 #endif /* NativeOffloadUtils_h */

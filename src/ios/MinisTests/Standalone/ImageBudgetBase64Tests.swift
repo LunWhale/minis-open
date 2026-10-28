@@ -12,6 +12,41 @@
 
 import Foundation
 
+/// The sources that used to be the single file Agent/Chat/ChatStore.swift -
+/// the actor plus the files it was split into - read as one text.
+func chatStoreSource() -> String {
+    let chat = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Agent/Chat")
+    let names = ["ChatStore", "ChatStore+Schema", "ChatStore+SessionCRUD", "ChatStore+SessionList",
+                 "ChatStore+Search", "ChatStore+SessionQueries", "ChatStore+Folders",
+                 "ChatStore+SessionDeletion", "ChatStore+StoredPreview", "ChatStore+Messages",
+                 "ChatStore+Media", "ChatStore+CompactMarkers", "ChatStore+Tombstones",
+                 "ChatStore+WebAppShortcuts", "ChatStore+Maintenance", "ChatStore+Helpers",
+                 "ChatStore+UsageStats", "ChatStoreModels", "ContentPart+ProviderConversion",
+                 "RawMessage+Conversion", "ChatStore+SyncDirty", "ChatStore+SyncRemoteSessions",
+                 "ChatStore+SyncRemoteRecords", "ChatStore+BackupRestore"]
+    return names.compactMap { try? String(contentsOf: chat.appendingPathComponent($0 + ".swift"), encoding: .utf8) }
+        .joined(separator: "\n")
+}
+
+/// The sources that used to be the single file Agent/Chat/AIChatViewModel.swift -
+/// the class body plus the AIChatViewModel+<Concern>.swift files it was split
+/// into (the older extension files are NOT included) - read as one text.
+func chatViewModelSource() -> String {
+    let chat = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Agent/Chat")
+    let names = ["AIChatViewModel", "AIChatViewModel+Lifecycle", "AIChatViewModel+ContextUsage",
+                 "AIChatViewModel+StreamingUI", "AIChatViewModel+Speech", "AIChatViewModel+AutoPlayAudio",
+                 "AIChatViewModel+SystemPrompt", "AIChatViewModel+Send", "AIChatViewModel+Rerun",
+                 "AIChatViewModel+EditMessage", "AIChatViewModel+Cancel", "AIChatViewModel+PromptQueue",
+                 "AIChatViewModel+DebugDumps", "AIChatViewModel+TurnCompletion", "AIChatViewModel+AgentLoop",
+                 "AIChatViewModel+ThinkingLevel", "LLMProviderError"]
+    return names.compactMap { try? String(contentsOf: chat.appendingPathComponent($0 + ".swift"), encoding: .utf8) }
+        .joined(separator: "\n")
+}
+
 var failures = 0
 func check(_ label: String, _ actual: Bool, _ expected: Bool = true) {
     if actual == expected { print("  ✅ \(label)") }
@@ -83,7 +118,7 @@ func sourceOf(_ rel: String) -> String {
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
     return (try? String(contentsOf: here.appendingPathComponent(rel), encoding: .utf8)) ?? ""
 }
-let vm = sourceOf("Agent/Chat/AIChatViewModel.swift")
+let vm = chatViewModelSource()
 check("estimatedBase64Length exists with the expected formula",
       vm.contains("return ((rawBytes + 2) / 3) * 4"))
 check("rawBytesForBase64Budget exists with the expected formula",
@@ -231,7 +266,7 @@ let oneMB = Data(repeating: 0xAB, count: 1 * MB)
 let ph = elidedImagePlaceholder(linuxPath: "/var/minis/attachments/uploads/big.jpg")
 check("elision placeholder is short (no payload)", ph.utf8.count < 300)
 check("…and contains no base64 of the image", !ph.contains(oneMB.prefix(64).base64EncodedString()))
-let cs = sourceOf("Agent/Chat/ChatStore.swift")
+let cs = chatStoreSource()
 check("toAgentMessage gates text inlining on PastePlaceholder.isPastedTextRef",
       cs.contains("if PastePlaceholder.isPastedTextRef(ref) {"))
 check("…and every other mediaRef becomes .imageData",

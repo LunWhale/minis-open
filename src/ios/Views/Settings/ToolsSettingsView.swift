@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 
 // [T-tools-granular-switches] Two independent switches over the optional tools.
 //
@@ -31,6 +32,9 @@ import SwiftUI
 enum AgentToolSwitch: String, CaseIterable {
     case browser = "agent.tools.browser.enabled"
     case agents = "agent.tools.agents.enabled"
+    /// [T-user-ask] Default ON. Exposure also needs an interactive run
+    /// (AIChatViewModel.computeUserAskExposure).
+    case userAsk = "agent.tools.userAsk.enabled"
 
     var key: String { rawValue }
 
@@ -55,6 +59,7 @@ enum AgentToolSwitch: String, CaseIterable {
         switch self {
         case .browser: return true
         case .agents: return true
+        case .userAsk: return UserAskSettings.defaultEnabled
         }
     }
 
@@ -74,6 +79,7 @@ enum AgentToolSwitch: String, CaseIterable {
         switch toolName {
         case "browser_use": return .browser
         case SubAgentDefinition.toolName: return .agents
+        case UserAskTool.name: return .userAsk
         default: return nil
         }
     }
@@ -117,6 +123,11 @@ enum AgentToolSwitch: String, CaseIterable {
 
 struct ToolsSettingsView: View {
     @AppStorage(AgentToolSwitch.browser.key) private var browserEnabled: Bool = AgentToolSwitch.browser.defaultValue
+    // [T-user-ask]
+    @AppStorage(UserAskSettings.enabledKey) private var userAskEnabled: Bool = UserAskSettings.defaultEnabled
+    @AppStorage(UserAskSettings.timeoutMinutesKey) private var userAskTimeout: Int = UserAskSettings.defaultTimeoutMinutes
+    @AppStorage(UserAskSettings.notifyInBackgroundKey) private var userAskNotify: Bool = UserAskSettings.defaultNotifyInBackground
+    @State private var notificationsDenied = false
 
     var body: some View {
         Form {
@@ -125,22 +136,65 @@ struct ToolsSettingsView: View {
             } footer: {
                 Text(AppLocalized("Browse the web in the in-app browser: open pages, read them, click and type. Stable and on by default. When off, the tool is removed from every conversation — the model does not see it at all."))
             }
+            userAskSections
             // [T-sub-agents-v1] No Agents section here, and deliberately not
             // even a read-only pointer row: the switch belongs to the Sub Agents
             // page, next to the definitions it governs.
         }
         .navigationTitle(AppLocalized("Agent Tools"))
         .navigationBarTitleDisplayMode(.inline)
+        .task {
+            let status = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+            notificationsDenied = status == .denied
+        }
     }
+
+    // MARK: - [T-user-ask] User interaction
+
+    @ViewBuilder
+    private var userAskSections: some View {
+        Section {
+            toolRow(AppLocalized("User Interaction"), tool: "user_ask", icon: "questionmark.bubble", isOn: $userAskEnabled)
+            if userAskEnabled {
+                // [T-tools-subrow-indent] Sub-settings of the tool: their labels
+                // line up with the tool's title, past the icon column. The
+                // indent is on the label, so the value / switch stays at the
+                // trailing edge and the row separator follows the label in.
+                Picker(selection: $userAskTimeout) {
+                    ForEach(UserAskSettings.timeoutChoices, id: \.self) { m in
+                        Text(m == 0 ? AppLocalized("Indefinitely") : AppLocalized("\(m) min")).tag(m)
+                    }
+                } label: {
+                    Text(AppLocalized("Wait for an answer")).padding(.leading, Self.subRowIndent)
+                }
+                Toggle(isOn: $userAskNotify) {
+                    Text(AppLocalized("Notify when in the background")).padding(.leading, Self.subRowIndent)
+                }
+            }
+        } footer: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(AppLocalized("Lets the assistant ask you to choose between options, or to confirm a risky action before doing it, on a card in the chat. Only in chats you are in — never for sub agents, Shortcuts or scheduled tasks. When off, the assistant decides for itself and does not take risky actions without your go-ahead."))
+                if userAskEnabled && userAskNotify && notificationsDenied {
+                    Text(AppLocalized("Notifications are off for Minis in iOS Settings — questions will only show when you open the app."))
+                        .foregroundStyle(.orange)
+                }
+            }
+        }
+    }
+
+    /// toolRow's icon column (22) plus its spacing (10): where its title starts.
+    static let toolIconColumn: CGFloat = 22
+    static let toolIconSpacing: CGFloat = 10
+    static let subRowIndent: CGFloat = toolIconColumn + toolIconSpacing
 
     func toolRow(_ title: String, tool: String, icon: String, iconSize: CGFloat = 14,
                  accent: Color = Color.accentColor, isOn: Binding<Bool>) -> some View {
         Toggle(isOn: isOn) {
-            HStack(spacing: 10) {
+            HStack(spacing: Self.toolIconSpacing) {
                 Image(systemName: icon)
                     .font(.system(size: iconSize))
                     .foregroundStyle(isOn.wrappedValue ? accent : Color.secondary)
-                    .frame(width: 22)
+                    .frame(width: Self.toolIconColumn)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                     Text(tool).font(.caption.monospaced()).foregroundStyle(.secondary)

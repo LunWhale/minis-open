@@ -464,7 +464,9 @@ struct RcloneAddServerView: View {
                 name: name, backend: b.type, params: params,
                 secret: secretKey.flatMap { values[$0] }, path: "",
                 allowInsecureTLS: allowInsecureTLS)
-            RcloneRemoteStore.syncToRclone()
+            // [T-restore-list-sync-race] Awaited, or the connection check below
+            // can read a half-written remote and reject correct credentials.
+            await RcloneRemoteStore.syncToRcloneAndWait()
 
             guard let r = RcloneRemoteStore.remote(named: name) else { return }
             // Listing the root is the cheapest honest proof that the address,

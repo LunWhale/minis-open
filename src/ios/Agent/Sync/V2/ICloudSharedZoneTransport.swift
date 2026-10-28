@@ -47,6 +47,7 @@ final class ICloudSharedZoneTransport: NSObject, SyncTransport {
         "ProviderConfigV2":   secretsZoneName,
         "EnvVarV2":           secretsZoneName,
         "EnvVarItem":         secretsZoneName,
+        "EnvVarStateItem":    secretsZoneName,  // [T-envvar-disable] beside its variable
         "SoulV2":             sharedZoneName,
         "MemoryGlobalV2":     sharedZoneName,
         "MemoryDailyV2":      sharedZoneName,
@@ -240,7 +241,7 @@ final class ICloudSharedZoneTransport: NSObject, SyncTransport {
     private static let fullHistoryConfigTypes: Set<String> = [
         "ProviderInstanceV3", "ProviderModelEntryV3", "ProviderModelGroupV3",
         "ProviderThinkingRuleV3", "SubAgentV3",
-        "ProviderConfigV2", "MCPServerItem", "EnvVarItem",
+        "ProviderConfigV2", "MCPServerItem", "EnvVarItem", "EnvVarStateItem",
         // Folders are low-volume config-like records: a fresh device must
         // pull the full set (a folder created months ago would never fall
         // inside the 24h window), and sessions arriving before their folder
@@ -731,6 +732,7 @@ final class ICloudSharedZoneTransport: NSObject, SyncTransport {
             // if one ever appeared, but nothing asks for it any more.
             ("MCPServerItem", "updatedAt"),
             ("EnvVarItem", "updatedAt"),
+            ("EnvVarStateItem", "updatedAt"),  // [T-envvar-disable]
             ("SoulV2", "updatedAt"),
             ("MemoryGlobalV2", "updatedAt"),
             ("MemoryDailyV2", "updatedAt"),

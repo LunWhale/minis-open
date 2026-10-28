@@ -1,4 +1,5 @@
 import XCTest
+@testable import Minis
 
 /// [T-oauth-refresh-race] Regression coverage for the Anthropic OAuth
 /// refresh-token-rotation race that logged users out ~45 min after login.

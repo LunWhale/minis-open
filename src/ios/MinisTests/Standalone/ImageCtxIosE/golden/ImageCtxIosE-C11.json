@@ -1,0 +1,532 @@
+{
+  "live" : {
+    "anthropic" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 65,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/IMG_800x600.webp]",
+              "sha8" : "2d4dfa61",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 229276,
+              "bytes" : 171956,
+              "fmt" : "jpeg",
+              "h" : 600,
+              "mime" : "image\/jpeg",
+              "sha256" : "499ffe40f7e7f89f",
+              "w" : 800
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 207,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/IMG_800x600.webp\" url=\"minis:\/\/attachments\/uploads\/IMG_800x600.webp\" size=\"171956\" modified=\"",
+              "sha8" : "9363c7a7",
+              "tail" : "6\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "look",
+              "sha8" : "3c01eba1",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "antigravity" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 65,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/IMG_800x600.webp]",
+              "sha8" : "2d4dfa61",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 229276,
+              "bytes" : 171956,
+              "fmt" : "jpeg",
+              "h" : 600,
+              "mime" : "image\/jpeg",
+              "sha256" : "499ffe40f7e7f89f",
+              "w" : 800
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 207,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/IMG_800x600.webp\" url=\"minis:\/\/attachments\/uploads\/IMG_800x600.webp\" size=\"171956\" modified=\"",
+              "sha8" : "9363c7a7",
+              "tail" : "6\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "look",
+              "sha8" : "3c01eba1",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "chat" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 65,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/IMG_800x600.webp]",
+              "sha8" : "2d4dfa61",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 229276,
+              "bytes" : 171956,
+              "fmt" : "jpeg",
+              "h" : 600,
+              "mime" : "image\/jpeg",
+              "sha256" : "499ffe40f7e7f89f",
+              "w" : 800
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 257,
+              "head" : "[The image shown above is also saved at \/var\/minis\/attachments\/uploads\/IMG_800x600.webp — this is that same image, not an additional one. Use the path only if y",
+              "sha8" : "aceaa77c",
+              "tail" : "e-read it at full resolution, crop, OCR, inspect metadata).]"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 207,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/IMG_800x600.webp\" url=\"minis:\/\/attachments\/uploads\/IMG_800x600.webp\" size=\"171956\" modified=\"",
+              "sha8" : "9363c7a7",
+              "tail" : "6\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "look",
+              "sha8" : "3c01eba1",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "gemini" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 65,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/IMG_800x600.webp]",
+              "sha8" : "2d4dfa61",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 229276,
+              "bytes" : 171956,
+              "fmt" : "jpeg",
+              "h" : 600,
+              "mime" : "image\/jpeg",
+              "sha256" : "499ffe40f7e7f89f",
+              "w" : 800
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 207,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/IMG_800x600.webp\" url=\"minis:\/\/attachments\/uploads\/IMG_800x600.webp\" size=\"171956\" modified=\"",
+              "sha8" : "9363c7a7",
+              "tail" : "6\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "look",
+              "sha8" : "3c01eba1",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "responses" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 65,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/IMG_800x600.webp]",
+              "sha8" : "2d4dfa61",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "image" : {
+              "base64Len" : 229276,
+              "bytes" : 171956,
+              "fmt" : "jpeg",
+              "h" : 600,
+              "mime" : "image\/jpeg",
+              "sha256" : "499ffe40f7e7f89f",
+              "w" : 800
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 257,
+              "head" : "[The image shown above is also saved at \/var\/minis\/attachments\/uploads\/IMG_800x600.webp — this is that same image, not an additional one. Use the path only if y",
+              "sha8" : "aceaa77c",
+              "tail" : "e-read it at full resolution, crop, OCR, inspect metadata).]"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 207,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/IMG_800x600.webp\" url=\"minis:\/\/attachments\/uploads\/IMG_800x600.webp\" size=\"171956\" modified=\"",
+              "sha8" : "9363c7a7",
+              "tail" : "6\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "look",
+              "sha8" : "3c01eba1",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ]
+  },
+  "restart" : {
+    "anthropic" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 65,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/IMG_800x600.webp]",
+              "sha8" : "2d4dfa61",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 229276,
+              "bytes" : 171956,
+              "fmt" : "jpeg",
+              "h" : 600,
+              "mime" : "image\/jpeg",
+              "sha256" : "499ffe40f7e7f89f",
+              "w" : 800
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 207,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/IMG_800x600.webp\" url=\"minis:\/\/attachments\/uploads\/IMG_800x600.webp\" size=\"171956\" modified=\"",
+              "sha8" : "9363c7a7",
+              "tail" : "6\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "look",
+              "sha8" : "3c01eba1",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "antigravity" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 65,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/IMG_800x600.webp]",
+              "sha8" : "2d4dfa61",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 229276,
+              "bytes" : 171956,
+              "fmt" : "jpeg",
+              "h" : 600,
+              "mime" : "image\/jpeg",
+              "sha256" : "499ffe40f7e7f89f",
+              "w" : 800
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 207,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/IMG_800x600.webp\" url=\"minis:\/\/attachments\/uploads\/IMG_800x600.webp\" size=\"171956\" modified=\"",
+              "sha8" : "9363c7a7",
+              "tail" : "6\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "look",
+              "sha8" : "3c01eba1",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "chat" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 65,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/IMG_800x600.webp]",
+              "sha8" : "2d4dfa61",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 229276,
+              "bytes" : 171956,
+              "fmt" : "jpeg",
+              "h" : 600,
+              "mime" : "image\/jpeg",
+              "sha256" : "499ffe40f7e7f89f",
+              "w" : 800
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 257,
+              "head" : "[The image shown above is also saved at \/var\/minis\/attachments\/uploads\/IMG_800x600.webp — this is that same image, not an additional one. Use the path only if y",
+              "sha8" : "aceaa77c",
+              "tail" : "e-read it at full resolution, crop, OCR, inspect metadata).]"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 207,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/IMG_800x600.webp\" url=\"minis:\/\/attachments\/uploads\/IMG_800x600.webp\" size=\"171956\" modified=\"",
+              "sha8" : "9363c7a7",
+              "tail" : "6\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "look",
+              "sha8" : "3c01eba1",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "gemini" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 65,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/IMG_800x600.webp]",
+              "sha8" : "2d4dfa61",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 229276,
+              "bytes" : 171956,
+              "fmt" : "jpeg",
+              "h" : 600,
+              "mime" : "image\/jpeg",
+              "sha256" : "499ffe40f7e7f89f",
+              "w" : 800
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 207,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/IMG_800x600.webp\" url=\"minis:\/\/attachments\/uploads\/IMG_800x600.webp\" size=\"171956\" modified=\"",
+              "sha8" : "9363c7a7",
+              "tail" : "6\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "look",
+              "sha8" : "3c01eba1",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "responses" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 65,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/IMG_800x600.webp]",
+              "sha8" : "2d4dfa61",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "image" : {
+              "base64Len" : 229276,
+              "bytes" : 171956,
+              "fmt" : "jpeg",
+              "h" : 600,
+              "mime" : "image\/jpeg",
+              "sha256" : "499ffe40f7e7f89f",
+              "w" : 800
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 257,
+              "head" : "[The image shown above is also saved at \/var\/minis\/attachments\/uploads\/IMG_800x600.webp — this is that same image, not an additional one. Use the path only if y",
+              "sha8" : "aceaa77c",
+              "tail" : "e-read it at full resolution, crop, OCR, inspect metadata).]"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 207,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/IMG_800x600.webp\" url=\"minis:\/\/attachments\/uploads\/IMG_800x600.webp\" size=\"171956\" modified=\"",
+              "sha8" : "9363c7a7",
+              "tail" : "6\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "look",
+              "sha8" : "3c01eba1",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ]
+  }
+}

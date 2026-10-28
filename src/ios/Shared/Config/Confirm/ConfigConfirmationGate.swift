@@ -170,7 +170,8 @@ final class ConfigConfirmationGate: ObservableObject {
     /// notification uses (`BackgroundKeepAliveManager.backgroundNotificationsEnabled`).
     /// Sent at most once per change id (guarded by `notifiedIds`).
     private func notifyIfBackgrounded(_ change: PendingConfigChange) {
-        guard UIApplication.shared.applicationState != .active else { return }
+        // [T-mac-dock-badge] userIsAway: on a Mac UIKit stays .active while another app is in front.
+        guard BackgroundKeepAliveManager.shared.userIsAway else { return }
         guard BackgroundKeepAliveManager.shared.backgroundNotificationsEnabled else {
             gateLogger.info("bg-notify skipped id=\(change.id) — backgroundNotificationsEnabled=false")
             return
@@ -180,7 +181,8 @@ final class ConfigConfirmationGate: ObservableObject {
 
         let center = UNUserNotificationCenter.current()
         center.requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
-        center.setNotificationCategories([
+        // [T-user-ask] Through the shared registry: a bare set() wipes other features' categories.
+        NotificationCategoryCenter.shared.register([
             UNNotificationCategory(identifier: Self.notifyCategoryId, actions: [], intentIdentifiers: [])
         ])
 
@@ -203,9 +205,8 @@ final class ConfigConfirmationGate: ObservableObject {
         // app so the still-pending sheet is visible. Carry the id for tracing.
         content.userInfo = ["configConfirmId": change.id]
 
-        let current = UIApplication.shared.applicationIconBadgeNumber
-        content.badge = NSNumber(value: current + 1)
-        UIApplication.shared.applicationIconBadgeNumber = current + 1
+        // [T-mac-dock-badge] Through the badge ledger, not "icon + 1".
+        content.badge = NSNumber(value: BackgroundKeepAliveManager.shared.noteUnseenNotification())
 
         gateLogger.info("bg-notify post id=\(change.id) captionLen=\(content.body.count)")
         let request = UNNotificationRequest(

@@ -90,6 +90,14 @@ final class ChatMessage: Identifiable, ObservableObject {
     var lastSourceSortOrder: Int?
     /// Links back to the QueuedPrompt so we can withdraw it.
     var queuedPromptId: UUID?
+    /// [T-edit-anchor-link] `AgentMessage.anchorId` of the agentHistory entry
+    /// this user bubble became. Several bubbles share one id when a queue drain
+    /// merged them into one entry. In memory only. nil = not linked (yet).
+    var historyAnchorId: UUID?
+    /// [T-edit-anchor-link] True from send()'s bubble append until its
+    /// agentHistory entry lands. send() appends the entry only after several
+    /// awaits, so a Stop + Edit can reach this bubble before it has one.
+    var awaitingHistoryEntry = false
     let timestamp = Date()
     /// [T-usage-capsule-time] When this turn FINISHED, for the clock on the
     /// usage capsule.
@@ -216,6 +224,10 @@ struct QueuedPrompt: Identifiable {
     /// interrupts the running plan at the next tool boundary; a job result is
     /// not urgent and must wait until the loop has fully converged.
     var deferUntilIdle: Bool = false
+    /// [T-queued-callback-reminder] True once the running loop has told the
+    /// model this queued sub-agent result exists (QueuedCallbackReminder).
+    /// In memory only; a queued prompt is listed in at most one reminder.
+    var reminderSent: Bool = false
 }
 
 /// Token usage for the current assistant turn.
@@ -276,15 +288,51 @@ struct ContextUsageHint: Equatable {
     let text: String
     let highlights: [String]
     let tier: ContextUsage.Tier
+    /// [T-quota-composer-hint] The quota figure inside `text`, if a quota
+    /// segment was appended; tinted by `quotaTier`, independently of the
+    /// context tier (a nearly full context says nothing about the balance).
+    var quotaHighlight: String? = nil
+    var quotaTier: ContextUsage.Tier = .normal
+    /// [T-composer-hint-carousel] What the composer placeholder shows in turn,
+    /// one line each, every 2 s: the context figures, then the quota (when
+    /// known). `text` stays the whole line for the voice panel and the logs.
+    var pages: [Page] = []
 
-    static func make(usage: ContextUsage, generation: Int) -> ContextUsageHint {
+    /// One placeholder line and the figures in it to tint.
+    struct Page: Equatable {
+        let text: String
+        let highlights: [String]
+        let tier: ContextUsage.Tier
+    }
+
+    /// [T-quota-composer-hint] The current model's quota, already worded
+    /// ("Balance CN¥36.51"), appended after the context figures.
+    struct QuotaPart: Equatable {
+        let text: String
+        let highlight: String
+        let tier: ContextUsage.Tier
+    }
+
+    static func make(usage: ContextUsage, generation: Int, quota: QuotaPart? = nil) -> ContextUsageHint {
         let pct = "\(usage.percent)%"
+        // [T-composer-hint-carousel] Context and quota are separate lines that
+        // take turns, so each has a whole line to itself: the "used" wording
+        // and the spaces around the slash that T-composer-hint-compact
+        // dropped to squeeze both into one line are back.
         let size = "\(TokenCountFormatter.short(usage.usedTokens)) / \(TokenCountFormatter.short(usage.windowTokens))"
         // Interpolations extract as `%@`, so the key is "Context %@ used · %@"
         // — one translatable entry, and translations may reorder with
         // `%1$@` / `%2$@`.
-        let text = AppLocalized("Context \(pct) used · \(size)")
-        return ContextUsageHint(generation: generation, text: text, highlights: [pct, size], tier: usage.tier)
+        let contextText = AppLocalized("Context \(pct) used · \(size)")
+        var pages = [Page(text: contextText, highlights: [pct, size], tier: usage.tier)]
+        var text = contextText
+        if let quota {
+            text += " · " + quota.text
+            pages.append(Page(text: quota.text, highlights: [quota.highlight], tier: quota.tier))
+        }
+        return ContextUsageHint(generation: generation, text: text, highlights: [pct, size], tier: usage.tier,
+                                quotaHighlight: quota?.highlight, quotaTier: quota?.tier ?? .normal,
+                                pages: pages)
     }
 }
 
@@ -388,6 +436,9 @@ struct TokenUsage {
     /// The model that served the request the pair describes. Ratios are kept
     /// per model because they mostly reflect the tokenizer. nil on older rows.
     var calibrationModelId: String? = nil
+    /// ContextSizeMeter.estimatorVersion behind `estimatedRequestTokens`; 0 on
+    /// rows that predate it (see StoredTokenUsage.estimatorVersion).
+    var estimatorVersion: Int = 0
 
     mutating func add(_ u: LLMUsage) {
         // Use max() instead of += to handle providers that emit cumulative usage
@@ -613,7 +664,9 @@ final class AssistantBlock: Identifiable, ObservableObject {
             let name = (path as NSString).lastPathComponent
             return (!path.isEmpty && name != "/" && name.contains(".")) ? name : "Write file"
         case .delegateTool(let title):
-            return title.isEmpty ? AppLocalized("Agent") : title
+            return title.isEmpty ? (ToolDisplayTitle.fixed(forToolName: SubAgentDefinition.toolName) ?? "") : title
+        case .userAskTool:
+            return ToolDisplayTitle.fixed(forToolName: UserAskTool.name) ?? ""
         case .fileEditTool(let path):
             let name = (path as NSString).lastPathComponent
             return (!path.isEmpty && name != "/" && name.contains(".")) ? name : "Edit file"
@@ -642,8 +695,30 @@ enum AssistantBlockKind: Equatable {
     /// tool_title. The block's content is a live progress line while the
     /// helper runs and the result JSON afterwards.
     case delegateTool(title: String)
+    /// [T-user-ask] A `user_ask` call: the interactive question card. Its
+    /// questions come from `toolInputArgs`; `content` holds the result JSON
+    /// once answered; live state is in UserAskCenter (keyed by toolUseId).
+    case userAskTool
     case info
 }
+
+// BEGIN ToolDisplayTitle
+/// [T-preview-tool-title] Titles for tools whose label does not come from
+/// their arguments, shared by the chat (tool card / status bar, via
+/// `AssistantBlock.toolDescription`) and the session list preview
+/// (`ChatStore.summarizeToolUse`). The list used to keep its own name switch,
+/// which had no entry for these, so a session waiting on a question showed
+/// "🔧 user_ask" while the chat said "Question for you".
+enum ToolDisplayTitle {
+    static func fixed(forToolName name: String) -> String? {
+        switch name {
+        case UserAskTool.name: return AppLocalized("Question for you")
+        case SubAgentDefinition.toolName: return AppLocalized("Agent")
+        default: return nil
+        }
+    }
+}
+// END ToolDisplayTitle
 
 enum KernelStatus: Equatable {
     case notBooted

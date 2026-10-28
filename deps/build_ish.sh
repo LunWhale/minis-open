@@ -18,10 +18,20 @@ set -e
 #   - libarchive (brew install libarchive)
 #
 # Usage:
-#   ./build_ish.sh [clean|debug|release]
+#   ./build_ish.sh [clean|debug|release] [--simulator|--all]
+#
+#   (no flag)     iOS device, arm64            -> deps/libs/
+#   --simulator   iOS Simulator, arm64 only    -> deps/libs/iphonesimulator/
+#   --all         both of the above
+#
+# The Xcode target picks the right directory per SDK through ISH_LIBS_DIR
+# (deps/libs for iphoneos, deps/libs/iphonesimulator for iphonesimulator), so
+# a Simulator build links the simulator copies without any manual switch.
+# There is no x86_64 simulator slice: Intel simulators are excluded in Xcode.
 #
 # Output:
-#   deps/libs/      - Static libraries (.a files)
+#   deps/libs/      - Static libraries (.a files), device
+#   deps/libs/iphonesimulator/ - the same libraries for the Simulator
 #   deps/include/   - Header files
 #   deps/resources/ - VDSO and other resources
 # ============================================================================
@@ -33,7 +43,17 @@ OUTPUT_INCLUDE="$SCRIPT_DIR/include"
 OUTPUT_RESOURCES="$SCRIPT_DIR/resources"
 
 # Build configuration
-BUILD_TYPE="${1:-release}"
+BUILD_TYPE="release"
+# Platforms to build, in order: iphoneos (device) and/or iphonesimulator.
+PLATFORMS="iphoneos"
+for arg in "$@"; do
+    case "$arg" in
+        clean|debug|release) BUILD_TYPE="$arg" ;;
+        --simulator) PLATFORMS="iphonesimulator" ;;
+        --all) PLATFORMS="iphoneos iphonesimulator" ;;
+        *) echo "Unknown argument: $arg (expected clean|debug|release, --simulator, --all)" >&2; exit 1 ;;
+    esac
+done
 ARCHS="arm64"
 IOS_DEPLOYMENT_TARGET="14.0"
 
@@ -170,6 +190,7 @@ clean_build() {
     log_info "Cleaning build artifacts..."
 
     rm -rf "$ISH_DIR/build-ios"
+    rm -rf "$ISH_DIR/build-ios-sim"
     rm -rf "$OUTPUT_LIBS"
     rm -rf "$OUTPUT_INCLUDE"
     rm -rf "$OUTPUT_RESOURCES"
@@ -178,23 +199,44 @@ clean_build() {
 }
 
 # ============================================================================
+# Select Platform
+# ============================================================================
+# Sets the per-platform variables every later step reads. Device and Simulator
+# get separate meson build directories so switching never reuses objects
+# compiled for the other platform.
+select_platform() {
+    PLATFORM="$1"
+    case "$PLATFORM" in
+        iphoneos)
+            BUILD_DIR="$ISH_DIR/build-ios"
+            PLATFORM_LIBS="$OUTPUT_LIBS"
+            MIN_VERSION_FLAG="-miphoneos-version-min=$IOS_DEPLOYMENT_TARGET"
+            ;;
+        iphonesimulator)
+            BUILD_DIR="$ISH_DIR/build-ios-sim"
+            PLATFORM_LIBS="$OUTPUT_LIBS/iphonesimulator"
+            MIN_VERSION_FLAG="-mios-simulator-version-min=$IOS_DEPLOYMENT_TARGET"
+            ;;
+        *) log_error "Unknown platform: $PLATFORM" ;;
+    esac
+    CROSS_FILE="$BUILD_DIR/ios-cross.txt"
+}
+
+# ============================================================================
 # Setup Cross Compilation
 # ============================================================================
 setup_cross_compile() {
-    log_info "Setting up iOS cross-compilation..."
+    log_info "Setting up cross-compilation for $PLATFORM..."
 
-    BUILD_DIR="$ISH_DIR/build-ios"
     mkdir -p "$BUILD_DIR"
 
-    # Get iOS SDK path
-    IOS_SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+    # Get the SDK path for this platform
+    IOS_SDK=$(xcrun --sdk "$PLATFORM" --show-sdk-path)
 
     # Create cross-compilation file for meson
-    CROSS_FILE="$BUILD_DIR/ios-cross.txt"
-
     cat > "$CROSS_FILE" << EOF
 [binaries]
-c = ['clang', '-arch', 'arm64', '-isysroot', '$IOS_SDK', '-miphoneos-version-min=$IOS_DEPLOYMENT_TARGET']
+c = ['clang', '-arch', 'arm64', '-isysroot', '$IOS_SDK', '$MIN_VERSION_FLAG']
 ar = 'ar'
 strip = 'strip'
 pkg-config = 'false'
@@ -222,10 +264,7 @@ EOF
 # Build iSH Libraries
 # ============================================================================
 build_ish() {
-    log_info "Building iSH libraries for iOS ($BUILD_TYPE)..."
-
-    BUILD_DIR="$ISH_DIR/build-ios"
-    CROSS_FILE="$BUILD_DIR/ios-cross.txt"
+    log_info "Building iSH libraries for $PLATFORM ($BUILD_TYPE)..."
 
     cd "$ISH_DIR"
 
@@ -248,6 +287,11 @@ build_ish() {
     if [ ! -f "$BUILD_DIR/build.ninja" ]; then
         log_info "Configuring meson build..."
 
+        # [T-ios-aojit] -Djit=true -Djit_emit=false: the AOT-only runtime. It
+        # never maps executable memory (no JIT entitlement needed); it only
+        # installs translations from AOT images linked into the app
+        # (libish_aot.a). With no image, or with AOJIT switched off in the
+        # app (the default), blocks run on the gadget engine as before.
         meson setup "$BUILD_DIR" \
             --cross-file "$CROSS_FILE" \
             --buildtype="$MESON_BUILDTYPE" \
@@ -256,14 +300,18 @@ build_ish() {
             -Dlog_handler=nslog \
             -Dkernel=ish \
             -Dengine=asbestos \
-            -Dguest_arch=arm64
+            -Dguest_arch=arm64 \
+            -Djit=true \
+            -Djit_emit=false
     else
         # Reconfigure both options: an existing build-ios/ from before
         # b_ndebug was introduced would otherwise keep asserts enabled.
         log_info "Meson already configured, reconfiguring..."
         meson configure "$BUILD_DIR" \
             --buildtype="$MESON_BUILDTYPE" \
-            -Db_ndebug="$MESON_NDEBUG"
+            -Db_ndebug="$MESON_NDEBUG" \
+            -Djit=true \
+            -Djit_emit=false
     fi
 
     # Build libraries
@@ -281,13 +329,20 @@ build_ish() {
 # ============================================================================
 # Copy Output Files
 # ============================================================================
+# Libraries are per platform; everything else (headers, VDSO, RootfsPatch) is
+# the same for device and Simulator and is copied once, by copy_outputs.
+copy_libs() {
+    log_info "Copying $PLATFORM libraries to $PLATFORM_LIBS..."
+    mkdir -p "$PLATFORM_LIBS"
+    cp "$BUILD_DIR/libish.a" "$PLATFORM_LIBS/"
+    cp "$BUILD_DIR/libish_emu.a" "$PLATFORM_LIBS/"
+    cp "$BUILD_DIR/libfakefs.a" "$PLATFORM_LIBS/"
+}
+
 copy_outputs() {
     log_info "Copying output files..."
 
-    BUILD_DIR="$ISH_DIR/build-ios"
-
     # Create output directories
-    mkdir -p "$OUTPUT_LIBS"
     mkdir -p "$OUTPUT_INCLUDE/ish"
     mkdir -p "$OUTPUT_INCLUDE/ish/emu"
     mkdir -p "$OUTPUT_INCLUDE/ish/kernel"
@@ -297,12 +352,6 @@ copy_outputs() {
     mkdir -p "$OUTPUT_INCLUDE/ish/platform"
     mkdir -p "$OUTPUT_INCLUDE/ish/asbestos"
     mkdir -p "$OUTPUT_RESOURCES"
-
-    # Copy static libraries
-    log_info "Copying libraries..."
-    cp "$BUILD_DIR/libish.a" "$OUTPUT_LIBS/"
-    cp "$BUILD_DIR/libish_emu.a" "$OUTPUT_LIBS/"
-    cp "$BUILD_DIR/libfakefs.a" "$OUTPUT_LIBS/"
 
     # Copy VDSO if built (arm64 guest VDSO path)
     if [ -f "$BUILD_DIR/vdso/arm64/libvdso.so.elf" ]; then
@@ -441,6 +490,10 @@ print_summary() {
     echo ""
     echo "Libraries:"
     ls -lh "$OUTPUT_LIBS"/*.a 2>/dev/null || echo "  (none)"
+    if [ -d "$OUTPUT_LIBS/iphonesimulator" ]; then
+        echo "Simulator libraries:"
+        ls -lh "$OUTPUT_LIBS/iphonesimulator"/*.a 2>/dev/null || echo "  (none)"
+    fi
     echo ""
     echo "Headers:   $OUTPUT_INCLUDE/ish/"
     echo "Resources: $OUTPUT_RESOURCES/"
@@ -465,7 +518,7 @@ main() {
     echo "============================================================"
     echo ""
 
-    if [ "$1" == "clean" ]; then
+    if [ "$BUILD_TYPE" == "clean" ]; then
         clean_build
         exit 0
     fi
@@ -478,10 +531,26 @@ main() {
     check_prerequisites
     init_submodules
     apply_fork_patches
-    setup_cross_compile
-    build_ish
-    copy_outputs
-    create_umbrella_header
+    for platform in $PLATFORMS; do
+        select_platform "$platform"
+        setup_cross_compile
+        build_ish
+        copy_libs
+        # Headers and resources are platform-independent. They come from the
+        # device build, so a --simulator run never swaps the headers out from
+        # under device libraries built from an older deps/ish; it only fills
+        # them in when nothing has been built yet.
+        if [ "$PLATFORM" == "iphoneos" ] || [ ! -f "$OUTPUT_INCLUDE/ish/ish.h" ]; then
+            copy_outputs
+            create_umbrella_header
+        fi
+        # [T-ios-aojit] AOT images (deps/aot/aot_*.S) -> <platform libs>/libish_aot.a.
+        # Always produced (a stub when there are no images), because the app
+        # force-loads it: an image registers itself from a constructor, and a
+        # plain -l would drop objects nothing references.
+        IOS_DEPLOYMENT_TARGET="$IOS_DEPLOYMENT_TARGET" PLATFORM="$PLATFORM" \
+            bash "$SCRIPT_DIR/build_aot.sh"
+    done
     print_summary
 }
 

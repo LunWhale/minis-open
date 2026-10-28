@@ -108,7 +108,18 @@ final class LoggingManager: ObservableObject {
     }
 
     /// Called at app launch to restore capture if previously enabled.
+    ///
+    /// [T-log-prune-at-launch] Also runs the 15-day prune unconditionally.
+    /// The prune used to live only in `rotateLogFileIfNeeded()`, which runs
+    /// only while capture is ON, and capture defaults to OFF. So with logging
+    /// off, old daily logs were never deleted, and crash reports (which
+    /// CrashReporter writes whether or not logging is on) were only capped
+    /// by count (20), never by age.
     func startIfEnabled() {
+        let dir = logDirectory
+        DispatchQueue.global(qos: .utility).async {
+            Self.pruneOldLogs(in: dir)
+        }
         if isEnabled {
             startCapture()
         }
@@ -122,6 +133,16 @@ final class LoggingManager: ObservableObject {
         // Save original fds
         origStdout = dup(STDOUT_FILENO)
         origStderr = dup(STDERR_FILENO)
+        // [T-log-tee-nonblocking] The writer tees every chunk back to the
+        // original stdout. When that is a console someone stopped reading
+        // (Xcode / `devicectl --console` over a Wi-Fi link that went away when
+        // the phone locked), a blocking write() there never returns: the
+        // writer queue stalls, the reader drops every later chunk, and the
+        // log file silently stops growing for the rest of the run (field:
+        // 2026-10-02 19:10 on an iPhone 17 Pro). Non-blocking, a full
+        // console just loses its copy; the file keeps everything.
+        Self.setNonBlocking(origStdout, true)
+        Self.setNonBlocking(origStderr, true)
 
         // Create pipe
         var fds: [Int32] = [0, 0]
@@ -155,6 +176,9 @@ final class LoggingManager: ObservableObject {
     private func stopCapture() {
         guard origStdout != -1 else { return }
 
+        // [T-log-tee-nonblocking] Back to blocking before stdout/stderr own them again.
+        Self.setNonBlocking(origStdout, false)
+        Self.setNonBlocking(origStderr, false)
         // Restore original fds
         dup2(origStdout, STDOUT_FILENO)
         dup2(origStderr, STDERR_FILENO)
@@ -338,14 +362,35 @@ final class LoggingManager: ObservableObject {
         return ok
     }
 
-    /// Maximum size per log file (100 MB). Once exceeded the file is truncated
+    /// Maximum size per log file (500 MB). Once exceeded the file is truncated
     /// to its last `maxLogFileSize/2` bytes to avoid unbounded disk growth.
-    private let maxLogFileSize: UInt64 = 100 * 1024 * 1024
+    /// [T-log-cap-500mb] Raised from 100 MB so a heavy day (Verbose, shell
+    /// floods) keeps more history; truncation streams, so the size of the
+    /// kept half no longer matters for memory.
+    private let maxLogFileSize: UInt64 = 500 * 1024 * 1024
+
+    /// [T-log-tee-nonblocking] Last failed open of the day's log file; a
+    /// failed open is retried at most this often instead of never.
+    private var lastOpenFailure: Date?
+    private static let reopenRetryInterval: TimeInterval = 5
+
+    private static func setNonBlocking(_ fd: Int32, _ on: Bool) {
+        guard fd >= 0 else { return }
+        let flags = fcntl(fd, F_GETFL)
+        guard flags >= 0 else { return }
+        _ = fcntl(fd, F_SETFL, on ? (flags | O_NONBLOCK) : (flags & ~O_NONBLOCK))
+    }
 
     private func rotateLogFileIfNeeded() {
         let today = fileDateFormatter.string(from: Date())
-        guard today != currentLogDate else { return }
-        currentLogDate = today
+        // [T-log-tee-nonblocking] Also re-open when the handle is gone (a
+        // failed write drops it, see safeWrite). Before, the date was marked
+        // current even when the open failed, so one failure left every later
+        // chunk with no handle - dropped without a trace - until midnight.
+        guard today != currentLogDate || logFileHandle == nil else { return }
+        let dayChanged = today != currentLogDate
+        if !dayChanged, let last = lastOpenFailure,
+           Date().timeIntervalSince(last) < Self.reopenRetryInterval { return }
 
         logFileHandle?.closeFile()
 
@@ -355,6 +400,18 @@ final class LoggingManager: ObservableObject {
         }
         logFileHandle = try? FileHandle(forWritingTo: fileURL)
         logFileHandle?.seekToEndOfFile()
+        currentLogDate = today
+        if logFileHandle == nil {
+            lastOpenFailure = Date()
+            // Not NSLog: that would re-enter the pipe this writer drains.
+            let msg = "[LoggingManager] cannot open \(fileURL.lastPathComponent); retrying in \(Int(Self.reopenRetryInterval))s\n"
+            msg.withCString { cstr in
+                if origStderr != -1 { _ = Darwin.write(origStderr, cstr, strlen(cstr)) }
+            }
+            return
+        }
+        lastOpenFailure = nil
+        guard dayChanged else { return }
 
         // [T-log-auto-prune] Every rotation (first write of a launch + each
         // calendar-day rollover) prunes logs older than the retention window.
@@ -401,10 +458,18 @@ final class LoggingManager: ObservableObject {
             options: .skipsHiddenFiles
         ) else { return }
         var removed: [String] = []
+        // [T-log-prune-at-launch] Never delete a file written in the last day,
+        // whatever date its name carries: now that the prune runs at launch,
+        // the crash report for a crash that happened >15 days ago (app not
+        // opened since) is written moments before this runs, and would
+        // otherwise be deleted before the user can see it.
+        let recentWrite = Date().addingTimeInterval(-24 * 3600)
         for url in files where url.pathExtension == "log" {
             // Unknown date (unparseable name AND unreadable attrs) → keep.
             let date = logDate(of: url) ?? .distantFuture
-            if date < cutoff {
+            let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
+                .contentModificationDate ?? .distantFuture
+            if date < cutoff && modified < recentWrite {
                 do {
                     try fm.removeItem(at: url)
                     removed.append(url.lastPathComponent)
@@ -418,29 +483,56 @@ final class LoggingManager: ObservableObject {
         }
     }
 
-    /// Truncates the current log file if it exceeds `maxLogFileSize`.
-    /// Each step is wrapped in try/catch so a mid-operation failure
-    /// (seek on closed handle, full disk, etc.) can't propagate an
-    /// NSException out of the reader thread.
+    /// Truncates the current log file to its newest `maxLogFileSize/2` bytes
+    /// once it exceeds `maxLogFileSize`. Runs on `writerQueue`.
+    ///
+    /// [T-log-cap-500mb] Streams the kept tail through a temp file in 4 MB
+    /// chunks. The previous version read the whole kept half into one `Data`
+    /// (`readToEnd()`): 50 MB at the old 100 MB cap, 250 MB at 500 MB — a
+    /// single allocation on the logging path, which already aborted once under
+    /// memory pressure (T-logging-writer-alloc-abort). Every step is guarded so
+    /// a failure (full disk, closed handle) can't escape the reader thread; on
+    /// failure the file is left as it was and logging resumes into it.
     private func truncateIfNeeded() {
         guard let handle = logFileHandle else { return }
-        let offset = handle.offsetInFile
-        guard offset > maxLogFileSize else { return }
+        let size = handle.offsetInFile
+        guard size > maxLogFileSize, !currentLogDate.isEmpty else { return }
 
         let keepBytes = maxLogFileSize / 2
-        do {
-            try handle.seek(toOffset: offset - keepBytes)
-            guard let tailData = try handle.readToEnd() else { return }
+        let fm = FileManager.default
+        let fileURL = logDirectory.appendingPathComponent("minis-\(currentLogDate).log")
+        let tmpURL = fileURL.appendingPathExtension("truncating")
 
-            try handle.seek(toOffset: 0)
-            if !safeWrite(Data("[log truncated]\n".utf8)) { return }
-            if !safeWrite(tailData) { return }
-            try handle.truncate(atOffset: handle.offsetInFile)
+        // Close first; rotateLogFileIfNeeded() reopens (and seeks to the end)
+        // on the next write because currentLogDate is cleared.
+        try? handle.close()
+        logFileHandle = nil
+        currentLogDate = ""
+
+        do {
+            try? fm.removeItem(at: tmpURL)
+            let marker = "[log truncated: kept the newest \(keepBytes / 1024 / 1024) MB]\n"
+            guard fm.createFile(atPath: tmpURL.path, contents: Data(marker.utf8)) else { return }
+            let reader = try FileHandle(forReadingFrom: fileURL)
+            defer { try? reader.close() }
+            let writer = try FileHandle(forWritingTo: tmpURL)
+            defer { try? writer.close() }
+            try writer.seekToEnd()
+            try reader.seek(toOffset: size - keepBytes)
+            var copying = true
+            while copying {
+                try autoreleasepool {
+                    guard let chunk = try reader.read(upToCount: 4 * 1024 * 1024), !chunk.isEmpty else {
+                        copying = false
+                        return
+                    }
+                    try writer.write(contentsOf: chunk)
+                }
+            }
+            try writer.close()
+            _ = try fm.replaceItemAt(fileURL, withItemAt: tmpURL)
         } catch {
-            // Drop the handle on any error — rotateLogFileIfNeeded will
-            // reopen. Prevents follow-up writes to a broken handle.
-            logFileHandle = nil
-            currentLogDate = ""
+            try? fm.removeItem(at: tmpURL)
         }
     }
 

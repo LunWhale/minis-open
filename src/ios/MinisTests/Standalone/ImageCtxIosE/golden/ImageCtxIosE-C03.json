@@ -1,0 +1,216 @@
+{
+  "live" : {
+    "anthropic" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 50016,
+              "head" : "summarize this: context budget image request provider summary anchor token stream tool context budget image.\nrequest provider summary anchor token stream tool c",
+              "sha8" : "d7d2c8ba",
+              "tail" : "tream tool context budget image request provider summary anc"
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "antigravity" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 50016,
+              "head" : "summarize this: context budget image request provider summary anchor token stream tool context budget image.\nrequest provider summary anchor token stream tool c",
+              "sha8" : "d7d2c8ba",
+              "tail" : "tream tool context budget image request provider summary anc"
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "chat" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 50016,
+              "head" : "summarize this: context budget image request provider summary anchor token stream tool context budget image.\nrequest provider summary anchor token stream tool c",
+              "sha8" : "d7d2c8ba",
+              "tail" : "tream tool context budget image request provider summary anc"
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "gemini" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 50016,
+              "head" : "summarize this: context budget image request provider summary anchor token stream tool context budget image.\nrequest provider summary anchor token stream tool c",
+              "sha8" : "d7d2c8ba",
+              "tail" : "tream tool context budget image request provider summary anc"
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "responses" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 50016,
+              "head" : "summarize this: context budget image request provider summary anchor token stream tool context budget image.\nrequest provider summary anchor token stream tool c",
+              "sha8" : "d7d2c8ba",
+              "tail" : "tream tool context budget image request provider summary anc"
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ]
+  },
+  "restart" : {
+    "anthropic" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 16,
+              "head" : "summarize this: ",
+              "sha8" : "60dd1edf",
+              "tail" : ""
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 50000,
+              "head" : "context budget image request provider summary anchor token stream tool context budget image.\nrequest provider summary anchor token stream tool context budget im",
+              "sha8" : "a8542ff4",
+              "tail" : "tream tool context budget image request provider summary anc"
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "antigravity" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 16,
+              "head" : "summarize this: ",
+              "sha8" : "60dd1edf",
+              "tail" : ""
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 50000,
+              "head" : "context budget image request provider summary anchor token stream tool context budget image.\nrequest provider summary anchor token stream tool context budget im",
+              "sha8" : "a8542ff4",
+              "tail" : "tream tool context budget image request provider summary anc"
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "chat" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 16,
+              "head" : "summarize this: ",
+              "sha8" : "60dd1edf",
+              "tail" : ""
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 50000,
+              "head" : "context budget image request provider summary anchor token stream tool context budget image.\nrequest provider summary anchor token stream tool context budget im",
+              "sha8" : "a8542ff4",
+              "tail" : "tream tool context budget image request provider summary anc"
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "gemini" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 16,
+              "head" : "summarize this: ",
+              "sha8" : "60dd1edf",
+              "tail" : ""
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 50000,
+              "head" : "context budget image request provider summary anchor token stream tool context budget image.\nrequest provider summary anchor token stream tool context budget im",
+              "sha8" : "a8542ff4",
+              "tail" : "tream tool context budget image request provider summary anc"
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "responses" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 16,
+              "head" : "summarize this: ",
+              "sha8" : "60dd1edf",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 50000,
+              "head" : "context budget image request provider summary anchor token stream tool context budget image.\nrequest provider summary anchor token stream tool context budget im",
+              "sha8" : "a8542ff4",
+              "tail" : "tream tool context budget image request provider summary anc"
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ]
+  }
+}

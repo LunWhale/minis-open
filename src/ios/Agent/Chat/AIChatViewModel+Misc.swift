@@ -139,6 +139,13 @@ extension AIChatViewModel {
         if !silent {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
         }
+        // [T-user-ask] §11.4: the user typing a new message while a question
+        // waits cancels that question (dismissed, superseded_by_user_message)
+        // and the message becomes the next turn. Job / programmatic prompts
+        // (silent or deferred) are not the user answering and leave it alone.
+        if !silent && !deferUntilIdle {
+            supersedePendingUserAsk()
+        }
         let pendingAttachments = attachments
         // [T-paste-live-bubble-card] Same birth-time card plan as send(): the
         // queued bubble keeps the [Pasted#N] literal in its text and is born

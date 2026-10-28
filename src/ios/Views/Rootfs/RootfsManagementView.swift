@@ -71,6 +71,14 @@ struct RootfsManagementView: View {
                 MirrorsSectionView()
             }
 
+            // [T-ios-aojit] AOT-compiled JIT images for the Shell Container.
+            if viewModel.isInstalled {
+                AOJITSettingsSection()
+            }
+
+            // [T-container-network-dns GH#396]
+            ContainerNetworkSection()
+
             Section("Actions") {
                 if !viewModel.isInstalled {
                     Button(action: { viewModel.install() }) {
@@ -321,5 +329,94 @@ class RootfsManagementViewModel: ObservableObject {
 #Preview {
     NavigationStack {
         RootfsManagementView()
+    }
+}
+
+// MARK: - Container Network [T-container-network-dns GH#396]
+
+/// DNS for the Shell Container: follow the system (Auto, default) or use the
+/// servers entered here (Custom). Parsing, validation and the resolv.conf
+/// content live in `ContainerDnsSettings` (NetworkMonitor.swift); this view
+/// only edits the two settings and applies them.
+struct ContainerNetworkSection: View {
+    @AppStorage(ContainerDnsSettings.modeKey) private var modeRaw = ContainerDnsSettings.Mode.auto.rawValue
+    @AppStorage(ContainerDnsSettings.serversKey) private var savedServers = ""
+    @State private var draft = ""
+    @State private var inUse: [String] = []
+
+    private var mode: ContainerDnsSettings.Mode { ContainerDnsSettings.Mode(rawValue: modeRaw) ?? .auto }
+    private var parsed: ContainerDnsSettings.Parsed { ContainerDnsSettings.parse(draft) }
+    private var draftChanged: Bool { parsed.servers != ContainerDnsSettings.parse(savedServers).servers }
+
+    var body: some View {
+        Section {
+            Picker("DNS Mode", selection: Binding(get: { mode }, set: { setMode($0) })) {
+                Text("Auto").tag(ContainerDnsSettings.Mode.auto)
+                Text("Custom").tag(ContainerDnsSettings.Mode.custom)
+            }
+            if mode == .custom {
+                TextField("One IPv4 or IPv6 address per line", text: $draft, axis: .vertical)
+                    .lineLimit(2...6)
+                    .font(.system(.body, design: .monospaced))
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.numbersAndPunctuation)
+                if !parsed.invalid.isEmpty {
+                    Text("Not a valid IPv4 or IPv6 address: \(parsed.invalid.joined(separator: ", "))")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                } else if parsed.servers.isEmpty {
+                    Text("Enter at least one DNS server. Until then the system DNS is used.")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+                Button("Save DNS Servers") { save() }
+                    .disabled(!parsed.invalid.isEmpty || parsed.servers.isEmpty || !draftChanged)
+            }
+            if !inUse.isEmpty {
+                LabeledContent("In Use", value: inUse.joined(separator: "\n"))
+                    .font(.system(.footnote, design: .monospaced))
+            }
+        } header: {
+            Text("Container Network")
+        } footer: {
+            Text(mode == .auto
+                 ? "Auto follows the system DNS and updates on every network change. Keep Auto when a proxy app runs in Fake-IP or TUN mode, or a VPN provides DNS."
+                 : "Custom writes only these servers to the container's /etc/resolv.conf and keeps them when the network changes. Separate addresses with new lines or commas; Linux uses the first 3.")
+        }
+        .onAppear {
+            draft = ContainerDnsSettings.parse(savedServers).servers.joined(separator: "\n")
+            refreshInUse()
+        }
+    }
+
+    private func setMode(_ newMode: ContainerDnsSettings.Mode) {
+        modeRaw = newMode.rawValue
+        apply()
+    }
+
+    private func save() {
+        let result = parsed
+        guard result.invalid.isEmpty, !result.servers.isEmpty else { return }
+        savedServers = result.servers.joined(separator: "\n")
+        draft = savedServers
+        apply()
+    }
+
+    /// Rewrite the container's resolv.conf now, the same way a network change does.
+    private func apply() {
+        ISHKernel.shared.refreshDns()
+        refreshInUse()
+    }
+
+    /// The nameservers the container is using right now, read back from the
+    /// host file bind-mounted as /etc/resolv.conf.
+    private func refreshInUse() {
+        let url = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("MinisChat/dns/resolv.conf")
+        let text = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        inUse = text.split(separator: "\n")
+            .filter { $0.hasPrefix("nameserver ") }
+            .map { String($0.dropFirst("nameserver ".count)) }
     }
 }

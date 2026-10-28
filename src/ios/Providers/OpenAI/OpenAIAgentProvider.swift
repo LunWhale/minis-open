@@ -55,8 +55,55 @@ final class OpenAIAgentProvider: AgentProvider {
     var model: LLMModel { provider.model }
     var defaultMaxTokens: Int { provider.usesChatCompletionsAPI ? 16_384 : 32_768 }
 
+    /// [T-sse-idle-timeout] The provider's own setting, on the Chat
+    /// Completions path only. The Responses API / Codex path keeps the default.
+    var responseIdleTimeout: TimeInterval {
+        guard provider.usesChatCompletionsAPI else { return TimeInterval(ResponseIdleTimeoutSetting.defaultSeconds) }
+        return TimeInterval(ResponseIdleTimeoutSetting.seconds(forInstanceId: provider.providerInstanceId))
+    }
+
+    // BEGIN ChatCompletionsReasoningActivity
+    /// [T-sse-idle-timeout] Does this chunk's `delta` carry reasoning the model
+    /// actually produced? Used to keep the stall watchdog fed while the
+    /// thinking level is off: such reasoning is accumulated but not streamed
+    /// to the UI, so without this a model that reasons for two minutes looked
+    /// exactly like a dead stream.
+    ///
+    /// Only real output counts. An empty string, a missing field, a role-only
+    /// delta and an SSE comment / keepalive line do not - a relay can send
+    /// those forever after its upstream has died.
+    static func deltaCarriesReasoning(_ delta: [String: Any], interleavedField: String?) -> Bool {
+        var fields = ["reasoning_content", "reasoning", "reasoning_text"]
+        if let f = interleavedField, !f.isEmpty, !fields.contains(f) { fields.append(f) }
+        for f in fields {
+            if let s = delta[f] as? String, !s.isEmpty { return true }
+        }
+        if let details = delta["reasoning_details"] as? [[String: Any]] {
+            for item in details {
+                switch item["type"] as? String {
+                case "reasoning.text": if let s = item["text"] as? String, !s.isEmpty { return true }
+                case "reasoning.summary": if let s = item["summary"] as? String, !s.isEmpty { return true }
+                case "reasoning.encrypted": if let s = item["data"] as? String, !s.isEmpty { return true }
+                default: break
+                }
+            }
+        }
+        return false
+    }
+    // END ChatCompletionsReasoningActivity
+
     init(provider: OpenAIProvider) {
         self.provider = provider
+    }
+
+    /// [T-ctx-count-reasoning] Chat Completions sends a captured
+    /// `reasoning_content` back on every past assistant turn whatever the
+    /// thinking level ("presence is the trigger"), except where the field is
+    /// forbidden. The Responses API replays encrypted items instead.
+    /// Keep in step with `forbidReasoningField` in
+    /// flattenChatCompletionsMessages.
+    func echoesReasoningContent(thinkingLevel: ThinkingLevel) -> Bool {
+        provider.usesChatCompletionsAPI && !(provider.isMistral || provider.isCerebras)
     }
 
     func streamAgentMessageClamped(
@@ -247,7 +294,12 @@ final class OpenAIAgentProvider: AgentProvider {
                 func emitParsed(_ out: (thinking: String, visible: String)) {
                     if !out.thinking.isEmpty {
                         reasoningContent += out.thinking
-                        if thinkingLevel.isEnabled { continuation.yield(.thinkingDelta(out.thinking)) }
+                        if thinkingLevel.isEnabled {
+                            continuation.yield(.thinkingDelta(out.thinking))
+                        } else {
+                            // [T-sse-idle-timeout] Hidden <think> text is still output.
+                            continuation.yield(.streamActivity)
+                        }
                     }
                     if !out.visible.isEmpty {
                         if !emittedTextStart {
@@ -419,6 +471,13 @@ final class OpenAIAgentProvider: AgentProvider {
                             if !rc.isEmpty { continuation.yield(.thinkingDelta(rc)) }
                         }
                         if sawReasoningField { sawReasoningFieldEver = true }
+                        // [T-sse-idle-timeout] With thinking off none of the
+                        // reasoning reads above yields anything, so the agent
+                        // loop saw silence while the model was reasoning.
+                        if !thinkingLevel.isEnabled,
+                           Self.deltaCarriesReasoning(delta, interleavedField: self.model.interleavedReasoningField) {
+                            continuation.yield(.streamActivity)
+                        }
 
                         // Text delta — route through the think-prefix parser so
                         // models that embed reasoning in content (MiniMax
@@ -663,9 +722,17 @@ final class OpenAIAgentProvider: AgentProvider {
         // function IS the Responses path — incl. forceResponsesAPI relays
         // like sub2api, which pass service_tier through) gated on a
         // gpt-family model id, mirroring the official fast catalog.
-        if UserDefaults.standard.bool(forKey: OpenAIProvider.fastModeDefaultsKey),
-           model.id.lowercased().contains("gpt") {
-            body["service_tier"] = "priority"
+        // [T-codex-speed-tier] Value follows the chosen tier; Ultrafast only
+        // for a whitelisted model, Fast otherwise (SpeedTierSettings).
+        if let tier = SpeedTierSettings.responsesServiceTier(
+            stored: SpeedTierSettings.storedTier(), modelId: model.id) {
+            body["service_tier"] = tier
+        }
+        // [T-ultrafast-unsupported-log] Say so when Ultrafast was chosen but is
+        // not what this model / account supports.
+        if let note = SpeedTierSettings.ultrafastUnsupportedNote(
+            stored: SpeedTierSettings.storedTier(), modelId: model.id) {
+            logger.info("[SpeedTier] \(note)")
         }
         // [T-xai-priority-processing] xAI Priority Processing, agent Responses
         // path. Reads the same global Fast Mode toggle as the block above; the
@@ -675,6 +742,9 @@ final class OpenAIAgentProvider: AgentProvider {
         if provider.sendsPriorityServiceTier {
             body["service_tier"] = "priority"
         }
+        // [T-codex-speed-tier] What was asked for, logged next to the tier the
+        // response echoes in response.completed.
+        let requestedServiceTier = body["service_tier"] as? String
 
         let (lineStream, _) = try await provider.streamRaw(body: body, isResponsesAPI: true)
 
@@ -682,8 +752,27 @@ final class OpenAIAgentProvider: AgentProvider {
             let task = Task {
                 var emittedTextStart = false
                 var hasToolCalls = false
-                // Track current function call items: [item_id: (call_id, name, accumulatedJSON)]
-                var functionCallAccum: [String: (callId: String, name: String, json: String)] = [:]
+                // [T-ios-responses-empty-args] Function calls being assembled
+                // from their stream events; see ResponsesFunctionCallAssembler.
+                var functionCalls = ResponsesFunctionCallAssembler()
+                func logFunctionCallNotes() {
+                    for note in functionCalls.takeNotes() { logger.warning("[RespArgs] \(note)") }
+                }
+                func yieldFunctionCall(_ call: ResponsesFunctionCallAssembler.Completed, source: String) {
+                    let combinedId = Self.combineResponsesAPIIds(callId: call.callId, fcId: call.itemId)
+                    if !call.announced {
+                        emittedTextStart = false
+                        hasToolCalls = true
+                        continuation.yield(.contentBlockStart(.toolUse(id: combinedId, name: call.name)))
+                    }
+                    let args = Self.parseJsonToDict(call.json)
+                    if args.isEmpty {
+                        Self.diagEmptyToolArgs(rawJson: call.json, toolName: call.name, toolId: combinedId, model: self.model.id, source: source)
+                    }
+                    continuation.yield(.toolCallComplete(
+                        id: combinedId, name: call.name, args: args, metadata: nil
+                    ))
+                }
 
                 // Per-item streamed summary text. Keyed by reasoning item id.
                 // OpenAI Responses API can emit multiple reasoning items in a
@@ -740,13 +829,20 @@ final class OpenAIAgentProvider: AgentProvider {
                             }
 
                         case "response.function_call_arguments.delta":
-                            if let itemId = event["item_id"] as? String,
-                               let delta = event["delta"] as? String,
-                               var entry = functionCallAccum[itemId] {
-                                entry.json += delta
-                                functionCallAccum[itemId] = entry
-                                continuation.yield(.toolInputDelta(name: entry.name, accumulated: entry.json))
+                            if let delta = event["delta"] as? String,
+                               let progress = functionCalls.delta(
+                                itemId: event["item_id"] as? String,
+                                outputIndex: event["output_index"] as? Int, delta: delta) {
+                                continuation.yield(.toolInputDelta(name: progress.name, accumulated: progress.accumulated))
                             }
+                            logFunctionCallNotes()
+
+                        case "response.function_call_arguments.done":
+                            functionCalls.argumentsDone(
+                                itemId: event["item_id"] as? String,
+                                outputIndex: event["output_index"] as? Int,
+                                arguments: event["arguments"] as? String)
+                            logFunctionCallNotes()
 
                         case "response.output_item.done":
                             if let item = event["item"] as? [String: Any],
@@ -771,17 +867,13 @@ final class OpenAIAgentProvider: AgentProvider {
                             } else if let item = event["item"] as? [String: Any],
                                let itemType = item["type"] as? String,
                                itemType == "function_call",
-                               let itemId = item["id"] as? String,
-                               let entry = functionCallAccum[itemId] {
-                                let combinedId = Self.combineResponsesAPIIds(callId: entry.callId, fcId: itemId)
-                                let args = Self.parseJsonToDict(entry.json)
-                                if args.isEmpty {
-                                    Self.diagEmptyToolArgs(rawJson: entry.json, toolName: entry.name, toolId: combinedId, model: self.model.id, source: "responsesAPI.outputItemDone")
+                               let itemId = item["id"] as? String {
+                                if let call = functionCalls.itemDone(
+                                    itemId: itemId, callId: item["call_id"] as? String,
+                                    name: item["name"] as? String, arguments: item["arguments"] as? String) {
+                                    yieldFunctionCall(call, source: "responsesAPI.outputItemDone")
                                 }
-                                continuation.yield(.toolCallComplete(
-                                    id: combinedId, name: entry.name, args: args, metadata: nil
-                                ))
-                                functionCallAccum.removeValue(forKey: itemId)
+                                logFunctionCallNotes()
                             }
 
                         case "response.output_item.added":
@@ -806,7 +898,8 @@ final class OpenAIAgentProvider: AgentProvider {
                                 emittedTextStart = false
                                 hasToolCalls = true
                                 let combinedId = Self.combineResponsesAPIIds(callId: callId, fcId: itemId)
-                                functionCallAccum[itemId] = (callId: callId, name: name, json: "")
+                                functionCalls.added(itemId: itemId, callId: callId, name: name,
+                                                    outputIndex: event["output_index"] as? Int)
                                 continuation.yield(.contentBlockStart(.toolUse(id: combinedId, name: name)))
                             }
 
@@ -875,6 +968,12 @@ final class OpenAIAgentProvider: AgentProvider {
                             // account/model isn't eligible.
                             let effectiveTier = response?["service_tier"] as? String
                             logger.info("response.completed — status: \(apiStatus ?? "nil"), stop_reason: \(apiStopReason ?? "nil"), service_tier: \(effectiveTier ?? "nil"), hasToolCalls: \(hasToolCalls), reasoningItems: \(reasoningItems.count), reasoningTokens: \(reasoningTokens)")
+                            // [T-codex-ultrafast-echo] Logged side by side, with
+                            // no verdict: under ChatGPT auth the echoed tier is
+                            // not a reliable record of what ran (see SpeedTier).
+                            if let requestedServiceTier {
+                                logger.info("[SpeedTier] requested service_tier=\(requestedServiceTier); server echoed service_tier=\(effectiveTier ?? "nil") (not verifiable for ChatGPT auth)")
+                            }
 
                             // Aggregate per-item streamed summary text into a
                             // single `reasoningContent` field on the assistant
@@ -972,6 +1071,20 @@ final class OpenAIAgentProvider: AgentProvider {
                                 )
                                 continuation.yield(.usage(u))
                             }
+                            // [T-ios-responses-empty-args] Calls whose
+                            // output_item.done never arrived, completed from
+                            // the response's own output items.
+                            var outputArguments: [String: String] = [:]
+                            for item in outputItems where (item["type"] as? String) == "function_call" {
+                                if let id = item["id"] as? String, let a = item["arguments"] as? String {
+                                    outputArguments[id] = a
+                                }
+                            }
+                            for call in functionCalls.flush(outputArguments: outputArguments) {
+                                yieldFunctionCall(call, source: "responsesAPI.completedFlush")
+                            }
+                            logFunctionCallNotes()
+
                             // Use the API's actual stop reason to decide loop continuation.
                             // Codex models may emit text + function_calls in the same response;
                             // relying on hasToolCalls alone could miss edge cases.
@@ -1519,6 +1632,21 @@ final class OpenAIAgentProvider: AgentProvider {
                             ]] as [[String: Any]],
                         ])
                     }
+                }
+                // [T-404-summary-after-tool-results] Text that shares a message
+                // with tool results (the compaction summary after the anchor,
+                // a reminder) used to be dropped here: only role:tool entries
+                // were emitted. Send it as a user message after the replies -
+                // sanitizeToolCallAdjacency still moves every role:tool entry
+                // directly under its tool_calls, so this lands after them.
+                let texts = msg.parts.compactMap { part -> String? in
+                    if case .text(let t) = part, !t.isEmpty { return t }
+                    return nil
+                }
+                if texts.count == 1 {
+                    result.append(["role": "user", "content": texts[0]])
+                } else if !texts.isEmpty {
+                    result.append(["role": "user", "content": texts.map { ["type": "text", "text": $0] }])
                 }
             } else {
                 // Defensive: drop assistant messages that carry no echoable
@@ -2214,6 +2342,13 @@ final class OpenAIAgentProvider: AgentProvider {
         tools.map { tool in
             var properties: [String: [String: Any]] = [:]
             for (name, param) in tool.parameters {
+                // [T-user-ask] A structured param renders its nested schema.
+                if let schema = param.schema {
+                    var prop = schema.jsonSchema()
+                    prop["description"] = param.description
+                    properties[name] = prop
+                    continue
+                }
                 var prop: [String: Any] = [
                     "type": param.type.rawValue,
                     "description": param.description,
@@ -2243,6 +2378,13 @@ final class OpenAIAgentProvider: AgentProvider {
         tools.map { tool in
             var properties: [String: [String: Any]] = [:]
             for (name, param) in tool.parameters {
+                // [T-user-ask] A structured param renders its nested schema.
+                if let schema = param.schema {
+                    var prop = schema.jsonSchema()
+                    prop["description"] = param.description
+                    properties[name] = prop
+                    continue
+                }
                 var prop: [String: Any] = [
                     "type": param.type.rawValue,
                     "description": param.description,
@@ -2488,3 +2630,152 @@ final class OpenAIAgentProvider: AgentProvider {
         id.count <= maxResponsesAPIIdLength ? id : String(id.prefix(maxResponsesAPIIdLength))
     }
 }
+
+// MARK: - Responses API function-call assembly
+
+// BEGIN ResponsesFunctionCallAssembler
+/// [T-ios-responses-empty-args] Builds each Responses API `function_call`
+/// from its stream events.
+///
+/// The stream used to take a call's arguments ONLY from the
+/// `function_call_arguments.delta` events keyed by `item_id`. An upstream that
+/// never streams deltas (some relays and compatible endpoints send the full
+/// arguments only on `output_item.done`), or whose deltas name a different
+/// `item_id`, left the buffer empty, and the call went out as `{}` — which the
+/// tool preflight then blocks with `chunkCount=0`.
+///
+/// Arguments are now picked, first non-empty wins:
+///   1. `arguments` on the `output_item.done` item (authoritative full value),
+///   2. `arguments` on `function_call_arguments.done`,
+///   3. the concatenated deltas.
+/// Each item completes at most once; calls still open at `response.completed`
+/// are flushed from the response's `output` array. Pure value type (Foundation
+/// only) so a standalone test compiles this exact block.
+struct ResponsesFunctionCallAssembler {
+    struct Completed: Equatable {
+        let itemId: String
+        let callId: String
+        let name: String
+        let json: String
+        /// "item", "argumentsDone" or "deltas" — where `json` came from.
+        let source: String
+        /// False when no `output_item.added` announced this call, so the caller
+        /// still owes the UI its block start.
+        let announced: Bool
+    }
+
+    private struct Pending {
+        let callId: String
+        let name: String
+        let announced: Bool
+        var deltas = ""
+        var argumentsDone: String?
+    }
+
+    private var pending: [String: Pending] = [:]
+    private var order: [String] = []
+    private var itemIdByOutputIndex: [Int: String] = [:]
+    private var completedIds: Set<String> = []
+    private var rerouteNoted: Set<String> = []
+    private var notes: [String] = []
+
+    /// Diagnostics gathered since the last call, for the caller to log.
+    mutating func takeNotes() -> [String] {
+        defer { notes.removeAll() }
+        return notes
+    }
+
+    mutating func added(itemId: String, callId: String, name: String, outputIndex: Int?) {
+        guard pending[itemId] == nil, !completedIds.contains(itemId) else { return }
+        pending[itemId] = Pending(callId: callId, name: name, announced: true)
+        order.append(itemId)
+        if let outputIndex { itemIdByOutputIndex[outputIndex] = itemId }
+    }
+
+    /// The open call an event refers to: its own `item_id`, else the call at
+    /// its `output_index`, else the only open call.
+    private func resolve(itemId: String?, outputIndex: Int?) -> String? {
+        if let itemId, pending[itemId] != nil { return itemId }
+        if let outputIndex, let id = itemIdByOutputIndex[outputIndex], pending[id] != nil { return id }
+        if pending.count == 1 { return pending.keys.first }
+        return nil
+    }
+
+    /// Returns the call's name and arguments so far (for `.toolInputDelta`),
+    /// or nil when the delta matches no open call.
+    mutating func delta(itemId: String?, outputIndex: Int?, delta: String) -> (name: String, accumulated: String)? {
+        guard let id = resolve(itemId: itemId, outputIndex: outputIndex), var entry = pending[id] else {
+            notes.append("arguments delta for unknown item_id=\(itemId ?? "nil") output_index=\(outputIndex.map(String.init) ?? "nil") dropped (\(delta.utf8.count) bytes)")
+            return nil
+        }
+        if id != itemId, rerouteNoted.insert(itemId ?? "nil").inserted {
+            notes.append("arguments delta item_id=\(itemId ?? "nil") matches no call; routed to \(id)")
+        }
+        entry.deltas += delta
+        pending[id] = entry
+        return (entry.name, entry.deltas)
+    }
+
+    mutating func argumentsDone(itemId: String?, outputIndex: Int?, arguments: String?) {
+        guard let arguments else { return }
+        guard let id = resolve(itemId: itemId, outputIndex: outputIndex) else {
+            if let itemId, completedIds.contains(itemId) { return }
+            notes.append("function_call_arguments.done for unknown item_id=\(itemId ?? "nil") ignored (\(arguments.utf8.count) bytes)")
+            return
+        }
+        pending[id]?.argumentsDone = arguments
+    }
+
+    /// `output_item.done` for a function_call. `callId` / `name` from the item
+    /// let a call whose `output_item.added` never arrived still be delivered.
+    mutating func itemDone(itemId: String, callId: String?, name: String?, arguments: String?) -> Completed? {
+        guard !completedIds.contains(itemId) else {
+            notes.append("duplicate output_item.done for \(itemId) ignored")
+            return nil
+        }
+        var entry = pending.removeValue(forKey: itemId)
+        if entry == nil {
+            guard let callId, !callId.isEmpty, let name, !name.isEmpty else {
+                notes.append("output_item.done for unannounced item \(itemId) without call_id/name dropped")
+                return nil
+            }
+            notes.append("output_item.done for unannounced item \(itemId); delivering it anyway")
+            entry = Pending(callId: callId, name: name, announced: false)
+        }
+        order.removeAll { $0 == itemId }
+        completedIds.insert(itemId)
+        return finish(itemId: itemId, entry!, itemArguments: arguments)
+    }
+
+    /// `response.completed`: deliver calls whose `output_item.done` never came,
+    /// in announcement order. `outputArguments` maps item id → `arguments` from
+    /// the response's `output` array.
+    mutating func flush(outputArguments: [String: String]) -> [Completed] {
+        let ids = order
+        order.removeAll()
+        return ids.compactMap { id in
+            guard let entry = pending.removeValue(forKey: id) else { return nil }
+            completedIds.insert(id)
+            notes.append("call \(id) had no output_item.done; completed at response.completed")
+            return finish(itemId: id, entry, itemArguments: outputArguments[id])
+        }
+    }
+
+    private mutating func finish(itemId: String, _ entry: Pending, itemArguments: String?) -> Completed {
+        func nonEmpty(_ s: String?) -> String? {
+            guard let s, !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            return s
+        }
+        let json: String, source: String
+        if let a = nonEmpty(itemArguments) { (json, source) = (a, "item") }
+        else if let a = nonEmpty(entry.argumentsDone) { (json, source) = (a, "argumentsDone") }
+        else { (json, source) = (entry.deltas, "deltas") }
+        // Only worth a line when the deltas alone would have produced a different call.
+        if source != "deltas", json != entry.deltas {
+            notes.append("call \(itemId) name=\(entry.name) arguments from \(source) (\(json.utf8.count) bytes); streamed deltas had \(entry.deltas.utf8.count) bytes")
+        }
+        return Completed(itemId: itemId, callId: entry.callId, name: entry.name, json: json,
+                         source: source, announced: entry.announced)
+    }
+}
+// END ResponsesFunctionCallAssembler

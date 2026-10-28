@@ -10,6 +10,20 @@
 import UIKit
 import Foundation
 
+/// The chat page's sources, read as one text: AIChatView.swift (state and
+/// `body`) first, then every other file under Views/Chat/AIChatView/ - the
+/// old single AIChatView.swift was split into them.
+func chatViewSource() -> String {
+    let ios = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let dir = ios.appendingPathComponent("Views/Chat/AIChatView")
+    let main = dir.appendingPathComponent("AIChatView.swift")
+    let rest = (FileManager.default.enumerator(at: dir, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? [])
+        .filter { $0.pathExtension == "swift" && $0.lastPathComponent != "AIChatView.swift" }
+        .sorted { $0.path < $1.path }
+    return ([main] + rest).compactMap { try? String(contentsOf: $0, encoding: .utf8) }.joined(separator: "\n")
+}
+
 var failures = 0
 func check(_ label: String, _ actual: Bool, _ expected: Bool = true) {
     if actual == expected { print("  ✅ \(label)") }
@@ -91,7 +105,7 @@ func source(_ rel: String) -> String {
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
     return (try? String(contentsOf: here.appendingPathComponent(rel), encoding: .utf8)) ?? ""
 }
-let src = source("Views/Chat/AIChatView.swift")
+let src = chatViewSource()
 if src.isEmpty {
     print("  ⏭  source not readable from this sandbox — run the binary directly to include these")
 } else {

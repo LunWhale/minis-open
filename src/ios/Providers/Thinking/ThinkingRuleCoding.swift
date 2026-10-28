@@ -90,7 +90,7 @@ extension ThinkingWireFormat {
             guard let p = obj["path"] as? String else { return nil }
             var values: [ThinkingLevel: String] = [:]
             for (k, v) in (obj["values"] as? [String: String] ?? [:]) {
-                if let lvl = ThinkingLevel(rawValue: k) { values[lvl] = v }
+                if let lvl = ThinkingLevel.parse(k) { values[lvl] = v }
             }
             return .customPath(path: p, values: values, offValue: obj["offValue"] as? String)
         }

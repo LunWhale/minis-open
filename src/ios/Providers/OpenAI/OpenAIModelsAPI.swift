@@ -189,18 +189,33 @@ enum OpenAIModelsAPI {
     /// offline refresh can still serve the previous catalog after the access
     /// token has rotated (the token is part of the primary key and therefore
     /// changes on every refresh).
+    /// [T-codex-client-0159] Keyed on the client version too: after a version
+    /// bump, a failed discovery must not serve the catalog fetched under the old
+    /// version (one that may lack models the new version is offered) as if it
+    /// were current. A miss falls through to the built-in list, which is kept
+    /// up to date with the models the bump was for.
     private static func lastKnownGoodKey(instanceId: String, accountId: String?) -> String {
-        "codex-oauth-last|\(instanceId)|\(accountId ?? "-")"
+        "codex-oauth-last|\(instanceId)|\(accountId ?? "-")|\(OpenAIProvider.codexClientVersion)"
     }
 
     /// GET the Codex backend's model catalogue.
     ///
-    /// Headers mirror `OpenAIProvider`'s Codex request path EXACTLY — same
-    /// `Version`, same `codex_cli_rs` originator and User-Agent. The reporter's
-    /// probe used `originator: omp`, which is that tool's identity, not ours;
-    /// sending a different fingerprint for discovery than for inference would
-    /// be both dishonest and a good way to have the two disagree about which
+    /// Same identity as `OpenAIProvider`'s Codex inference path — the same
+    /// `codex_cli_rs` originator, User-Agent and client version (one constant).
+    /// The reporter's probe used `originator: omp`, which is that tool's
+    /// identity, not ours; a different fingerprint for discovery than for
+    /// inference would be dishonest and could make the two disagree about which
     /// models are allowed.
+    ///
+    /// [T-codex-client-0159] The header SET now matches CLIProxyAPI's catalogue
+    /// fetcher (cmd/fetch_codex_models, c8a2bfe8f), the reference that does list
+    /// gpt-6.1-sol: `client_version` query, Accept, Authorization, Originator,
+    /// User-Agent, Chatgpt-Account-Id — and NOT the `Version` / `Openai-Beta:
+    /// responses=experimental` headers, which belong to the Responses inference
+    /// request and which that fetcher never sends to /models. Whether either
+    /// header affected the catalogue is not verified; aligning removes the
+    /// difference. The UA keeps our own platform token ("iOS; arm64") rather
+    /// than claiming a Mac.
     private static func fetchCodexBackendModels(token: String, accountId: String?) async throws -> [LLMModel] {
         let version = OpenAIProvider.codexClientVersion
         guard let url = URL(string: "https://chatgpt.com/backend-api/codex/models?client_version=\(version)") else {
@@ -209,8 +224,6 @@ enum OpenAIModelsAPI {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue(version, forHTTPHeaderField: "Version")
-        request.setValue("responses=experimental", forHTTPHeaderField: "Openai-Beta")
         request.setValue("codex_cli_rs/\(version) (iOS; arm64)", forHTTPHeaderField: "User-Agent")
         request.setValue("codex_cli_rs", forHTTPHeaderField: "Originator")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -227,8 +240,50 @@ enum OpenAIModelsAPI {
             throw LLMError.providerError(
                 message: "Codex model discovery failed (HTTP \(status)): \(body.prefix(300))")
         }
-        return parseCodexModels(data)
+        let models = parseCodexModels(data)
+        // [T-codex-ultrafast-echo] Record which listed models declare an
+        // Ultrafast tier; SpeedTierSettings offers Ultrafast for those (and,
+        // as a fallback, for its whitelist). Replaced on every success.
+        let items = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["models"] as? [[String: Any]]
+            ?? ((try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]]) ?? []
+        let ultrafastIds = items.filter { isListedInCodexCatalog($0) && SpeedTierSettings.catalogDeclaresUltrafast($0) }
+            .compactMap { ($0["slug"] as? String) ?? ($0["id"] as? String) }
+        SpeedTierSettings.recordCatalogUltrafast(modelIds: ultrafastIds)
+        logger.info("Codex discovery: catalogue declares ultrafast for \(ultrafastIds.count) model(s)\(ultrafastIds.isEmpty ? "" : ": " + ultrafastIds.joined(separator: ","))")
+        // [T-codex-client-0159] Which ids the catalogue offered — ids only, never
+        // the token or account — so "why is model X missing" can be answered
+        // from the log.
+        logger.info("Codex discovery: client_version=\(version) listed \(models.count) model ids: \(models.map(\.id).joined(separator: ","))")
+        return models
     }
+
+    // BEGIN codexCatalogVisibility
+    /// `visibility` values that keep a catalogue entry out of the picker. The
+    /// backend's real values are "list" and "hide"; "hide" marks internal
+    /// entries such as gpt-reserve and codex-auto-review. The other spellings
+    /// are kept from the earlier tolerant parser. Same set as Android's
+    /// `CodexModelsApi.HIDDEN_VISIBILITIES`.
+    static let hiddenCodexVisibilities: Set<String> = ["hide", "hidden", "internal", "none"]
+
+    static func isListedInCodexCatalog(_ item: [String: Any]) -> Bool {
+        if let visibility = (item["visibility"] as? String)?.lowercased(),
+           hiddenCodexVisibilities.contains(visibility) {
+            return false
+        }
+        for flag in ["is_visible", "visible", "enabled", "available"] {
+            if let v = item[flag] as? Bool, v == false { return false }
+        }
+        return true
+    }
+
+    /// Reasoning support as the catalogue states it: the real payload carries
+    /// `supported_reasoning_levels` (a non-empty list for reasoning models), not
+    /// `supports_reasoning`. nil when the entry says nothing either way.
+    static func codexCatalogSupportsReasoning(_ item: [String: Any]) -> Bool? {
+        if let levels = item["supported_reasoning_levels"] as? [Any] { return !levels.isEmpty }
+        return (item["supports_reasoning"] as? Bool) ?? (item["reasoning"] as? Bool)
+    }
+    // END codexCatalogVisibility
 
     /// Map the Codex catalogue onto `LLMModel`.
     ///
@@ -254,14 +309,9 @@ enum OpenAIModelsAPI {
 
             // Respect visibility: a model the backend marks hidden/unavailable
             // stays out of the picker rather than becoming a 400 the user only
-            // discovers by sending a message.
-            if let visibility = (item["visibility"] as? String)?.lowercased(),
-               visibility == "hidden" || visibility == "internal" || visibility == "none" {
-                return nil
-            }
-            for flag in ["is_visible", "visible", "enabled", "available"] {
-                if let v = item[flag] as? Bool, v == false { return nil }
-            }
+            // discovers by sending a message. [T-codex-client-0159] Now also
+            // "hide", the value the backend actually uses.
+            guard isListedInCodexCatalog(item) else { return nil }
 
             let display = (item["display_name"] as? String)
                 ?? (item["displayName"] as? String)
@@ -281,8 +331,12 @@ enum OpenAIModelsAPI {
                 ?? ((item["limit"] as? [String: Any])?["output"] as? Int) {
                 model.maxOutputTokens = out
             }
-            if let reasoning = (item["supports_reasoning"] as? Bool)
-                ?? (item["reasoning"] as? Bool) {
+            // [T-codex-client-0159] The real catalogue states reasoning as
+            // `supported_reasoning_levels`. Reading only `supports_reasoning`
+            // left the flag nil for every discovered model, and for an id
+            // models.dev does not know yet (gpt-6.1-sol) it stayed nil — which
+            // collapses every thinking level to the Codex fallback effort "low".
+            if let reasoning = codexCatalogSupportsReasoning(item) {
                 model.supportsReasoning = reasoning
             }
             return model
@@ -295,18 +349,24 @@ enum OpenAIModelsAPI {
         let statusCode = http?.statusCode ?? -1
 
         guard (200..<300).contains(statusCode) else {
-            let body = String(data: data, encoding: .utf8) ?? ""
-            logger.error("OpenAI models API error — status \(statusCode)")
+            // [T-ios-model-refresh-visible] "HTTP <code>: <provider message>" -
+            // the text the Refresh row shows. 401/403 keep their LLMError type.
+            let reason = ModelListParsing.httpFailure(code: statusCode, body: data)
+            logger.error("OpenAI models API error — \(reason)")
             if statusCode == 401 || statusCode == 403 {
-                throw LLMError.invalidAPIKey(detail: "OpenAI HTTP \(statusCode): \(String(body.prefix(200)))")
+                throw LLMError.invalidAPIKey(detail: reason)
             }
-            throw LLMError.providerError(message: "Failed to fetch OpenAI models (HTTP \(statusCode)): \(body.prefix(500))")
+            throw ModelListFetchError(reason: reason)
         }
 
-        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
-        guard let modelsArray = json["data"] as? [[String: Any]] else {
-            throw LLMError.decodingError(underlying: NSError(domain: "OpenAIModelsAPI", code: -1,
-                userInfo: [NSLocalizedDescriptionKey: "Missing data array in response"]))
+        // [T-ios-model-refresh-visible] Accept the shapes gateways really send
+        // (see ModelListParsing.modelArray). A 200 carrying an error object, or
+        // any other body with no list in it, is reported as such instead of the
+        // old "Missing data array in response".
+        guard let modelsArray = ModelListParsing.modelArray(data) else {
+            let reason = "the response is not a model list: \(ModelListParsing.errorSnippet(data))"
+            logger.error("OpenAI models API — \(reason)")
+            throw ModelListFetchError(reason: reason)
         }
 
         // For official OpenAI endpoints, filter to chat-capable models only.
@@ -314,8 +374,8 @@ enum OpenAIModelsAPI {
         let chatPrefixes = ["gpt-", "o1", "o3", "o4-", "codex-", "chatgpt-"]
         let excludeSuffixes = ["-instruct", "-realtime", "-audio", "-transcribe", "-tts", "-embedding"]
 
-        let models = modelsArray.compactMap { item -> LLMModel? in
-            guard let id = item["id"] as? String else { return nil }
+        let models = modelsArray.compactMap { raw -> LLMModel? in
+            guard let (id, item) = ModelListParsing.entry(raw) else { return nil }
 
             if filterOpenAIOnly {
                 let isChatModel = chatPrefixes.contains { id.hasPrefix($0) }
@@ -328,7 +388,8 @@ enum OpenAIModelsAPI {
                 guard !id.contains(":ft-") else { return nil }
             }
 
-            let displayName = (item["name"] as? String) ?? modelDisplayName(from: id)
+            // A gateway that keys its entries by `name` has no separate display name.
+            let displayName = ModelListParsing.displayName(of: item, id: id) ?? modelDisplayName(from: id)
 
             // Parse modalities. Two wire shapes are supported:
             //   - OpenRouter: nested under `architecture.input_modalities` /
@@ -380,12 +441,22 @@ enum OpenAIModelsAPI {
             // text-only endpoints stay text-only, while real OpenAI vision
             // models still get `.imageInput` from the architecture block
             // above (or from models.dev / pattern inference downstream).
-            return LLMModel(id: id, displayName: displayName, provider: "OpenAI", modalityOverride: modality)
+            var model = LLMModel(id: id, displayName: displayName, provider: "OpenAI", modalityOverride: modality)
+            // [OpenMinis#438] A gateway that reports its own limits is the
+            // authority on them; `enrichModels` below and every later
+            // re-enrichment only fill what it left out (see applyDevData).
+            let limits = ModelListParsing.reportedLimits(of: item)
+            if limits.context != nil || limits.output != nil {
+                model.contextWindow = limits.context
+                model.maxOutputTokens = limits.output
+                model.limitsReportedByEndpoint = true
+            }
+            return model
         }
 
         let enriched = ModelsDevAPI.enrichModels(models)
         logger.info("Fetched \(modelsArray.count) total models, \(enriched.count) returned (filterOpenAIOnly: \(filterOpenAIOnly))")
-        if let first = modelsArray.first,
+        if let first = modelsArray.first, JSONSerialization.isValidJSONObject(first),
            let debugData = try? JSONSerialization.data(withJSONObject: first, options: [.prettyPrinted, .sortedKeys]),
            let debugStr = String(data: debugData, encoding: .utf8) {
             logger.info("First model raw JSON:\n\(debugStr)")
@@ -446,3 +517,128 @@ private enum OpenAIModelsCache {
         try? data.write(to: cacheFile(for: credential), options: .atomic)
     }
 }
+
+// BEGIN ModelListParsing
+/// [T-ios-model-refresh-visible] Why a /models response could not be used, in
+/// words the Refresh row can show: "HTTP 401: <provider message>", "the
+/// response is not a model list: …".
+struct ModelListFetchError: LocalizedError {
+    let reason: String
+    var errorDescription: String? { reason }
+}
+
+/// [T-ios-model-refresh-visible] Reading an OpenAI-compatible /models body.
+/// Mirrors Android `OpenAIModelsApi.modelArray()` / `errorSnippet()`.
+enum ModelListParsing {
+    private static let listKeys = ["data", "models", "items", "results", "result"]
+    private static let idKeys = ["id", "model", "model_id", "name"]
+
+    /// The model list inside a response body, or nil when there is none:
+    /// `{data|models|items|results|result: [...]}`, the same one level down
+    /// (`{"data": {"models": [...]}}`), or a bare array. An empty array is a
+    /// list (the provider listed nothing), not a failure to find one.
+    static func modelArray(_ body: Data) -> [Any]? {
+        guard let json = try? JSONSerialization.jsonObject(with: body, options: [.fragmentsAllowed]) else { return nil }
+        if let array = json as? [Any] { return array }
+        guard let object = json as? [String: Any] else { return nil }
+        for key in listKeys {
+            if let array = object[key] as? [Any] { return array }
+        }
+        for key in listKeys {
+            guard let inner = object[key] as? [String: Any] else { continue }
+            for innerKey in listKeys {
+                if let array = inner[innerKey] as? [Any] { return array }
+            }
+        }
+        return nil
+    }
+
+    /// One list entry: an object with its id under id / model / model_id /
+    /// name, or a bare id string. nil when it names no model.
+    static func entry(_ raw: Any) -> (id: String, object: [String: Any])? {
+        if let id = raw as? String {
+            let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : (trimmed, ["id": trimmed])
+        }
+        guard let object = raw as? [String: Any] else { return nil }
+        for key in idKeys {
+            if let value = object[key] as? String {
+                let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty { return (trimmed, object) }
+            }
+        }
+        return nil
+    }
+
+    /// The entry's own display name, unless it is blank or just repeats the id.
+    static func displayName(of object: [String: Any], id: String) -> String? {
+        guard let name = (object["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !name.isEmpty, name != id else { return nil }
+        return name
+    }
+
+    /// The provider's own message from an error body (`error.message`,
+    /// `message`, or a string `error`), else the body itself; one line, at
+    /// most 200 characters.
+    static func errorSnippet(_ body: Data) -> String {
+        let text = String(data: body, encoding: .utf8) ?? ""
+        var message: String?
+        if let object = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] {
+            if let m = (object["error"] as? [String: Any])?["message"] as? String, !isBlank(m) {
+                message = m
+            } else if let m = object["message"] as? String, !isBlank(m) {
+                message = m
+            } else if let m = object["error"] as? String, !isBlank(m) {
+                message = m
+            }
+        }
+        let oneLine = (message ?? text).split(whereSeparator: { $0.isWhitespace || $0.isNewline }).joined(separator: " ")
+        return oneLine.isEmpty ? "(empty body)" : String(oneLine.prefix(200))
+    }
+
+    static func httpFailure(code: Int, body: Data) -> String {
+        "HTTP \(code): \(errorSnippet(body))"
+    }
+
+    private static func isBlank(_ s: String) -> Bool {
+        s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// [OpenMinis#438] The context window and output limit an entry reports
+    /// about itself, each nil when absent. Read in order: top-level
+    /// `context_length` / `context_window` / `contextWindow` /
+    /// `max_context_length`, then `limit.context`, then OpenRouter-style
+    /// `top_provider.context_length`; output likewise from `max_output_tokens`
+    /// / `maxOutputTokens` / `max_completion_tokens`, `limit.output`,
+    /// `top_provider.max_completion_tokens`. Numbers and numeric strings are
+    /// accepted; zero, negative or non-numeric values count as absent.
+    static func reportedLimits(of object: [String: Any]) -> (context: Int?, output: Int?) {
+        let limit = object["limit"] as? [String: Any]
+        let top = object["top_provider"] as? [String: Any]
+        let context = ["context_length", "context_window", "contextWindow", "max_context_length"]
+            .lazy.compactMap { positiveInt(object[$0]) }.first
+            ?? positiveInt(limit?["context"])
+            ?? positiveInt(top?["context_length"])
+        let output = ["max_output_tokens", "maxOutputTokens", "max_completion_tokens"]
+            .lazy.compactMap { positiveInt(object[$0]) }.first
+            ?? positiveInt(limit?["output"])
+            ?? positiveInt(top?["max_completion_tokens"])
+        return (context, output)
+    }
+
+    private static func positiveInt(_ raw: Any?) -> Int? {
+        let value: Int?
+        switch raw {
+        case let n as NSNumber where CFGetTypeID(n) != CFBooleanGetTypeID():
+            let d = n.doubleValue
+            value = d.isFinite && d >= 1 && d < Double(Int.max) ? Int(d) : nil
+        case let s as String:
+            value = Int(s.trimmingCharacters(in: .whitespacesAndNewlines))
+        default:
+            value = nil
+        }
+        guard let v = value, v > 0 else { return nil }
+        return v
+    }
+}
+// END ModelListParsing

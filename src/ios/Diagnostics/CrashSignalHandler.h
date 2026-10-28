@@ -1,4 +1,5 @@
 #import <Foundation/Foundation.h>
+#include <signal.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -18,6 +19,17 @@ NS_ASSUME_NONNULL_BEGIN
 /// Path to the crash stack file. Same directory as CrashReporter.hangSnapshotURL.
 + (NSString *)crashStackPath;
 
+/// [T-crash-signal-refault] The previous run's minimal crash context (signal,
+/// si_code, si_addr, pc/lr/sp/fp, far/esr, thread, time), kept by `install`
+/// when that run wrote one. Empty file / absent when it did not crash on a
+/// signal.
++ (NSString *)previousCrashContextPath;
+
 @end
+
+/// [T-crash-signal-refault] For a handler installed on top of this one (iSH's
+/// JIT recovery handler): record a signal from a thread that handler does not
+/// own. Async-signal-safe. Does not end the signal; the caller does.
+void minis_crash_signal_record(int sig, siginfo_t *info, void *_Nullable ucontext, const char *via);
 
 NS_ASSUME_NONNULL_END

@@ -43,7 +43,7 @@ extension AIChatViewModel {
         let result = policy.check(estimatedTokens: measured, contextWindow: contextWindow)
         // [CtxMeter] decide — every capacity decision with its inputs, so a
         // field log can replay why a turn compacted, stopped or was sent.
-        logger.info("[CtxMeter] decide site=\(site) model=\(entry.model.id) history=\(m.history) fixed=\(m.fixed) ratio=\(String(format: "%.3f", m.ratio))(\(m.source)) measured=\(measured) threshold=\(policy.compactThreshold) window=\(contextWindow) userCap=\(resolved.isUserCap) → \(String(describing: result))")
+        logger.info("[CtxMeter] decide site=\(site) model=\(entry.model.id) history=\(m.history) fixed=\(m.fixed) ratio=\(String(format: "%.3f", m.ratio))(\(m.source)) echo=\(self.contextEchoesReasoning) measured=\(measured) threshold=\(policy.compactThreshold) window=\(contextWindow) userCap=\(resolved.isUserCap) → \(String(describing: result))")
         let markerInfo: String
         if let m = cachedLatestMarker {
             let ageSec = Int(Date().timeIntervalSince(m.createdAt))
@@ -87,7 +87,8 @@ extension AIChatViewModel {
         let history: Int, fixed: Int, ratio: Double, source: String, measured: Int
     }
     func contextMeasurement(ratio override: Double? = nil) -> ContextMeasurement {
-        let history = ContextSizeMeter.estimateTokens(effectiveAgentHistoryUncounted())
+        let history = ContextSizeMeter.estimateTokens(effectiveAgentHistoryUncounted(),
+                                                      includeReasoning: contextEchoesReasoning)
         let model = currentContextModelId()
         let ratio = override ?? contextCalibrationRatio(for: model)
         let source = override != nil ? "forced"
@@ -102,7 +103,8 @@ extension AIChatViewModel {
     @discardableResult
     func recordContextDispatch(history: [AgentMessage], model: LLMModel) -> Int {
         let modelId = model.id
-        lastDispatchEstimate = ContextSizeMeter.estimateTokens(history) + contextFixedTokens
+        lastDispatchEstimate = ContextSizeMeter.estimateTokens(history, includeReasoning: contextEchoesReasoning)
+            + contextFixedTokens
         // [T-ctx-overflow-attribute-dispatch] Remember WHICH model this request
         // went to, so a rejection is scored against it (see noteContextOverflow).
         lastDispatchModelId = modelId
@@ -193,7 +195,8 @@ extension AIChatViewModel {
         let samples = messages.compactMap { msg -> ContextSizeMeter.CalibrationSample? in
             guard msg.role == .assistant, let usage = msg.usage else { return nil }
             return .init(reported: usage.latestContextTokens, estimated: usage.estimatedRequestTokens,
-                         fixedTokens: usage.estimatedFixedTokens, modelId: usage.calibrationModelId)
+                         fixedTokens: usage.estimatedFixedTokens, modelId: usage.calibrationModelId,
+                         estimatorVersion: usage.estimatorVersion > 0 ? usage.estimatorVersion : nil)
         }
         let seeded = ContextSizeMeter.replayCalibration(samples)
         let state = learned.map { seeded.carryingOver($0) } ?? seeded
@@ -243,11 +246,12 @@ extension AIChatViewModel {
         let policy = ContextPolicy(contextWindow: resolved.window, isUserCap: resolved.isUserCap)
         let line = policy.compactThreshold > 0 ? policy.compactThreshold : resolved.window
         let budget = Int(Double(line) / contextCalibrationRatio(for: entry.model.id)) - contextFixedTokens
-        let restTokens = ContextSizeMeter.estimateTokens(rest) + ContextSizeMeter.estimateTokens(summaryText)
-        guard ContextSizeMeter.estimateTokens(warmUp) + restTokens >= budget else { return (warmUp, true) }
+        let echo = contextEchoesReasoning
+        let restTokens = ContextSizeMeter.estimateTokens(rest, includeReasoning: echo) + ContextSizeMeter.estimateTokens(summaryText)
+        guard ContextSizeMeter.estimateTokens(warmUp, includeReasoning: echo) + restTokens >= budget else { return (warmUp, true) }
 
         let drop = ContextSizeMeter.warmUpDrop(
-            sizes: warmUp.map { ContextSizeMeter.estimateTokens(message: $0) },
+            sizes: warmUp.map { ContextSizeMeter.estimateTokens(message: $0, includeReasoning: echo) },
             startsTurn: warmUp.map { m in
                 m.role == .user && !m.parts.contains { if case .toolResult = $0 { return true }; return false }
             },
@@ -268,6 +272,177 @@ extension AIChatViewModel {
                                             window: window, canCompact: false, ratio: m.ratio,
                                             uncalibratedSendUsed: sentPastExtrapolatedLimitThisLoop)
         return (step, m)
+    }
+
+    // MARK: - Trim ladder wiring [T-ctx-trim-ladder]
+
+    /// The policy and window of the model that will serve the next request.
+    func currentContextPolicy() -> (policy: ContextPolicy, window: Int)? {
+        guard let entry = resolveCurrentEntry() else { return nil }
+        let resolved = resolvedContextWindow(for: entry.model)
+        guard resolved.window > 0 else { return nil }
+        return (ContextPolicy(contextWindow: resolved.window, isUserCap: resolved.isUserCap), resolved.window)
+    }
+
+    /// False for the exhausted-only tiers (windows under 64K), where a model
+    /// summary never runs automatically and the ladder may collapse at once.
+    func contextPolicyAllowsAutoCompact() -> Bool {
+        guard let policy = currentContextPolicy()?.policy else { return false }
+        return !policy.exhaustedOnly && policy.compactThreshold > 0
+    }
+
+    /// Watermarks for the live model, in measured tokens; nil when the window
+    /// is unknown.
+    func currentWatermarks() -> ContextTrimPlanner.Watermarks? {
+        guard let entry = resolveCurrentEntry() else { return nil }
+        let window = resolvedContextWindow(for: entry.model).window
+        guard window > 0 else { return nil }
+        ensureContextFixedTokens()
+        let fixed = ContextTrimPlanner.calibratedFixed(contextFixedTokens, ratio: contextCalibrationRatio(for: entry.model.id))
+        let maxOutput = min(Self.globalMaxTokensCeiling, entry.model.maxOutputTokens ?? contextProviderMaxOutput)
+        return ContextTrimPlanner.watermarks(window: window, fixed: fixed, maxOutput: maxOutput)
+    }
+
+    /// Measured size of a history, with the ratio, the echo flag and the fixed
+    /// share captured once so every candidate of one plan is judged alike.
+    func trimMeasure() -> ([AgentMessage]) -> Int {
+        let ratio = contextCalibrationRatio()
+        let echo = contextEchoesReasoning
+        let fixed = contextFixedTokens
+        return { ContextSizeMeter.calibrated(ContextSizeMeter.estimateTokens($0, includeReasoning: echo) + fixed, ratio: ratio) }
+    }
+
+    /// Disk writer for the planner: the existing offload store, with the path
+    /// remembered per tool call so a re-applied plan writes nothing.
+    func trimOffloader() -> ContextTrimPlanner.Offloader {
+        { [self] content, toolId, toolName in
+            let key = "\(sessionId ?? "unknown")|\(toolName)|\(toolId)"
+            if let known = trimOffloadPaths[key] { return known }
+            let path = offloadContextContent(content, toolId: toolId, toolName: toolName)
+            guard !path.isEmpty else { return nil }
+            trimOffloadPaths[key] = path
+            return path
+        }
+    }
+
+    /// The frozen trim applied to a compacted history. The plan is dropped -
+    /// and a re-plan requested - when it was made for another session or
+    /// another compaction marker, or when one of its cut-off keys is gone
+    /// (history rebuilt by a retry, rerun or revert).
+    func applyFrozenTrim(_ compacted: [AgentMessage]) -> [AgentMessage] {
+        guard let state = trimState else { return compacted }
+        guard trimStateSessionId == sessionId, trimStateMarkerId == cachedLatestMarker?.id,
+              let applied = ContextTrimPlanner.apply(compacted, state: state, offloader: trimOffloader()) else {
+            logger.info("[ctx-trim] frozen plan no longer matches the history - dropped, will re-plan")
+            trimState = nil
+            trimReplanPending = true
+            return compacted
+        }
+        return applied
+    }
+
+    /// Re-plans the trim when the frozen one no longer keeps the request under
+    /// the trigger (or after a compaction, or always on a tight window), down
+    /// to the target watermark. `allowCollapse`: L4 may drop whole iterations -
+    /// only once a model summary had its chance or none is available.
+    /// Returns the plan's result, or nil when nothing was re-planned.
+    @discardableResult
+    func replanTrim(site: String, allowCollapse: Bool) -> ContextTrimPlanner.Result? {
+        guard let wm = currentWatermarks() else { return nil }
+        // [T-ctx-trim-plan-window] A plan (and its collapse unlock) made for
+        // another window is dropped before anything is measured: a larger
+        // window gets its history back, a smaller one is planned afresh.
+        if trimState != nil, !ContextTrimPlanner.planFitsWindow(planWindow: trimStateWindow, window: wm.window) {
+            logger.info("[ctx-trim] the frozen plan was made for a \(self.trimStateWindow ?? 0) window, now \(wm.window) - dropped, will re-plan")
+            trimState = nil
+            trimCollapseUnlock = nil
+            trimReplanPending = true
+        }
+        let compacted = compactedAgentHistory()
+        let measure = trimMeasure()
+        let size = measure(applyFrozenTrim(compacted))
+        // The tier's compaction line, capped so it keeps a margin below the
+        // hard watermark (see ContextTrimPlanner.trigger).
+        let policyLine = currentContextPolicy().flatMap { $0.policy.compactThreshold > 0 ? $0.policy.compactThreshold : nil }
+        let trigger = ContextTrimPlanner.trigger(policyLine: policyLine, watermarks: wm)
+        let tight = wm.mode != .normal
+        lastTrimPlanEscalates = false
+        if !tight, !trimReplanPending, size <= trigger { return nil }
+        trimReplanPending = false
+        if !tight, size <= wm.target { return nil }
+        // [T-ctx-trim-collapse-first] Sticky: a collapse is never undone by a
+        // later re-plan that merely was not asked to collapse.
+        let collapse = ContextTrimPlanner.collapseAllowed(requested: allowCollapse, tight: tight, unlock: trimCollapseUnlock,
+                                                          sessionId: sessionId, markerId: cachedLatestMarker?.id)
+        if collapse { trimCollapseUnlock = .init(sessionId: sessionId, markerId: cachedLatestMarker?.id) }
+        let options = ContextTrimPlanner.Options(stripReasoning: contextEchoesReasoning,
+                                                 reasoningFloor: tight ? 0 : 1,
+                                                 keepRecentIterations: tight ? 1 : 3,
+                                                 allowCollapse: collapse)
+        // In the log: `current` is the request as it stood under the old plan
+        // (what crossed the trigger); `before` is the same history with no trim
+        // at all, which is what a plan always starts from.
+        let result = ContextTrimPlanner.plan(compacted, target: wm.target, options: options,
+                                             measure: measure, offloader: trimOffloader())
+        trimState = result.state.isEmpty ? nil : result.state
+        trimStateSessionId = sessionId
+        trimStateMarkerId = cachedLatestMarker?.id
+        trimStateWindow = wm.window
+        lastTrimPlanEscalates = !collapse && ContextTrimPlanner.shouldEscalate(after: result.after, target: wm.target, trigger: trigger)
+        logger.info("[ctx-trim] site=\(site) mode=\(wm.mode.rawValue) window=\(wm.window) fixed=\(wm.fixed) hard=\(wm.hard) trigger=\(trigger) target=\(wm.target) current=\(size) before=\(result.before) after=\(result.after) steps=[\(result.steps.joined(separator: ", "))] collapse=\(options.allowCollapse) reached=\(result.reachedTarget) echo=\(options.stripReasoning) state=\(result.state)")
+        return result
+    }
+
+    /// [T-ctx-trim-collapse-first] Estimated raw tokens an in-loop compaction
+    /// would remove from the request now (negative when the summary costs
+    /// more than it frees), without a model call: the same slicing as the real
+    /// one - anchor on the newest message, the last real user turns kept, the
+    /// warm-up prune - with a `summaryTokens`-sized placeholder summary.
+    /// Reasoning is left out on both sides; the ladder handles it either way.
+    /// nil when the newest message has no id to anchor on.
+    static func simulatedSummaryGain(history: [AgentMessage], current: CompactMarker?,
+                                     warmUpDrop: [String: Int], summaryTokens: Int) -> Int? {
+        guard let anchorId = history.last?.dbMessageId else { return nil }
+        let helpers = EffectiveHistoryHelpers(
+            walkBack: { walkBackUserTurnsBounded(in: history, anchorIdx: $0, maxUserTextTurns: $1, maxMessages: $2) },
+            nthFromLastUserText: { indexOfNthFromLastUserText($0, upToIncluding: history.count - 1, in: history) },
+            trimWarmUp: { warmUp, _, _ in (warmUp, true) })
+        let simulated = CompactMarker(id: "simulated", sessionId: current?.sessionId ?? "",
+                                      summary: String(repeating: "\u{6458}", count: summaryTokens),
+                                      firstKeptSortOrder: 0, compactedCount: 0, createdAt: Date(timeIntervalSince1970: 0),
+                                      uiBoundarySortOrder: nil, boundaryMessageId: nil, firstKeptMessageId: nil,
+                                      lastCompactedMessageId: anchorId, version: 2)
+        var dropNow = warmUpDrop, dropAfter: [String: Int] = [:]
+        let now = effectiveHistory(history, marker: current, warmUpDrop: &dropNow, helpers: helpers)
+        let after = effectiveHistory(history, marker: simulated, warmUpDrop: &dropAfter, helpers: helpers)
+        return ContextSizeMeter.estimateTokens(now) - ContextSizeMeter.estimateTokens(after)
+    }
+
+    /// Whether a model summary would free less than half of what this request
+    /// must lose to reach the target (see ContextTrimPlanner.summaryFreesLittle).
+    /// False when nothing can be simulated, so the loop compacts as before.
+    func summaryWouldFreeLittle(measured: Int) -> Bool {
+        guard let wm = currentWatermarks(),
+              let raw = Self.simulatedSummaryGain(history: agentHistory, current: cachedLatestMarker,
+                                                  warmUpDrop: warmUpDropByMarker,
+                                                  summaryTokens: ContextTrimPlanner.simulatedSummaryTokens) else { return false }
+        let gain = ContextSizeMeter.calibrated(raw, ratio: contextCalibrationRatio())
+        let needed = measured - wm.target
+        let little = ContextTrimPlanner.summaryFreesLittle(gain: gain, measured: measured, target: wm.target)
+        logger.info("[ctx-trim] summary would free ~\(gain) of \(needed) needed - \(little ? "collapse first" : "compact")")
+        return little
+    }
+
+    /// True when even the trimmed request would not fit under the hard
+    /// watermark - by the calibrated size AND by the raw estimate. When only
+    /// the ratio says "over", the existing valve (settleWithoutCompacting)
+    /// sends once so the provider's count can correct the ratio.
+    func trimmedOverHard() -> Bool {
+        guard let wm = currentWatermarks() else { return false }
+        let trimmed = effectiveAgentHistoryUncounted()
+        let calibrated = trimMeasure()(trimmed)
+        let raw = ContextSizeMeter.estimateTokens(trimmed, includeReasoning: contextEchoesReasoning) + contextFixedTokens
+        return ContextTrimPlanner.isOverHard(calibrated: calibrated, raw: raw, hard: wm.hard)
     }
 
     /// Refresh the composer's context glow from the measurement. The glow
@@ -550,6 +725,34 @@ extension AIChatViewModel {
         }
     }
 
+    /// [T-ctx-real-user-turns] Prefixes of user-role text the app writes on
+    /// its own: the persona / context reminders and a finished sub agent's
+    /// callback.
+    static let syntheticUserTextPrefixes = ["<system-reminder>", "<agent_callback"]
+
+    /// Whether `msg` is something the user actually asked: a user message with
+    /// a non-empty text part that is not one of the app's own notes.
+    ///
+    /// Why it matters: the warm-up keeps the last `compactKeepRecentUserTurns`
+    /// user turns. Counting a `<system-reminder>` or an `<agent_callback>` as
+    /// one let three of them fill the slots, so the summary was followed by
+    /// reminders instead of the user's last requests.
+    static func isRealUserText(_ msg: AgentMessage) -> Bool {
+        guard msg.role == .user else { return false }
+        return msg.parts.contains { part in
+            guard case .text(let t) = part else { return false }
+            let trimmed = t.drop { $0 == " " || $0 == "\n" || $0 == "\t" || $0 == "\r" }
+            guard !trimmed.isEmpty else { return false }
+            return !syntheticUserTextPrefixes.contains { trimmed.hasPrefix($0) }
+        }
+    }
+
+    /// The last real user-text message at or before `endIdx`, or nil.
+    static func lastRealUserTextIndex(in history: [AgentMessage], upToIncluding endIdx: Int) -> Int? {
+        guard endIdx >= 0, endIdx < history.count else { return nil }
+        return stride(from: endIdx, through: 0, by: -1).first { isRealUserText(history[$0]) }
+    }
+
     /// Find the agentHistory index of the Nth-from-last user message that has
     /// visible text content (i.e. a user the user actually typed, not a
     /// tool_result-only synthetic row). Returns nil if fewer than `n` such
@@ -566,16 +769,19 @@ extension AIChatViewModel {
     /// index) instead of the tail. Used by v2 effectiveAgentHistory to find
     /// the start of "last N user-text turns leading INTO the compact anchor."
     func indexOfNthFromLastUserText(_ n: Int, upToIncluding endIdx: Int) -> Int? {
+        Self.indexOfNthFromLastUserText(n, upToIncluding: endIdx, in: agentHistory)
+    }
+
+    /// The same walk on an explicit history (no view model state).
+    static func indexOfNthFromLastUserText(_ n: Int, upToIncluding endIdx: Int, in agentHistory: [AgentMessage]) -> Int? {
         guard n > 0, endIdx >= 0, endIdx < agentHistory.count else { return nil }
         var seen = 0
         for i in stride(from: endIdx, through: 0, by: -1) {
             let msg = agentHistory[i]
             guard msg.role == .user else { continue }
-            let hasText = msg.parts.contains { part in
-                if case .text(let t) = part, !t.isEmpty { return true }
-                return false
-            }
-            guard hasText else { continue }
+            // [T-ctx-real-user-turns] Reminders and sub-agent callbacks are
+            // user-role text the user never typed; see isRealUserText.
+            guard Self.isRealUserText(msg) else { continue }
             seen += 1
             if seen == n { return i }
         }
@@ -625,6 +831,17 @@ extension AIChatViewModel {
         maxUserTextTurns: Int,
         maxMessages: Int
     ) -> WalkBackResult {
+        Self.walkBackUserTurnsBounded(in: agentHistory, anchorIdx: anchorIdx,
+                                      maxUserTextTurns: maxUserTextTurns, maxMessages: maxMessages)
+    }
+
+    /// The same walk on an explicit history (no view model state).
+    static func walkBackUserTurnsBounded(
+        in agentHistory: [AgentMessage],
+        anchorIdx: Int,
+        maxUserTextTurns: Int,
+        maxMessages: Int
+    ) -> WalkBackResult {
         guard anchorIdx >= 0, anchorIdx < agentHistory.count else {
             return WalkBackResult(priorIdx: nil, userTextTurnsFound: 0, messageCount: 0, stopReason: "invalidAnchor")
         }
@@ -661,11 +878,9 @@ extension AIChatViewModel {
             // Accept this user as the new tentative priorIdx.
             acceptedPriorIdx = i
             acceptedMessageCount = candidateMessageCount
-            let hasText = msg.parts.contains { part in
-                if case .text(let t) = part, !t.isEmpty { return true }
-                return false
-            }
-            if hasText {
+            // [T-ctx-real-user-turns] Only what the user typed counts toward
+            // the kept turns; a reminder is still a legal place to cut.
+            if Self.isRealUserText(msg) {
                 acceptedUserTextTurns += 1
                 if acceptedUserTextTurns >= maxUserTextTurns {
                     return WalkBackResult(
@@ -1580,7 +1795,15 @@ extension AIChatViewModel {
         entry: ModelEntry,
         statusMsg: ChatMessage? = nil
     ) async throws -> String {
-        let provider = try await Self.makeLLMProvider(for: entry)
+        // [T-opencode-every-entry] Built through the shared factory, with this
+        // conversation's live session id. This used to call a hand-written copy
+        // of the factory that never attached the OpenCode channel (nor the
+        // entry's custom overrides, nor Azure mode), so every compaction on an
+        // OpenCode Go instance failed with "400 Request is missing
+        // x-opencode-session" — the summary is this conversation's traffic and
+        // must carry the same id as its turns.
+        let box = openCodeSessionBox
+        let provider = try await LLMProviderFactory.makeProvider(for: entry, resolveSessionId: { box.value })
         let contextWindow = effectiveContextWindow(for: entry.model)
 
         let systemPrompt = """

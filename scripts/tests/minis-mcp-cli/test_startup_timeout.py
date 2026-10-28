@@ -170,7 +170,9 @@ class HandshakeTimeoutTests(unittest.TestCase):
 
     def test_default_timeout_is_60(self):
         captured = {}
-        srv = daemon.MCPServerProcess("atlassian-mcp", {"command": "uvx"})
+        # Not a package runner: on the Windows copy their first start waits
+        # longer (test_first_start_timeout.py).
+        srv = daemon.MCPServerProcess("atlassian-mcp", {"command": "node"})
         srv._rpc = lambda m, p=None, timeout=None: captured.setdefault("timeout", timeout) or {}
         srv._send = lambda *a, **k: None
         srv._handshake()
@@ -191,7 +193,7 @@ class HandshakeTimeoutTests(unittest.TestCase):
         # TIMEOUT whose message names the server, the seconds, and the exact
         # config key to set. Inject a tiny timeout so we don't wait 60s: patch
         # resolve_startup_timeout to return (0.05, None).
-        srv = daemon.MCPServerProcess("atlassian-mcp", {"command": "uvx"})
+        srv = daemon.MCPServerProcess("atlassian-mcp", {"command": "node"})
         srv.proc = _FakeProc(1, never=True)
         srv._id = 0
 

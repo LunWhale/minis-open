@@ -251,7 +251,8 @@ struct BackupHistoryDetailView: View {
         for outcome in record.destinations where outcome.succeeded {
             guard let remote = remotes.first(where: { $0.name == outcome.name }) else { continue }
             do {
-                RcloneRemoteStore.syncToRclone()
+                // [T-restore-list-sync-race] Awaited: see ServerPackageListView.reload().
+                await RcloneRemoteStore.syncToRcloneAndWait()
                 try await Task.detached(priority: .utility) {
                     // Reconstruct the key the same way listPackages does, so a
                     // path-style remote (SFTP absolute paths, server-root

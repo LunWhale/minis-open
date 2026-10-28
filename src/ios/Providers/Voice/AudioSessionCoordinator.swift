@@ -315,6 +315,9 @@ final class AudioSessionCoordinator {
         guard !pausedByExternalAudio else { return }
         pausedByExternalAudio = true
         VoiceOutputPlayer.shared.pause()
+        // [T-tts-external-pause-stuck] Show the pause in the UI. Without this the
+        // capsule kept spinning as "reading" while nothing could play.
+        VoiceOutputState.shared.reflectExternalPause(true)
         logger.info("[AudioSession] \(reason) → TTS paused (external audio)")
     }
 
@@ -323,7 +326,24 @@ final class AudioSessionCoordinator {
         guard pausedByExternalAudio else { return }
         pausedByExternalAudio = false
         VoiceOutputPlayer.shared.resume()
+        VoiceOutputState.shared.reflectExternalPause(false)
         logger.info("[AudioSession] \(reason) → TTS resumed")
+    }
+
+    /// [T-tts-external-pause-stuck] Forget an external-audio pause because the
+    /// user has explicitly asked for playback (read-aloud menu, resume button).
+    /// The matching `.end` / hint-clear signal is not guaranteed: the hint can
+    /// stay true for as long as another app keeps playing, which left the pause
+    /// latched for hours and silently swallowed every later read-aloud request.
+    /// Reply TTS runs under `.playback` + duckOthers, so playing over the other
+    /// app is the expected result of an explicit tap. Returns whether a latch
+    /// was cleared.
+    @discardableResult
+    func clearExternalPauseLatch(reason: String) -> Bool {
+        guard pausedByExternalAudio else { return false }
+        pausedByExternalAudio = false
+        logger.info("[AudioSession] \(reason) → external-audio pause overridden by user")
+        return true
     }
 
     @objc private func handleInterruption(_ note: Notification) {

@@ -1,0 +1,3836 @@
+{
+  "live" : {
+    "anthropic" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise0.jpg]",
+              "sha8" : "c2c301d9",
+              "tail" : ""
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 190,
+              "head" : "[image elided to fit 25MB request budget. Original at \/var\/minis\/attachments\/uploads\/noise0.jpg — re-fetch with `read_image \/var\/minis\/attachments\/uploads\/noise",
+              "sha8" : "e1025dfb",
+              "tail" : "inis\/attachments\/uploads\/noise0.jpg` if you need to see it.]"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise0.jpg\" url=\"minis:\/\/attachments\/uploads\/noise0.jpg\" size=\"5291407\" modified=\"2027-01-15T",
+              "sha8" : "b4a99b16",
+              "tail" : "7\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 0",
+              "sha8" : "cc88f6ac",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 0",
+              "sha8" : "3b626360",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise1.jpg]",
+              "sha8" : "cf79b006",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5223840,
+              "bytes" : 3917880,
+              "fmt" : "jpeg",
+              "h" : 2000,
+              "mime" : "image\/jpeg",
+              "sha256" : "cb85f157f8ef647f",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise1.jpg\" url=\"minis:\/\/attachments\/uploads\/noise1.jpg\" size=\"5305310\" modified=\"2027-01-15T",
+              "sha8" : "e925541b",
+              "tail" : "0\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 1",
+              "sha8" : "bdd295ac",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 1",
+              "sha8" : "c57b3021",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise2.jpg]",
+              "sha8" : "2085cfae",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5127876,
+              "bytes" : 3845905,
+              "fmt" : "jpeg",
+              "h" : 1999,
+              "mime" : "image\/jpeg",
+              "sha256" : "8e934375ceb0d165",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise2.jpg\" url=\"minis:\/\/attachments\/uploads\/noise2.jpg\" size=\"5313333\" modified=\"2027-01-15T",
+              "sha8" : "931b09ac",
+              "tail" : "3\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 2",
+              "sha8" : "32708aa3",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 2",
+              "sha8" : "946ba1d1",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise3.jpg]",
+              "sha8" : "d387d013",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5212036,
+              "bytes" : 3909026,
+              "fmt" : "jpeg",
+              "h" : 1998,
+              "mime" : "image\/jpeg",
+              "sha256" : "3233cc6ce15fd1db",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise3.jpg\" url=\"minis:\/\/attachments\/uploads\/noise3.jpg\" size=\"5319783\" modified=\"2027-01-15T",
+              "sha8" : "5800413e",
+              "tail" : "3\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 3",
+              "sha8" : "7c82785f",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 3",
+              "sha8" : "d94c9c4d",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise4.jpg]",
+              "sha8" : "2bc15b85",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5113308,
+              "bytes" : 3834980,
+              "fmt" : "jpeg",
+              "h" : 1997,
+              "mime" : "image\/jpeg",
+              "sha256" : "2c784163db71d5c1",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise4.jpg\" url=\"minis:\/\/attachments\/uploads\/noise4.jpg\" size=\"5319563\" modified=\"2027-01-15T",
+              "sha8" : "a0e8e059",
+              "tail" : "3\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 4",
+              "sha8" : "c3a248be",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 4",
+              "sha8" : "5148c693",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise5.jpg]",
+              "sha8" : "d5c8361c",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5199260,
+              "bytes" : 3899443,
+              "fmt" : "jpeg",
+              "h" : 1996,
+              "mime" : "image\/jpeg",
+              "sha256" : "e6a458c947266980",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise5.jpg\" url=\"minis:\/\/attachments\/uploads\/noise5.jpg\" size=\"5321657\" modified=\"2027-01-15T",
+              "sha8" : "f896355b",
+              "tail" : "7\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 5",
+              "sha8" : "cdcef0e4",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 5",
+              "sha8" : "40979a40",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      }
+    ],
+    "antigravity" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise0.jpg]",
+              "sha8" : "c2c301d9",
+              "tail" : ""
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 190,
+              "head" : "[image elided to fit 25MB request budget. Original at \/var\/minis\/attachments\/uploads\/noise0.jpg — re-fetch with `read_image \/var\/minis\/attachments\/uploads\/noise",
+              "sha8" : "e1025dfb",
+              "tail" : "inis\/attachments\/uploads\/noise0.jpg` if you need to see it.]"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise0.jpg\" url=\"minis:\/\/attachments\/uploads\/noise0.jpg\" size=\"5291407\" modified=\"2027-01-15T",
+              "sha8" : "b4a99b16",
+              "tail" : "7\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 0",
+              "sha8" : "cc88f6ac",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 0",
+              "sha8" : "3b626360",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise1.jpg]",
+              "sha8" : "cf79b006",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5223840,
+              "bytes" : 3917880,
+              "fmt" : "jpeg",
+              "h" : 2000,
+              "mime" : "image\/jpeg",
+              "sha256" : "cb85f157f8ef647f",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise1.jpg\" url=\"minis:\/\/attachments\/uploads\/noise1.jpg\" size=\"5305310\" modified=\"2027-01-15T",
+              "sha8" : "e925541b",
+              "tail" : "0\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 1",
+              "sha8" : "bdd295ac",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 1",
+              "sha8" : "c57b3021",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise2.jpg]",
+              "sha8" : "2085cfae",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5127876,
+              "bytes" : 3845905,
+              "fmt" : "jpeg",
+              "h" : 1999,
+              "mime" : "image\/jpeg",
+              "sha256" : "8e934375ceb0d165",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise2.jpg\" url=\"minis:\/\/attachments\/uploads\/noise2.jpg\" size=\"5313333\" modified=\"2027-01-15T",
+              "sha8" : "931b09ac",
+              "tail" : "3\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 2",
+              "sha8" : "32708aa3",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 2",
+              "sha8" : "946ba1d1",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise3.jpg]",
+              "sha8" : "d387d013",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5212036,
+              "bytes" : 3909026,
+              "fmt" : "jpeg",
+              "h" : 1998,
+              "mime" : "image\/jpeg",
+              "sha256" : "3233cc6ce15fd1db",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise3.jpg\" url=\"minis:\/\/attachments\/uploads\/noise3.jpg\" size=\"5319783\" modified=\"2027-01-15T",
+              "sha8" : "5800413e",
+              "tail" : "3\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 3",
+              "sha8" : "7c82785f",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 3",
+              "sha8" : "d94c9c4d",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise4.jpg]",
+              "sha8" : "2bc15b85",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5113308,
+              "bytes" : 3834980,
+              "fmt" : "jpeg",
+              "h" : 1997,
+              "mime" : "image\/jpeg",
+              "sha256" : "2c784163db71d5c1",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise4.jpg\" url=\"minis:\/\/attachments\/uploads\/noise4.jpg\" size=\"5319563\" modified=\"2027-01-15T",
+              "sha8" : "a0e8e059",
+              "tail" : "3\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 4",
+              "sha8" : "c3a248be",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 4",
+              "sha8" : "5148c693",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise5.jpg]",
+              "sha8" : "d5c8361c",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5199260,
+              "bytes" : 3899443,
+              "fmt" : "jpeg",
+              "h" : 1996,
+              "mime" : "image\/jpeg",
+              "sha256" : "e6a458c947266980",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise5.jpg\" url=\"minis:\/\/attachments\/uploads\/noise5.jpg\" size=\"5321657\" modified=\"2027-01-15T",
+              "sha8" : "f896355b",
+              "tail" : "7\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 5",
+              "sha8" : "cdcef0e4",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 5",
+              "sha8" : "40979a40",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      }
+    ],
+    "chat" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise0.jpg]",
+              "sha8" : "c2c301d9",
+              "tail" : ""
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 190,
+              "head" : "[image elided to fit 25MB request budget. Original at \/var\/minis\/attachments\/uploads\/noise0.jpg — re-fetch with `read_image \/var\/minis\/attachments\/uploads\/noise",
+              "sha8" : "e1025dfb",
+              "tail" : "inis\/attachments\/uploads\/noise0.jpg` if you need to see it.]"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise0.jpg\" url=\"minis:\/\/attachments\/uploads\/noise0.jpg\" size=\"5291407\" modified=\"2027-01-15T",
+              "sha8" : "b4a99b16",
+              "tail" : "7\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 0",
+              "sha8" : "cc88f6ac",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 0",
+              "sha8" : "3b626360",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise1.jpg]",
+              "sha8" : "cf79b006",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5223840,
+              "bytes" : 3917880,
+              "fmt" : "jpeg",
+              "h" : 2000,
+              "mime" : "image\/jpeg",
+              "sha256" : "cb85f157f8ef647f",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 251,
+              "head" : "[The image shown above is also saved at \/var\/minis\/attachments\/uploads\/noise1.jpg — this is that same image, not an additional one. Use the path only if you nee",
+              "sha8" : "515bb065",
+              "tail" : "e-read it at full resolution, crop, OCR, inspect metadata).]"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise1.jpg\" url=\"minis:\/\/attachments\/uploads\/noise1.jpg\" size=\"5305310\" modified=\"2027-01-15T",
+              "sha8" : "e925541b",
+              "tail" : "0\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 1",
+              "sha8" : "bdd295ac",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 1",
+              "sha8" : "c57b3021",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise2.jpg]",
+              "sha8" : "2085cfae",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5127876,
+              "bytes" : 3845905,
+              "fmt" : "jpeg",
+              "h" : 1999,
+              "mime" : "image\/jpeg",
+              "sha256" : "8e934375ceb0d165",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 251,
+              "head" : "[The image shown above is also saved at \/var\/minis\/attachments\/uploads\/noise2.jpg — this is that same image, not an additional one. Use the path only if you nee",
+              "sha8" : "fe78ad76",
+              "tail" : "e-read it at full resolution, crop, OCR, inspect metadata).]"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise2.jpg\" url=\"minis:\/\/attachments\/uploads\/noise2.jpg\" size=\"5313333\" modified=\"2027-01-15T",
+              "sha8" : "931b09ac",
+              "tail" : "3\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 2",
+              "sha8" : "32708aa3",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 2",
+              "sha8" : "946ba1d1",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise3.jpg]",
+              "sha8" : "d387d013",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5212036,
+              "bytes" : 3909026,
+              "fmt" : "jpeg",
+              "h" : 1998,
+              "mime" : "image\/jpeg",
+              "sha256" : "3233cc6ce15fd1db",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 251,
+              "head" : "[The image shown above is also saved at \/var\/minis\/attachments\/uploads\/noise3.jpg — this is that same image, not an additional one. Use the path only if you nee",
+              "sha8" : "2f3007f8",
+              "tail" : "e-read it at full resolution, crop, OCR, inspect metadata).]"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise3.jpg\" url=\"minis:\/\/attachments\/uploads\/noise3.jpg\" size=\"5319783\" modified=\"2027-01-15T",
+              "sha8" : "5800413e",
+              "tail" : "3\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 3",
+              "sha8" : "7c82785f",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 3",
+              "sha8" : "d94c9c4d",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise4.jpg]",
+              "sha8" : "2bc15b85",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5113308,
+              "bytes" : 3834980,
+              "fmt" : "jpeg",
+              "h" : 1997,
+              "mime" : "image\/jpeg",
+              "sha256" : "2c784163db71d5c1",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 251,
+              "head" : "[The image shown above is also saved at \/var\/minis\/attachments\/uploads\/noise4.jpg — this is that same image, not an additional one. Use the path only if you nee",
+              "sha8" : "9d18d5e8",
+              "tail" : "e-read it at full resolution, crop, OCR, inspect metadata).]"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise4.jpg\" url=\"minis:\/\/attachments\/uploads\/noise4.jpg\" size=\"5319563\" modified=\"2027-01-15T",
+              "sha8" : "a0e8e059",
+              "tail" : "3\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 4",
+              "sha8" : "c3a248be",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 4",
+              "sha8" : "5148c693",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise5.jpg]",
+              "sha8" : "d5c8361c",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5199260,
+              "bytes" : 3899443,
+              "fmt" : "jpeg",
+              "h" : 1996,
+              "mime" : "image\/jpeg",
+              "sha256" : "e6a458c947266980",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 251,
+              "head" : "[The image shown above is also saved at \/var\/minis\/attachments\/uploads\/noise5.jpg — this is that same image, not an additional one. Use the path only if you nee",
+              "sha8" : "125c3134",
+              "tail" : "e-read it at full resolution, crop, OCR, inspect metadata).]"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise5.jpg\" url=\"minis:\/\/attachments\/uploads\/noise5.jpg\" size=\"5321657\" modified=\"2027-01-15T",
+              "sha8" : "f896355b",
+              "tail" : "7\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 5",
+              "sha8" : "cdcef0e4",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 5",
+              "sha8" : "40979a40",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      }
+    ],
+    "gemini" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise0.jpg]",
+              "sha8" : "c2c301d9",
+              "tail" : ""
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 190,
+              "head" : "[image elided to fit 25MB request budget. Original at \/var\/minis\/attachments\/uploads\/noise0.jpg — re-fetch with `read_image \/var\/minis\/attachments\/uploads\/noise",
+              "sha8" : "e1025dfb",
+              "tail" : "inis\/attachments\/uploads\/noise0.jpg` if you need to see it.]"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise0.jpg\" url=\"minis:\/\/attachments\/uploads\/noise0.jpg\" size=\"5291407\" modified=\"2027-01-15T",
+              "sha8" : "b4a99b16",
+              "tail" : "7\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 0",
+              "sha8" : "cc88f6ac",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 0",
+              "sha8" : "3b626360",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise1.jpg]",
+              "sha8" : "cf79b006",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5223840,
+              "bytes" : 3917880,
+              "fmt" : "jpeg",
+              "h" : 2000,
+              "mime" : "image\/jpeg",
+              "sha256" : "cb85f157f8ef647f",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise1.jpg\" url=\"minis:\/\/attachments\/uploads\/noise1.jpg\" size=\"5305310\" modified=\"2027-01-15T",
+              "sha8" : "e925541b",
+              "tail" : "0\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 1",
+              "sha8" : "bdd295ac",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 1",
+              "sha8" : "c57b3021",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise2.jpg]",
+              "sha8" : "2085cfae",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5127876,
+              "bytes" : 3845905,
+              "fmt" : "jpeg",
+              "h" : 1999,
+              "mime" : "image\/jpeg",
+              "sha256" : "8e934375ceb0d165",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise2.jpg\" url=\"minis:\/\/attachments\/uploads\/noise2.jpg\" size=\"5313333\" modified=\"2027-01-15T",
+              "sha8" : "931b09ac",
+              "tail" : "3\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 2",
+              "sha8" : "32708aa3",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 2",
+              "sha8" : "946ba1d1",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise3.jpg]",
+              "sha8" : "d387d013",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5212036,
+              "bytes" : 3909026,
+              "fmt" : "jpeg",
+              "h" : 1998,
+              "mime" : "image\/jpeg",
+              "sha256" : "3233cc6ce15fd1db",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise3.jpg\" url=\"minis:\/\/attachments\/uploads\/noise3.jpg\" size=\"5319783\" modified=\"2027-01-15T",
+              "sha8" : "5800413e",
+              "tail" : "3\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 3",
+              "sha8" : "7c82785f",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 3",
+              "sha8" : "d94c9c4d",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise4.jpg]",
+              "sha8" : "2bc15b85",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5113308,
+              "bytes" : 3834980,
+              "fmt" : "jpeg",
+              "h" : 1997,
+              "mime" : "image\/jpeg",
+              "sha256" : "2c784163db71d5c1",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise4.jpg\" url=\"minis:\/\/attachments\/uploads\/noise4.jpg\" size=\"5319563\" modified=\"2027-01-15T",
+              "sha8" : "a0e8e059",
+              "tail" : "3\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 4",
+              "sha8" : "c3a248be",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 4",
+              "sha8" : "5148c693",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise5.jpg]",
+              "sha8" : "d5c8361c",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5199260,
+              "bytes" : 3899443,
+              "fmt" : "jpeg",
+              "h" : 1996,
+              "mime" : "image\/jpeg",
+              "sha256" : "e6a458c947266980",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise5.jpg\" url=\"minis:\/\/attachments\/uploads\/noise5.jpg\" size=\"5321657\" modified=\"2027-01-15T",
+              "sha8" : "f896355b",
+              "tail" : "7\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 5",
+              "sha8" : "cdcef0e4",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 5",
+              "sha8" : "40979a40",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      }
+    ],
+    "responses" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise0.jpg]",
+              "sha8" : "c2c301d9",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 190,
+              "head" : "[image elided to fit 25MB request budget. Original at \/var\/minis\/attachments\/uploads\/noise0.jpg — re-fetch with `read_image \/var\/minis\/attachments\/uploads\/noise",
+              "sha8" : "e1025dfb",
+              "tail" : "inis\/attachments\/uploads\/noise0.jpg` if you need to see it.]"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise0.jpg\" url=\"minis:\/\/attachments\/uploads\/noise0.jpg\" size=\"5291407\" modified=\"2027-01-15T",
+              "sha8" : "b4a99b16",
+              "tail" : "7\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 0",
+              "sha8" : "cc88f6ac",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 0",
+              "sha8" : "3b626360",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise1.jpg]",
+              "sha8" : "cf79b006",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "image" : {
+              "base64Len" : 5223840,
+              "bytes" : 3917880,
+              "fmt" : "jpeg",
+              "h" : 2000,
+              "mime" : "image\/jpeg",
+              "sha256" : "cb85f157f8ef647f",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 251,
+              "head" : "[The image shown above is also saved at \/var\/minis\/attachments\/uploads\/noise1.jpg — this is that same image, not an additional one. Use the path only if you nee",
+              "sha8" : "515bb065",
+              "tail" : "e-read it at full resolution, crop, OCR, inspect metadata).]"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise1.jpg\" url=\"minis:\/\/attachments\/uploads\/noise1.jpg\" size=\"5305310\" modified=\"2027-01-15T",
+              "sha8" : "e925541b",
+              "tail" : "0\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 1",
+              "sha8" : "bdd295ac",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 1",
+              "sha8" : "c57b3021",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise2.jpg]",
+              "sha8" : "2085cfae",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "image" : {
+              "base64Len" : 5127876,
+              "bytes" : 3845905,
+              "fmt" : "jpeg",
+              "h" : 1999,
+              "mime" : "image\/jpeg",
+              "sha256" : "8e934375ceb0d165",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 251,
+              "head" : "[The image shown above is also saved at \/var\/minis\/attachments\/uploads\/noise2.jpg — this is that same image, not an additional one. Use the path only if you nee",
+              "sha8" : "fe78ad76",
+              "tail" : "e-read it at full resolution, crop, OCR, inspect metadata).]"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise2.jpg\" url=\"minis:\/\/attachments\/uploads\/noise2.jpg\" size=\"5313333\" modified=\"2027-01-15T",
+              "sha8" : "931b09ac",
+              "tail" : "3\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 2",
+              "sha8" : "32708aa3",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 2",
+              "sha8" : "946ba1d1",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise3.jpg]",
+              "sha8" : "d387d013",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "image" : {
+              "base64Len" : 5212036,
+              "bytes" : 3909026,
+              "fmt" : "jpeg",
+              "h" : 1998,
+              "mime" : "image\/jpeg",
+              "sha256" : "3233cc6ce15fd1db",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 251,
+              "head" : "[The image shown above is also saved at \/var\/minis\/attachments\/uploads\/noise3.jpg — this is that same image, not an additional one. Use the path only if you nee",
+              "sha8" : "2f3007f8",
+              "tail" : "e-read it at full resolution, crop, OCR, inspect metadata).]"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise3.jpg\" url=\"minis:\/\/attachments\/uploads\/noise3.jpg\" size=\"5319783\" modified=\"2027-01-15T",
+              "sha8" : "5800413e",
+              "tail" : "3\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 3",
+              "sha8" : "7c82785f",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 3",
+              "sha8" : "d94c9c4d",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise4.jpg]",
+              "sha8" : "2bc15b85",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "image" : {
+              "base64Len" : 5113308,
+              "bytes" : 3834980,
+              "fmt" : "jpeg",
+              "h" : 1997,
+              "mime" : "image\/jpeg",
+              "sha256" : "2c784163db71d5c1",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 251,
+              "head" : "[The image shown above is also saved at \/var\/minis\/attachments\/uploads\/noise4.jpg — this is that same image, not an additional one. Use the path only if you nee",
+              "sha8" : "9d18d5e8",
+              "tail" : "e-read it at full resolution, crop, OCR, inspect metadata).]"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise4.jpg\" url=\"minis:\/\/attachments\/uploads\/noise4.jpg\" size=\"5319563\" modified=\"2027-01-15T",
+              "sha8" : "a0e8e059",
+              "tail" : "3\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 4",
+              "sha8" : "c3a248be",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 4",
+              "sha8" : "5148c693",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise5.jpg]",
+              "sha8" : "d5c8361c",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "image" : {
+              "base64Len" : 5199260,
+              "bytes" : 3899443,
+              "fmt" : "jpeg",
+              "h" : 1996,
+              "mime" : "image\/jpeg",
+              "sha256" : "e6a458c947266980",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 251,
+              "head" : "[The image shown above is also saved at \/var\/minis\/attachments\/uploads\/noise5.jpg — this is that same image, not an additional one. Use the path only if you nee",
+              "sha8" : "125c3134",
+              "tail" : "e-read it at full resolution, crop, OCR, inspect metadata).]"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise5.jpg\" url=\"minis:\/\/attachments\/uploads\/noise5.jpg\" size=\"5321657\" modified=\"2027-01-15T",
+              "sha8" : "f896355b",
+              "tail" : "7\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 5",
+              "sha8" : "cdcef0e4",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 5",
+              "sha8" : "40979a40",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      }
+    ]
+  },
+  "restart" : {
+    "anthropic" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise0.jpg]",
+              "sha8" : "c2c301d9",
+              "tail" : ""
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 190,
+              "head" : "[image elided to fit 25MB request budget. Original at \/var\/minis\/attachments\/uploads\/noise0.jpg — re-fetch with `read_image \/var\/minis\/attachments\/uploads\/noise",
+              "sha8" : "e1025dfb",
+              "tail" : "inis\/attachments\/uploads\/noise0.jpg` if you need to see it.]"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise0.jpg\" url=\"minis:\/\/attachments\/uploads\/noise0.jpg\" size=\"5291407\" modified=\"2027-01-15T",
+              "sha8" : "b4a99b16",
+              "tail" : "7\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 0",
+              "sha8" : "cc88f6ac",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 0",
+              "sha8" : "3b626360",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise1.jpg]",
+              "sha8" : "cf79b006",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5223840,
+              "bytes" : 3917880,
+              "fmt" : "jpeg",
+              "h" : 2000,
+              "mime" : "image\/jpeg",
+              "sha256" : "cb85f157f8ef647f",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise1.jpg\" url=\"minis:\/\/attachments\/uploads\/noise1.jpg\" size=\"5305310\" modified=\"2027-01-15T",
+              "sha8" : "e925541b",
+              "tail" : "0\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 1",
+              "sha8" : "bdd295ac",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 1",
+              "sha8" : "c57b3021",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise2.jpg]",
+              "sha8" : "2085cfae",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5127876,
+              "bytes" : 3845905,
+              "fmt" : "jpeg",
+              "h" : 1999,
+              "mime" : "image\/jpeg",
+              "sha256" : "8e934375ceb0d165",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise2.jpg\" url=\"minis:\/\/attachments\/uploads\/noise2.jpg\" size=\"5313333\" modified=\"2027-01-15T",
+              "sha8" : "931b09ac",
+              "tail" : "3\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 2",
+              "sha8" : "32708aa3",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 2",
+              "sha8" : "946ba1d1",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise3.jpg]",
+              "sha8" : "d387d013",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5212036,
+              "bytes" : 3909026,
+              "fmt" : "jpeg",
+              "h" : 1998,
+              "mime" : "image\/jpeg",
+              "sha256" : "3233cc6ce15fd1db",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise3.jpg\" url=\"minis:\/\/attachments\/uploads\/noise3.jpg\" size=\"5319783\" modified=\"2027-01-15T",
+              "sha8" : "5800413e",
+              "tail" : "3\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 3",
+              "sha8" : "7c82785f",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 3",
+              "sha8" : "d94c9c4d",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise4.jpg]",
+              "sha8" : "2bc15b85",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5113308,
+              "bytes" : 3834980,
+              "fmt" : "jpeg",
+              "h" : 1997,
+              "mime" : "image\/jpeg",
+              "sha256" : "2c784163db71d5c1",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise4.jpg\" url=\"minis:\/\/attachments\/uploads\/noise4.jpg\" size=\"5319563\" modified=\"2027-01-15T",
+              "sha8" : "a0e8e059",
+              "tail" : "3\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 4",
+              "sha8" : "c3a248be",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 4",
+              "sha8" : "5148c693",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise5.jpg]",
+              "sha8" : "d5c8361c",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5199260,
+              "bytes" : 3899443,
+              "fmt" : "jpeg",
+              "h" : 1996,
+              "mime" : "image\/jpeg",
+              "sha256" : "e6a458c947266980",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise5.jpg\" url=\"minis:\/\/attachments\/uploads\/noise5.jpg\" size=\"5321657\" modified=\"2027-01-15T",
+              "sha8" : "f896355b",
+              "tail" : "7\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 5",
+              "sha8" : "cdcef0e4",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 5",
+              "sha8" : "40979a40",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      }
+    ],
+    "antigravity" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise0.jpg]",
+              "sha8" : "c2c301d9",
+              "tail" : ""
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 190,
+              "head" : "[image elided to fit 25MB request budget. Original at \/var\/minis\/attachments\/uploads\/noise0.jpg — re-fetch with `read_image \/var\/minis\/attachments\/uploads\/noise",
+              "sha8" : "e1025dfb",
+              "tail" : "inis\/attachments\/uploads\/noise0.jpg` if you need to see it.]"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise0.jpg\" url=\"minis:\/\/attachments\/uploads\/noise0.jpg\" size=\"5291407\" modified=\"2027-01-15T",
+              "sha8" : "b4a99b16",
+              "tail" : "7\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 0",
+              "sha8" : "cc88f6ac",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 0",
+              "sha8" : "3b626360",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise1.jpg]",
+              "sha8" : "cf79b006",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5223840,
+              "bytes" : 3917880,
+              "fmt" : "jpeg",
+              "h" : 2000,
+              "mime" : "image\/jpeg",
+              "sha256" : "cb85f157f8ef647f",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise1.jpg\" url=\"minis:\/\/attachments\/uploads\/noise1.jpg\" size=\"5305310\" modified=\"2027-01-15T",
+              "sha8" : "e925541b",
+              "tail" : "0\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 1",
+              "sha8" : "bdd295ac",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 1",
+              "sha8" : "c57b3021",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise2.jpg]",
+              "sha8" : "2085cfae",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5127876,
+              "bytes" : 3845905,
+              "fmt" : "jpeg",
+              "h" : 1999,
+              "mime" : "image\/jpeg",
+              "sha256" : "8e934375ceb0d165",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise2.jpg\" url=\"minis:\/\/attachments\/uploads\/noise2.jpg\" size=\"5313333\" modified=\"2027-01-15T",
+              "sha8" : "931b09ac",
+              "tail" : "3\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 2",
+              "sha8" : "32708aa3",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 2",
+              "sha8" : "946ba1d1",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise3.jpg]",
+              "sha8" : "d387d013",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5212036,
+              "bytes" : 3909026,
+              "fmt" : "jpeg",
+              "h" : 1998,
+              "mime" : "image\/jpeg",
+              "sha256" : "3233cc6ce15fd1db",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise3.jpg\" url=\"minis:\/\/attachments\/uploads\/noise3.jpg\" size=\"5319783\" modified=\"2027-01-15T",
+              "sha8" : "5800413e",
+              "tail" : "3\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 3",
+              "sha8" : "7c82785f",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 3",
+              "sha8" : "d94c9c4d",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise4.jpg]",
+              "sha8" : "2bc15b85",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5113308,
+              "bytes" : 3834980,
+              "fmt" : "jpeg",
+              "h" : 1997,
+              "mime" : "image\/jpeg",
+              "sha256" : "2c784163db71d5c1",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise4.jpg\" url=\"minis:\/\/attachments\/uploads\/noise4.jpg\" size=\"5319563\" modified=\"2027-01-15T",
+              "sha8" : "a0e8e059",
+              "tail" : "3\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 4",
+              "sha8" : "c3a248be",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 4",
+              "sha8" : "5148c693",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise5.jpg]",
+              "sha8" : "d5c8361c",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5199260,
+              "bytes" : 3899443,
+              "fmt" : "jpeg",
+              "h" : 1996,
+              "mime" : "image\/jpeg",
+              "sha256" : "e6a458c947266980",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise5.jpg\" url=\"minis:\/\/attachments\/uploads\/noise5.jpg\" size=\"5321657\" modified=\"2027-01-15T",
+              "sha8" : "f896355b",
+              "tail" : "7\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 5",
+              "sha8" : "cdcef0e4",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 5",
+              "sha8" : "40979a40",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      }
+    ],
+    "chat" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise0.jpg]",
+              "sha8" : "c2c301d9",
+              "tail" : ""
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 190,
+              "head" : "[image elided to fit 25MB request budget. Original at \/var\/minis\/attachments\/uploads\/noise0.jpg — re-fetch with `read_image \/var\/minis\/attachments\/uploads\/noise",
+              "sha8" : "e1025dfb",
+              "tail" : "inis\/attachments\/uploads\/noise0.jpg` if you need to see it.]"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise0.jpg\" url=\"minis:\/\/attachments\/uploads\/noise0.jpg\" size=\"5291407\" modified=\"2027-01-15T",
+              "sha8" : "b4a99b16",
+              "tail" : "7\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 0",
+              "sha8" : "cc88f6ac",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 0",
+              "sha8" : "3b626360",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise1.jpg]",
+              "sha8" : "cf79b006",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5223840,
+              "bytes" : 3917880,
+              "fmt" : "jpeg",
+              "h" : 2000,
+              "mime" : "image\/jpeg",
+              "sha256" : "cb85f157f8ef647f",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 251,
+              "head" : "[The image shown above is also saved at \/var\/minis\/attachments\/uploads\/noise1.jpg — this is that same image, not an additional one. Use the path only if you nee",
+              "sha8" : "515bb065",
+              "tail" : "e-read it at full resolution, crop, OCR, inspect metadata).]"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise1.jpg\" url=\"minis:\/\/attachments\/uploads\/noise1.jpg\" size=\"5305310\" modified=\"2027-01-15T",
+              "sha8" : "e925541b",
+              "tail" : "0\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 1",
+              "sha8" : "bdd295ac",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 1",
+              "sha8" : "c57b3021",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise2.jpg]",
+              "sha8" : "2085cfae",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5127876,
+              "bytes" : 3845905,
+              "fmt" : "jpeg",
+              "h" : 1999,
+              "mime" : "image\/jpeg",
+              "sha256" : "8e934375ceb0d165",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 251,
+              "head" : "[The image shown above is also saved at \/var\/minis\/attachments\/uploads\/noise2.jpg — this is that same image, not an additional one. Use the path only if you nee",
+              "sha8" : "fe78ad76",
+              "tail" : "e-read it at full resolution, crop, OCR, inspect metadata).]"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise2.jpg\" url=\"minis:\/\/attachments\/uploads\/noise2.jpg\" size=\"5313333\" modified=\"2027-01-15T",
+              "sha8" : "931b09ac",
+              "tail" : "3\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 2",
+              "sha8" : "32708aa3",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 2",
+              "sha8" : "946ba1d1",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise3.jpg]",
+              "sha8" : "d387d013",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5212036,
+              "bytes" : 3909026,
+              "fmt" : "jpeg",
+              "h" : 1998,
+              "mime" : "image\/jpeg",
+              "sha256" : "3233cc6ce15fd1db",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 251,
+              "head" : "[The image shown above is also saved at \/var\/minis\/attachments\/uploads\/noise3.jpg — this is that same image, not an additional one. Use the path only if you nee",
+              "sha8" : "2f3007f8",
+              "tail" : "e-read it at full resolution, crop, OCR, inspect metadata).]"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise3.jpg\" url=\"minis:\/\/attachments\/uploads\/noise3.jpg\" size=\"5319783\" modified=\"2027-01-15T",
+              "sha8" : "5800413e",
+              "tail" : "3\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 3",
+              "sha8" : "7c82785f",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 3",
+              "sha8" : "d94c9c4d",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise4.jpg]",
+              "sha8" : "2bc15b85",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5113308,
+              "bytes" : 3834980,
+              "fmt" : "jpeg",
+              "h" : 1997,
+              "mime" : "image\/jpeg",
+              "sha256" : "2c784163db71d5c1",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 251,
+              "head" : "[The image shown above is also saved at \/var\/minis\/attachments\/uploads\/noise4.jpg — this is that same image, not an additional one. Use the path only if you nee",
+              "sha8" : "9d18d5e8",
+              "tail" : "e-read it at full resolution, crop, OCR, inspect metadata).]"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise4.jpg\" url=\"minis:\/\/attachments\/uploads\/noise4.jpg\" size=\"5319563\" modified=\"2027-01-15T",
+              "sha8" : "a0e8e059",
+              "tail" : "3\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 4",
+              "sha8" : "c3a248be",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 4",
+              "sha8" : "5148c693",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise5.jpg]",
+              "sha8" : "d5c8361c",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5199260,
+              "bytes" : 3899443,
+              "fmt" : "jpeg",
+              "h" : 1996,
+              "mime" : "image\/jpeg",
+              "sha256" : "e6a458c947266980",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 251,
+              "head" : "[The image shown above is also saved at \/var\/minis\/attachments\/uploads\/noise5.jpg — this is that same image, not an additional one. Use the path only if you nee",
+              "sha8" : "125c3134",
+              "tail" : "e-read it at full resolution, crop, OCR, inspect metadata).]"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise5.jpg\" url=\"minis:\/\/attachments\/uploads\/noise5.jpg\" size=\"5321657\" modified=\"2027-01-15T",
+              "sha8" : "f896355b",
+              "tail" : "7\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 5",
+              "sha8" : "cdcef0e4",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 5",
+              "sha8" : "40979a40",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      }
+    ],
+    "gemini" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise0.jpg]",
+              "sha8" : "c2c301d9",
+              "tail" : ""
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 190,
+              "head" : "[image elided to fit 25MB request budget. Original at \/var\/minis\/attachments\/uploads\/noise0.jpg — re-fetch with `read_image \/var\/minis\/attachments\/uploads\/noise",
+              "sha8" : "e1025dfb",
+              "tail" : "inis\/attachments\/uploads\/noise0.jpg` if you need to see it.]"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise0.jpg\" url=\"minis:\/\/attachments\/uploads\/noise0.jpg\" size=\"5291407\" modified=\"2027-01-15T",
+              "sha8" : "b4a99b16",
+              "tail" : "7\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 0",
+              "sha8" : "cc88f6ac",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 0",
+              "sha8" : "3b626360",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise1.jpg]",
+              "sha8" : "cf79b006",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5223840,
+              "bytes" : 3917880,
+              "fmt" : "jpeg",
+              "h" : 2000,
+              "mime" : "image\/jpeg",
+              "sha256" : "cb85f157f8ef647f",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise1.jpg\" url=\"minis:\/\/attachments\/uploads\/noise1.jpg\" size=\"5305310\" modified=\"2027-01-15T",
+              "sha8" : "e925541b",
+              "tail" : "0\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 1",
+              "sha8" : "bdd295ac",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 1",
+              "sha8" : "c57b3021",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise2.jpg]",
+              "sha8" : "2085cfae",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5127876,
+              "bytes" : 3845905,
+              "fmt" : "jpeg",
+              "h" : 1999,
+              "mime" : "image\/jpeg",
+              "sha256" : "8e934375ceb0d165",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise2.jpg\" url=\"minis:\/\/attachments\/uploads\/noise2.jpg\" size=\"5313333\" modified=\"2027-01-15T",
+              "sha8" : "931b09ac",
+              "tail" : "3\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 2",
+              "sha8" : "32708aa3",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 2",
+              "sha8" : "946ba1d1",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise3.jpg]",
+              "sha8" : "d387d013",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5212036,
+              "bytes" : 3909026,
+              "fmt" : "jpeg",
+              "h" : 1998,
+              "mime" : "image\/jpeg",
+              "sha256" : "3233cc6ce15fd1db",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise3.jpg\" url=\"minis:\/\/attachments\/uploads\/noise3.jpg\" size=\"5319783\" modified=\"2027-01-15T",
+              "sha8" : "5800413e",
+              "tail" : "3\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 3",
+              "sha8" : "7c82785f",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 3",
+              "sha8" : "d94c9c4d",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise4.jpg]",
+              "sha8" : "2bc15b85",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5113308,
+              "bytes" : 3834980,
+              "fmt" : "jpeg",
+              "h" : 1997,
+              "mime" : "image\/jpeg",
+              "sha256" : "2c784163db71d5c1",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise4.jpg\" url=\"minis:\/\/attachments\/uploads\/noise4.jpg\" size=\"5319563\" modified=\"2027-01-15T",
+              "sha8" : "a0e8e059",
+              "tail" : "3\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 4",
+              "sha8" : "c3a248be",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 4",
+              "sha8" : "5148c693",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise5.jpg]",
+              "sha8" : "d5c8361c",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 5199260,
+              "bytes" : 3899443,
+              "fmt" : "jpeg",
+              "h" : 1996,
+              "mime" : "image\/jpeg",
+              "sha256" : "e6a458c947266980",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise5.jpg\" url=\"minis:\/\/attachments\/uploads\/noise5.jpg\" size=\"5321657\" modified=\"2027-01-15T",
+              "sha8" : "f896355b",
+              "tail" : "7\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 5",
+              "sha8" : "cdcef0e4",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 5",
+              "sha8" : "40979a40",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "model"
+      }
+    ],
+    "responses" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise0.jpg]",
+              "sha8" : "c2c301d9",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 190,
+              "head" : "[image elided to fit 25MB request budget. Original at \/var\/minis\/attachments\/uploads\/noise0.jpg — re-fetch with `read_image \/var\/minis\/attachments\/uploads\/noise",
+              "sha8" : "e1025dfb",
+              "tail" : "inis\/attachments\/uploads\/noise0.jpg` if you need to see it.]"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise0.jpg\" url=\"minis:\/\/attachments\/uploads\/noise0.jpg\" size=\"5291407\" modified=\"2027-01-15T",
+              "sha8" : "b4a99b16",
+              "tail" : "7\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 0",
+              "sha8" : "cc88f6ac",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 0",
+              "sha8" : "3b626360",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise1.jpg]",
+              "sha8" : "cf79b006",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "image" : {
+              "base64Len" : 5223840,
+              "bytes" : 3917880,
+              "fmt" : "jpeg",
+              "h" : 2000,
+              "mime" : "image\/jpeg",
+              "sha256" : "cb85f157f8ef647f",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 251,
+              "head" : "[The image shown above is also saved at \/var\/minis\/attachments\/uploads\/noise1.jpg — this is that same image, not an additional one. Use the path only if you nee",
+              "sha8" : "515bb065",
+              "tail" : "e-read it at full resolution, crop, OCR, inspect metadata).]"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise1.jpg\" url=\"minis:\/\/attachments\/uploads\/noise1.jpg\" size=\"5305310\" modified=\"2027-01-15T",
+              "sha8" : "e925541b",
+              "tail" : "0\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 1",
+              "sha8" : "bdd295ac",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 1",
+              "sha8" : "c57b3021",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise2.jpg]",
+              "sha8" : "2085cfae",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "image" : {
+              "base64Len" : 5127876,
+              "bytes" : 3845905,
+              "fmt" : "jpeg",
+              "h" : 1999,
+              "mime" : "image\/jpeg",
+              "sha256" : "8e934375ceb0d165",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 251,
+              "head" : "[The image shown above is also saved at \/var\/minis\/attachments\/uploads\/noise2.jpg — this is that same image, not an additional one. Use the path only if you nee",
+              "sha8" : "fe78ad76",
+              "tail" : "e-read it at full resolution, crop, OCR, inspect metadata).]"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise2.jpg\" url=\"minis:\/\/attachments\/uploads\/noise2.jpg\" size=\"5313333\" modified=\"2027-01-15T",
+              "sha8" : "931b09ac",
+              "tail" : "3\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 2",
+              "sha8" : "32708aa3",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 2",
+              "sha8" : "946ba1d1",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise3.jpg]",
+              "sha8" : "d387d013",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "image" : {
+              "base64Len" : 5212036,
+              "bytes" : 3909026,
+              "fmt" : "jpeg",
+              "h" : 1998,
+              "mime" : "image\/jpeg",
+              "sha256" : "3233cc6ce15fd1db",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 251,
+              "head" : "[The image shown above is also saved at \/var\/minis\/attachments\/uploads\/noise3.jpg — this is that same image, not an additional one. Use the path only if you nee",
+              "sha8" : "2f3007f8",
+              "tail" : "e-read it at full resolution, crop, OCR, inspect metadata).]"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise3.jpg\" url=\"minis:\/\/attachments\/uploads\/noise3.jpg\" size=\"5319783\" modified=\"2027-01-15T",
+              "sha8" : "5800413e",
+              "tail" : "3\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 3",
+              "sha8" : "7c82785f",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 3",
+              "sha8" : "d94c9c4d",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise4.jpg]",
+              "sha8" : "2bc15b85",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "image" : {
+              "base64Len" : 5113308,
+              "bytes" : 3834980,
+              "fmt" : "jpeg",
+              "h" : 1997,
+              "mime" : "image\/jpeg",
+              "sha256" : "2c784163db71d5c1",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 251,
+              "head" : "[The image shown above is also saved at \/var\/minis\/attachments\/uploads\/noise4.jpg — this is that same image, not an additional one. Use the path only if you nee",
+              "sha8" : "9d18d5e8",
+              "tail" : "e-read it at full resolution, crop, OCR, inspect metadata).]"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise4.jpg\" url=\"minis:\/\/attachments\/uploads\/noise4.jpg\" size=\"5319563\" modified=\"2027-01-15T",
+              "sha8" : "a0e8e059",
+              "tail" : "3\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 4",
+              "sha8" : "c3a248be",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 4",
+              "sha8" : "5148c693",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 59,
+              "head" : "[attached image: \/var\/minis\/attachments\/uploads\/noise5.jpg]",
+              "sha8" : "d5c8361c",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "image" : {
+              "base64Len" : 5199260,
+              "bytes" : 3899443,
+              "fmt" : "jpeg",
+              "h" : 1996,
+              "mime" : "image\/jpeg",
+              "sha256" : "e6a458c947266980",
+              "w" : 2000
+            },
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 251,
+              "head" : "[The image shown above is also saved at \/var\/minis\/attachments\/uploads\/noise5.jpg — this is that same image, not an additional one. Use the path only if you nee",
+              "sha8" : "125c3134",
+              "tail" : "e-read it at full resolution, crop, OCR, inspect metadata).]"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 196,
+              "head" : "<user-attached-files>\n  <file path=\"\/var\/minis\/attachments\/uploads\/noise5.jpg\" url=\"minis:\/\/attachments\/uploads\/noise5.jpg\" size=\"5321657\" modified=\"2027-01-15T",
+              "sha8" : "f896355b",
+              "tail" : "7\" modified=\"2027-01-15T08:00:00Z\" \/>\n<\/user-attached-files>"
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 7,
+              "head" : "image 5",
+              "sha8" : "cdcef0e4",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "ok 5",
+              "sha8" : "40979a40",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "assistant"
+      }
+    ]
+  }
+}

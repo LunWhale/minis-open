@@ -1,0 +1,215 @@
+{
+  "_about": "B01 backup-restore semantics, shared by the iOS and Android restore tests (one scenario per spec row a-h). local/remote are ProviderConfig documents in the backup wire shape (provider_config.json). Entry ids and group members are composite keys {instanceId}/{modelId}. Where two groups share a name, the LOCAL group's id is kept and the backup's id is rewritten to it.",
+  "scenarios": {
+    "a_empty_local": {
+      "local": {"instances": [], "modelEntries": [], "modelGroups": []},
+      "remote": {
+        "instances": [
+          {"id": "inst-1", "label": "Relay", "providerType": "openAI", "credentialType": "apiKey", "isEnabled": true, "createdAt": "2026-09-01T08:00:00Z", "customBaseURL": "https://relay.example.com", "appendV1Suffix": true}
+        ],
+        "modelEntries": [
+          {"providerInstanceId": "inst-1", "model": {"id": "m-a", "displayName": "Model A", "provider": "openAI"}, "overrides": {"temperature": 0.7}, "isCustom": false, "isHidden": false, "uuid": "inst-1/m-a"},
+          {"providerInstanceId": "inst-1", "model": {"id": "m-b", "displayName": "Model B", "provider": "openAI"}, "overrides": {}, "isCustom": false, "isHidden": true, "uuid": "inst-1/m-b"},
+          {"providerInstanceId": "inst-1", "model": {"id": "m-c", "displayName": "Model C", "provider": "openAI"}, "overrides": {"displayName": "My C", "maxOutputTokens": 4096}, "isCustom": true, "isHidden": false, "uuid": "inst-1/m-c"}
+        ],
+        "modelGroups": [
+          {"id": "g1", "name": "Main", "memberEntryIds": ["inst-1/m-a", "inst-1/m-b"], "strategy": "fallback", "fallbackStrategy": "always", "defaultThinkingLevel": "high", "contextLimitTokens": 800000}
+        ],
+        "agentLoopModelEntryIds": ["inst-1/m-a"],
+        "agentLoopGroupIds": ["g1"]
+      },
+      "expect": {
+        "instanceIds": ["inst-1"],
+        "entryCount": 3,
+        "entries": {
+          "inst-1/m-a": {"overrides": {"temperature": 0.7}, "isHidden": false},
+          "inst-1/m-b": {"overrides": {}, "isHidden": true},
+          "inst-1/m-c": {"overrides": {"displayName": "My C", "maxOutputTokens": 4096}, "isHidden": false}
+        },
+        "groups": [
+          {"id": "g1", "name": "Main", "memberEntryIds": ["inst-1/m-a", "inst-1/m-b"], "fallbackStrategy": "always", "defaultThinkingLevel": "high", "contextLimitTokens": 800000}
+        ],
+        "agentLoopModelEntryIds": ["inst-1/m-a"],
+        "agentLoopGroupIds": ["g1"]
+      }
+    },
+
+    "b_same_key_backup_wins": {
+      "local": {
+        "instances": [
+          {"id": "inst-1", "label": "Local Label", "providerType": "openAI", "credentialType": "apiKey", "isEnabled": true, "createdAt": "2026-10-01T08:00:00Z", "customBaseURL": "https://local.example.com", "appendV1Suffix": true}
+        ],
+        "modelEntries": [
+          {"providerInstanceId": "inst-1", "model": {"id": "m-a", "displayName": "Local API Name", "provider": "openAI"}, "overrides": {"temperature": 0.2, "maxOutputTokens": 1000}, "isCustom": false, "isHidden": true, "uuid": "inst-1/m-a", "userModifiedAt": "2026-10-10T00:00:00Z", "absentSince": "2026-10-12T00:00:00Z"}
+        ],
+        "modelGroups": []
+      },
+      "remote": {
+        "instances": [
+          {"id": "inst-1", "label": "Backup Label", "providerType": "openAI", "credentialType": "apiKey", "isEnabled": true, "createdAt": "2026-09-01T08:00:00Z", "customBaseURL": "https://backup.example.com", "appendV1Suffix": true}
+        ],
+        "modelEntries": [
+          {"providerInstanceId": "inst-1", "model": {"id": "m-a", "displayName": "Old Backup Name", "provider": "openAI"}, "overrides": {"temperature": 0.7}, "isCustom": false, "isHidden": false, "uuid": "inst-1/m-a", "userModifiedAt": "2026-09-01T00:00:00Z"}
+        ],
+        "modelGroups": []
+      },
+      "expect": {
+        "instances": {"inst-1": {"label": "Backup Label", "customBaseURL": "https://backup.example.com"}},
+        "entryCount": 1,
+        "entries": {
+          "inst-1/m-a": {"overrides": {"temperature": 0.7}, "isHidden": false, "baseDisplayName": "Local API Name", "absentSinceKept": true}
+        }
+      }
+    },
+
+    "c_same_id_group": {
+      "local": {
+        "instances": [],
+        "modelEntries": [],
+        "modelGroups": [
+          {"id": "g1", "name": "Old Name", "memberEntryIds": ["inst-1/m-a", "inst-1/m-c", "inst-1/m-local"], "strategy": "fallback", "fallbackStrategy": "default"}
+        ]
+      },
+      "remote": {
+        "instances": [],
+        "modelEntries": [],
+        "modelGroups": [
+          {"id": "g1", "name": "Main", "memberEntryIds": ["inst-1/m-b", "inst-1/m-a"], "strategy": "fallback", "fallbackStrategy": "always", "defaultThinkingLevel": "high", "contextLimitTokens": 800000}
+        ]
+      },
+      "expect": {
+        "groups": [
+          {"id": "g1", "name": "Main", "memberEntryIds": ["inst-1/m-b", "inst-1/m-a", "inst-1/m-c", "inst-1/m-local"], "fallbackStrategy": "always", "defaultThinkingLevel": "high", "contextLimitTokens": 800000}
+        ]
+      }
+    },
+
+    "d_same_name_different_id": {
+      "local": {
+        "instances": [],
+        "modelEntries": [],
+        "modelGroups": [
+          {"id": "g-local", "name": "Coding", "memberEntryIds": ["inst-1/m-a", "inst-1/m-x"], "strategy": "fallback", "fallbackStrategy": "default"}
+        ],
+        "defaultPrimaryGroupId": "g-remote",
+        "defaultSubGroupId": "g-remote",
+        "voiceInputGroupId": "g-remote",
+        "voiceOutputGroupId": "g-remote",
+        "visionGroupId": "g-remote",
+        "subAgents": [
+          {"id": "agent-local", "name": "Reviewer", "description": "reviews", "instructions": "review", "modelGroupId": "g-remote"}
+        ],
+        "agentLoopGroupIds": ["g-remote"]
+      },
+      "remote": {
+        "instances": [],
+        "modelEntries": [],
+        "modelGroups": [
+          {"id": "g-remote", "name": "Coding", "memberEntryIds": ["inst-1/m-b", "inst-1/m-a"], "strategy": "fallback", "fallbackStrategy": "always", "defaultThinkingLevel": "high", "contextLimitTokens": 800000}
+        ],
+        "subAgents": [
+          {"id": "agent-remote", "name": "Writer", "description": "writes", "instructions": "write", "modelGroupId": "g-remote"}
+        ],
+        "agentLoopGroupIds": ["g-remote", "g-other"]
+      },
+      "expect": {
+        "groups": [
+          {"id": "g-local", "name": "Coding", "memberEntryIds": ["inst-1/m-b", "inst-1/m-a", "inst-1/m-x"], "fallbackStrategy": "always", "defaultThinkingLevel": "high", "contextLimitTokens": 800000}
+        ],
+        "groupIdRewrites": {"g-remote": "g-local"},
+        "pointers": {"defaultPrimaryGroupId": "g-local", "defaultSubGroupId": "g-local", "voiceInputGroupId": "g-local", "voiceOutputGroupId": "g-local", "visionGroupId": "g-local"},
+        "agentLoopGroupIds": ["g-local", "g-other"],
+        "subAgentModelGroupIds": {"agent-local": "g-local", "agent-remote": "g-local"},
+        "bindings": [
+          {"in": "{\"type\":\"group\",\"groupId\":\"g-remote\"}", "groupId": "g-local"},
+          {"in": "{\"type\":\"group\",\"groupId\":\"g-local\"}", "groupId": "g-local"},
+          {"in": "{\"type\":\"entry\",\"entryId\":\"inst-1/m-a\"}", "unchanged": true}
+        ],
+        "legacyModelIds": [
+          {"in": "group:g-remote", "out": "group:g-local"},
+          {"in": "inst-1/m-a", "out": "inst-1/m-a"}
+        ]
+      }
+    },
+
+    "e_agent_loop_union": {
+      "local": {"instances": [], "modelEntries": [], "modelGroups": [], "agentLoopModelEntryIds": ["inst-1/m-a"], "agentLoopGroupIds": ["g-l"]},
+      "remote": {"instances": [], "modelEntries": [], "modelGroups": [], "agentLoopModelEntryIds": ["inst-1/m-b", "inst-1/m-a"], "agentLoopGroupIds": ["g-r"]},
+      "expect": {"agentLoopModelEntryIds": ["inst-1/m-a", "inst-1/m-b"], "agentLoopGroupIds": ["g-l", "g-r"]}
+    },
+
+    "f_tombstones": {
+      "_about": "Backup ids clear local tombstones (iOS only; Android keeps none). The backup's own tombstones are never applied.",
+      "local": {
+        "instances": [],
+        "modelEntries": [
+          {"providerInstanceId": "inst-1", "model": {"id": "m-local", "displayName": "Local", "provider": "openAI"}, "overrides": {}, "isCustom": true, "isHidden": false, "uuid": "inst-1/m-local"}
+        ],
+        "modelGroups": [
+          {"id": "g-local-only", "name": "Local Only", "memberEntryIds": ["inst-1/m-local"], "strategy": "fallback", "fallbackStrategy": "default"}
+        ],
+        "deletedModelGroups": [{"id": "g-back", "deletedAt": "2026-10-01T00:00:00Z"}]
+      },
+      "remote": {
+        "instances": [],
+        "modelEntries": [],
+        "modelGroups": [
+          {"id": "g-back", "name": "Came Back", "memberEntryIds": [], "strategy": "fallback", "fallbackStrategy": "default"}
+        ],
+        "deletedModelGroups": [{"id": "g-local-only", "deletedAt": "2026-09-01T00:00:00Z"}],
+        "deletedModelEntries": [{"id": "inst-1/m-local", "deletedAt": "2026-09-01T00:00:00Z"}]
+      },
+      "expect": {
+        "groupIds": ["g-back", "g-local-only"],
+        "entryKeys": ["inst-1/m-local"],
+        "localTombstonesCleared": ["g-back"]
+      }
+    },
+
+    "g_local_only_survives": {
+      "local": {
+        "instances": [
+          {"id": "inst-2", "label": "Local Only", "providerType": "anthropic", "credentialType": "apiKey", "isEnabled": true, "createdAt": "2026-10-01T08:00:00Z"}
+        ],
+        "modelEntries": [
+          {"providerInstanceId": "inst-2", "model": {"id": "m-z", "displayName": "Z", "provider": "anthropic"}, "overrides": {"temperature": 0.1}, "isCustom": false, "isHidden": false, "uuid": "inst-2/m-z"}
+        ],
+        "modelGroups": [
+          {"id": "g-only", "name": "Only Here", "memberEntryIds": ["inst-2/m-z"], "strategy": "fallback", "fallbackStrategy": "default"}
+        ]
+      },
+      "remote": {
+        "instances": [
+          {"id": "inst-1", "label": "Relay", "providerType": "openAI", "credentialType": "apiKey", "isEnabled": true, "createdAt": "2026-09-01T08:00:00Z"}
+        ],
+        "modelEntries": [
+          {"providerInstanceId": "inst-1", "model": {"id": "m-a", "displayName": "A", "provider": "openAI"}, "overrides": {}, "isCustom": false, "isHidden": false, "uuid": "inst-1/m-a"}
+        ],
+        "modelGroups": [
+          {"id": "g1", "name": "Main", "memberEntryIds": ["inst-1/m-a"], "strategy": "fallback", "fallbackStrategy": "default"}
+        ]
+      },
+      "expect": {
+        "instanceIds": ["inst-1", "inst-2"],
+        "entryKeys": ["inst-2/m-z", "inst-1/m-a"],
+        "groupIds": ["g1", "g-only"],
+        "entries": {"inst-2/m-z": {"overrides": {"temperature": 0.1}, "isHidden": false}}
+      }
+    }
+  },
+
+  "credentials": {
+    "_about": "Spec row h. kind: apiKey-class = apiKey, manualOAuthToken (a pasted static bearer); oauth-class = oauthToken, oauthEmail, oauthGcpProject. needsReauth = the platform's existing 'sign-in expired' mark (iOS ProviderKeychainHelper.oauthNeedsReauth, Android OAuthManager.needsReauth). wrote = counted as restored (false = kept).",
+    "cases": [
+      {"name": "h1_api_key_backup_wins", "slot": "apiKey", "local": "local-key", "backup": "backup-key", "needsReauth": false, "result": "backup-key", "wrote": true},
+      {"name": "h2_oauth_valid_keeps_local", "slot": "oauthToken", "local": "{\"access_token\":\"local\"}", "backup": "{\"access_token\":\"backup\"}", "needsReauth": false, "result": "{\"access_token\":\"local\"}", "wrote": false},
+      {"name": "h3_oauth_needs_reauth_backup_wins", "slot": "oauthToken", "local": "{\"access_token\":\"local\"}", "backup": "{\"access_token\":\"backup\"}", "needsReauth": true, "result": "{\"access_token\":\"backup\"}", "wrote": true},
+      {"name": "h4_no_local_uses_backup_api_key", "slot": "apiKey", "local": null, "backup": "backup-key", "needsReauth": false, "result": "backup-key", "wrote": true},
+      {"name": "h4_no_local_uses_backup_oauth", "slot": "oauthToken", "local": null, "backup": "{\"access_token\":\"backup\"}", "needsReauth": false, "result": "{\"access_token\":\"backup\"}", "wrote": true},
+      {"name": "h5_manual_bearer_is_api_key_class", "slot": "manualOAuthToken", "local": "local-bearer", "backup": "backup-bearer", "needsReauth": false, "result": "backup-bearer", "wrote": true},
+      {"name": "h6_oauth_email_follows_oauth_valid", "slot": "oauthEmail", "local": "me@local", "backup": "me@backup", "needsReauth": false, "result": "me@local", "wrote": false},
+      {"name": "h6_oauth_email_follows_oauth_expired", "slot": "oauthEmail", "local": "me@local", "backup": "me@backup", "needsReauth": true, "result": "me@backup", "wrote": true},
+      {"name": "h7_same_api_key_is_kept_not_restored", "slot": "apiKey", "local": "same-key", "backup": "same-key", "needsReauth": false, "result": "same-key", "wrote": false}
+    ]
+  }
+}

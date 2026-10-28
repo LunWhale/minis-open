@@ -1,5 +1,6 @@
 #if DEBUG
 import XCTest
+@testable import Minis
 
 /// Unit tests for the debug voice-input capture ring (`debug.voiceInputs`
 /// backing store). Verifies WAV-header parsing, the ≤5 bounded ring, and the

@@ -1,0 +1,19 @@
+{
+  "about": "Stored Settings > Network JSON from older or other builds and what it must decode to (spec: README.md section 1). Missing keys take the defaults. Checked on iOS by MinisTests/Standalone/NetworkSpecVectorsTests.swift.",
+  "defaults": {"routingEnabled": true, "defaultRoute": "direct", "scopes": {}, "providerRoutes": {}, "proxies": 0, "tailscaleEnabled": false, "hostname": "", "acceptRoutes": false, "exitNodeIP": null},
+  "cases": [
+    {"name": "empty object", "json": "{}", "want": {}},
+    {"name": "round 1 (no routingEnabled, no providerRoutes)",
+     "json": "{\"tailscaleEnabled\":true,\"hostname\":\"x\",\"acceptRoutes\":false,\"defaultRoute\":\"direct\",\"scopes\":{\"shell\":\"tailscale\"},\"proxies\":[]}",
+     "want": {"tailscaleEnabled": true, "hostname": "x", "scopes": {"shell": "tailscale"}}},
+    {"name": "master switch off kept",
+     "json": "{\"routingEnabled\":false,\"defaultRoute\":\"proxy:P\"}",
+     "want": {"routingEnabled": false, "defaultRoute": "proxy:P"}},
+    {"name": "provider routes and an exit node",
+     "json": "{\"providerRoutes\":{\"EB15E0AE\":\"tailscale\"},\"exitNodeIP\":\"100.64.0.9\"}",
+     "want": {"providerRoutes": {"EB15E0AE": "tailscale"}, "exitNodeIP": "100.64.0.9"}},
+    {"name": "proxy record without a password",
+     "json": "{\"proxies\":[{\"id\":\"P\",\"name\":\"\",\"kind\":\"http\",\"host\":\"10.0.0.1\",\"port\":8080,\"username\":\"u\",\"bypass\":[\"*.corp\"]}]}",
+     "want": {"proxies": 1}}
+  ]
+}

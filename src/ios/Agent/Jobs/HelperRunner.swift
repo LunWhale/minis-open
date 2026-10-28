@@ -210,9 +210,10 @@ extension AIChatViewModel {
     /// nonisolated `syntheticBlock()`.
     nonisolated static func resolvedStatus(_ status: String, result: String) -> String {
         guard status == "completed" else { return status }
-        return result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            ? noDeliverableStatus
-            : status
+        // [T-subagent-termination] The labelled earlier line that
+        // `lastAssistantText` falls back to is not a deliverable either: it
+        // used to make a run with no final answer report `completed`.
+        return isFinalAnswer(result) ? status : noDeliverableStatus
     }
 
     /// Wait until the child stops processing, or `seconds` pass. True = idle.
@@ -392,24 +393,36 @@ extension AIChatViewModel {
         // sub agents that DID start could not report back either. The queued
         // one starts by itself when a slot frees and reports through the same
         // callback, so the model does not have to remember to re-delegate.
-        if overTurnAllowance || !registry.canStartChildJob {
+        // [T-limits-per-parent] The slots are this conversation's own
+        // (`maxChildJobsPerParent`); other conversations' sub agents do not
+        // count. A start coming back from the queue already holds a
+        // reservation under this tool_use id, so it is not counted against
+        // itself.
+        if overTurnAllowance || !registry.canStartChildJob(parent: parentSid, excludingReservation: toolUseId) {
             let queued = registry.enqueueDelegation(
                 .init(parentSessionId: parentSid, args: args, toolUseId: toolUseId))
             guard queued else {
                 return reject("helper_limit",
-                              "\(AgentJobRegistry.maxConcurrentChildJobs) sub agents are already running and the queue is full. Wait for some to finish, then delegate this task again — it was NOT queued.")
+                              "This conversation already has \(AgentJobRegistry.maxChildJobsPerParent) sub agents running and \(AgentJobRegistry.maxQueuedDelegationsPerParent) more queued. Wait for some to finish, then delegate this task again — it was NOT queued.")
             }
             let json = Self.jsonString([
                 "ok": true, "status": "queued",
-                "queued_behind": registry.runningChildJobCount + registry.queuedCount(parent: parentSid) - 1,
+                "queued_behind": registry.runningChildJobCount(parent: parentSid) + registry.queuedCount(parent: parentSid) - 1,
                 "detail": overTurnAllowance
                     ? "More than \(Self.helperMaxPerAssistantTurn) delegations in one turn. This task is QUEUED and will start automatically as slots free; its result arrives as a new message like any other. Do not re-delegate it."
-                    : "All \(AgentJobRegistry.maxConcurrentChildJobs) slots are busy. This task is QUEUED and will start automatically when one frees; its result arrives as a new message like any other. Do not re-delegate it.",
+                    : "All \(AgentJobRegistry.maxChildJobsPerParent) sub agent slots of this conversation are busy. This task is QUEUED and will start automatically when one frees; its result arrives as a new message like any other. Do not re-delegate it.",
             ])
             writeParentBlock(msgIdx: msgIdx, blockIdx: blockIdx, content: json)
-            logger.info("[subagent_task] QUEUED tool=\(toolUseId.prefix(12)) behind \(registry.runningChildJobCount) running")
+            logger.info("[subagent_task] QUEUED tool=\(toolUseId.prefix(12)) behind \(registry.runningChildJobCount(parent: parentSid)) running in \(parentSid.prefix(8))")
             return (json, true)
         }
+        // [T-limits-per-parent] Hold the slot from admission until the job is
+        // running: everything between here and `markRunning` awaits, and the
+        // other delegations of this turn run concurrently - without the
+        // reservation each of them could see the same free slot. Released
+        // right after `markRunning`, and by this defer on every earlier exit.
+        registry.reserveChildStart(key: toolUseId, parent: parentSid)
+        defer { registry.releaseChildStart(key: toolUseId) }
         // Resolved before the model, because a pinned Model Group on the
         // definition overrides the requested tier.
         let roster = SubAgentStore.shared.subAgents
@@ -491,6 +504,7 @@ extension AIChatViewModel {
         writeParentBlock(msgIdx: msgIdx, blockIdx: blockIdx,
                          content: Self.progressLine(title: displayTitle, tool: "", status: AppLocalized("starting"), elapsed: 0))
 
+        child.helperStoppedForTimeout = false   // [T-subagent-timeout-reason] fresh run
         let outcome = child.submitProgrammaticPrompt(prompt, origin: .job(jobId: job.id), silent: true)
         guard outcome == .sent else {
             job.then = .none
@@ -498,6 +512,10 @@ extension AIChatViewModel {
             return reject("child_start_failed", "The helper session did not start (\(String(describing: outcome))).")
         }
         registry.markRunning(job.id, sessionId: childId)
+        registry.releaseChildStart(key: toolUseId)   // [T-limits-per-parent] counted as running now
+        // [T-subagent-termination] `running` until an ending path replaces it;
+        // still `running` later with no live run reads as `interrupted`.
+        SubAgentTerminationStore.shared.begin(sessionId: childId, jobId: job.id, parentSessionId: parentSid)
         // [T-sub-agents-badge] Name the agent only now that it is confirmed
         // running. Before this point the card's badge stays the generic
         // "Agent": while a delegation is still starting there is nothing
@@ -537,6 +555,9 @@ extension AIChatViewModel {
                     if waited >= Self.helperWrapUpGraceSeconds {
                         finalStatus = "timeout"
                         logger.warning("[delegate_task] TIMEOUT after \(minutes)m (+grace) — cancelling child \(childId.prefix(8))")
+                        // [T-subagent-timeout-reason] Before cancel(): its
+                        // userDidCancel must not read as a user Stop.
+                        child.helperStoppedForTimeout = true
                         child.cancel()
                         break
                     }
@@ -564,6 +585,7 @@ extension AIChatViewModel {
             tick += 1
             if tick % 2 == 0 {
                 syncHelperModel(job: job, child: child, toolUseId: toolUseId)
+                reattachHelperBlock(toolUseId: toolUseId, childId: childId, agentName: job.subAgentName)
                 let info = SessionActivityTracker.shared.sessionToolInfo[childId]
                 writeParentBlock(msgIdx: msgIdx, blockIdx: blockIdx,
                                  content: Self.progressLine(title: displayTitle,
@@ -599,7 +621,17 @@ extension AIChatViewModel {
         // state, `ok` and `status` all describe the same outcome. Computed off
         // the pre-reclassification status so the note keeps naming the real
         // loop state ("completed") rather than the label we show for it.
-        let reportedStatus = Self.resolvedStatus(finalStatus, result: resultText)
+        // [T-subagent-termination] Name the ending and store it on the child.
+        let termination = Self.recordHelperTermination(
+            child: child, childId: childId, jobId: job.id, parentSessionId: parentSid,
+            loopStatus: finalStatus, budgetExpired: wrapUpAskedAt != nil || child.helperWrapUpRequested,
+            resultText: resultText, delivery: .inline)
+        var reportedStatus = Self.resolvedStatus(finalStatus, result: resultText)
+        // A clean loop exit whose last turn was not an answer (narration
+        // before a tool call, then nothing) is not a delivered result either.
+        if reportedStatus == "completed", termination.reason != .completed {
+            reportedStatus = Self.noDeliverableStatus
+        }
         let jobState: AgentJobState = switch reportedStatus {
         case "completed": .done
         case "cancelled": .cancelled
@@ -613,7 +645,7 @@ extension AIChatViewModel {
         var payload: [String: Any] = [
             "ok": reportedStatus == "completed",
             "status": reportedStatus,
-            "result": resultText.isEmpty ? Self.emptyResultNote(status: finalStatus) : resultText,
+            "result": Self.helperResultText(resultText, termination: termination),
             "model_used": resolution.modelLabel,
             "model_origin": resolution.origin.rawValue,
             "agent": subAgent.name,
@@ -637,6 +669,7 @@ extension AIChatViewModel {
         if let identity = job.modelIdentity {
             payload.merge(identity.payload()) { _, new in new }
         }
+        payload.merge(termination.payload()) { _, new in new }
         let json = Self.jsonString(payload)
         logger.info("[delegate_task] END job=\(job.id.prefix(8)) status=\(finalStatus) turns=\(turns) elapsed=\(Int(elapsed))s result=\(resultText.count)ch")
         writeParentBlock(msgIdx: msgIdx, blockIdx: blockIdx, content: json)
@@ -797,6 +830,7 @@ extension AIChatViewModel {
                 // (device run 19:41: cancelled block still read "running").
                 guard !Task.isCancelled, child.isProcessing, let self else { return }
                 self.syncHelperModel(job: job, child: child, toolUseId: toolUseId)
+                self.reattachHelperBlock(toolUseId: toolUseId, childId: childId, agentName: job.subAgentName)
                 let info = SessionActivityTracker.shared.sessionToolInfo[childId]
                 job.summaryLine = Self.runSummaryLine(child: child)
                 self.writeParentBlock(toolUseId: toolUseId,
@@ -823,7 +857,18 @@ extension AIChatViewModel {
             // text is the SAME outcome and must not report a green "Done"
             // either. Kept as one shared helper so the two paths cannot drift.
             let loopStatus = finished.state == .done ? "completed" : finished.state.rawValue
-            let reportedStatus = Self.resolvedStatus(loopStatus, result: result)
+            // [T-subagent-termination] Recorded before `finish()` runs the
+            // callback, so the delivery state starts at `pending` and the
+            // callback text can use the same termination note.
+            let termination = Self.recordHelperTermination(
+                child: child, childId: childId, jobId: finished.id,
+                parentSessionId: finished.target.parentSessionId,
+                loopStatus: loopStatus, budgetExpired: child.helperWrapUpRequested,
+                resultText: result, delivery: .pending)
+            var reportedStatus = Self.resolvedStatus(loopStatus, result: result)
+            if reportedStatus == "completed", termination.reason != .completed {
+                reportedStatus = Self.noDeliverableStatus
+            }
             var payload: [String: Any] = [
                 "ok": reportedStatus == "completed",
                 // [T-sub-agents-resume] Only present when it is true, so an
@@ -833,7 +878,7 @@ extension AIChatViewModel {
                     ? "This run was interrupted and resumed; its tool context was lost at that point, and the elapsed/turn counts cover only the resumed part. Verify anything that depended on a page or process staying open."
                     : NSNull(),
                 "status": reportedStatus,
-                "result": result.isEmpty ? Self.emptyResultNote(status: loopStatus) : result,
+                "result": Self.helperResultText(result, termination: termination),
                 "model_used": resolution.modelLabel,
                 "model_origin": resolution.origin.rawValue,
                 // Read off the job rather than the definition: this closure
@@ -862,6 +907,7 @@ extension AIChatViewModel {
             if let identity = finished.modelIdentity {
                 payload.merge(identity.payload()) { _, new in new }
             }
+            payload.merge(termination.payload()) { _, new in new }
             let finalStatus: ToolBlockStatus = switch finished.state {
             case .done: .success
             case .cancelled: .cancelled
@@ -904,6 +950,9 @@ extension AIChatViewModel {
                 if await !Self.awaitHelperWrapUp(child, childId: childId) {
                     logger.warning("[delegate_task] BACKGROUND TIMEOUT (+grace) — cancelling child \(childId.prefix(8))")
                     cancelledForTimeout = true
+                    // [T-subagent-timeout-reason] Before cancel(): the loop-end
+                    // observer and the termination record read it.
+                    child.helperStoppedForTimeout = true
                     child.cancel()
                     // [T-sub-agents-busy] Bounded wait, NOT a bare
                     // `for await …$isProcessing.values`: that waits for the
@@ -981,17 +1030,7 @@ extension AIChatViewModel {
         var order: [String] = []
         for msg in child.messages where msg.role == .assistant {
             for block in msg.blocks where block.toolStatus != nil {
-                let name: String = switch block.kind {
-                case .shellTool: "shell_execute"
-                case .fileReadTool: "file_read"
-                case .fileWriteTool: "file_write"
-                case .fileEditTool: "file_edit"
-                case .browserTool: "browser_use"
-                case .readImageTool: "read_image"
-                case .memoryTool(let a): a
-                case .delegateTool: SubAgentDefinition.toolName
-                default: "other"
-                }
+                let name = toolWireName(block.kind)
                 if counts[name] == nil { order.append(name) }
                 counts[name, default: 0] += 1
             }
@@ -1124,6 +1163,20 @@ extension AIChatViewModel {
         !parentCancelled && !delegationsMuted
     }
 
+    /// [T-subagent-stop-from-own-page] The user's Stop from this conversation's
+    /// own page (composer Stop, "Stop & New Chat", the debug RPC). A sub agent
+    /// stops through the registry exactly as its card in the parent does —
+    /// parent muted, sibling set cancelled silently — so no "cancelled"
+    /// callback wakes the parent. Anything else is a plain `cancel()`.
+    func stopByUser() {
+        if isHelper, let sid = sessionId,
+           AgentJobRegistry.shared.stopSubAgentByUser(
+               childSessionId: sid, reason: "user stopped this sub agent from its own page") > 0 {
+            return
+        }
+        cancel()
+    }
+
     /// [T-stop-sibling-subagent] Stop this turn from being driven by sub agent
     /// results, without cancelling the turn itself.
     func muteDelegationResults(reason: String) {
@@ -1200,6 +1253,31 @@ extension AIChatViewModel {
         for msg in messages where msg.role == .assistant {
             if let block = msg.blocks.first(where: { $0.toolUseId == toolUseId }) {
                 if block.helperModel != identity { block.helperModel = identity }
+                return
+            }
+        }
+    }
+
+    /// [T-subagent-link-survives-reload] Put the child link back on the parent
+    /// block while the child runs.
+    ///
+    /// `helperChildSessionId` / `helperAgentName` live only on the in-memory
+    /// block. Any reload of the parent (iCloud catch-up, reopening the chat)
+    /// rebuilds its blocks from the DB without them, and the progress mirror
+    /// then overwrites the block's content with a progress line — so the
+    /// stored JSON's `child_session_id` cannot be parsed back either. The card
+    /// lost its Stop button and the detail sheet's transcript button did
+    /// nothing (field log 2026-09-26 03:13: after a sync reload at 03:13:02,
+    /// three taps logged `child=nil`). Re-attached on every tick, so a reload
+    /// heals within a second. Writes only on change.
+    func reattachHelperBlock(toolUseId: String, childId: String, agentName: String?) {
+        for msg in messages where msg.role == .assistant {
+            if let block = msg.blocks.first(where: { $0.toolUseId == toolUseId }) {
+                if block.helperChildSessionId != childId {
+                    block.helperChildSessionId = childId
+                    logger.info("[delegate_task] re-attached child \(childId.prefix(8)) to block \(toolUseId.prefix(12)) after a parent reload")
+                }
+                if let agentName, block.helperAgentName != agentName { block.helperAgentName = agentName }
                 return
             }
         }
@@ -1587,17 +1665,26 @@ extension AIChatViewModel {
         }
 
         // ── Slot / queue, exactly as a fresh delegation ──────────────────
-        guard registry.canStartChildJob else {
+        // [T-limits-per-parent] This conversation's own slots; a resume coming
+        // back from the queue holds a reservation under this tool_use id.
+        guard registry.canStartChildJob(parent: parentSid, excludingReservation: toolUseId) else {
             let args: [String: Any] = ["__resume_child": childId, "tool_title": title]
-            _ = registry.enqueueDelegation(.init(parentSessionId: parentSid, args: args, toolUseId: toolUseId))
+            // A full queue refuses, and says so - reporting "queued" here left a
+            // resume that would never start.
+            guard registry.enqueueDelegation(.init(parentSessionId: parentSid, args: args, toolUseId: toolUseId)) else {
+                return "this conversation already has \(AgentJobRegistry.maxChildJobsPerParent) sub agents running and \(AgentJobRegistry.maxQueuedDelegationsPerParent) queued; it was NOT queued - resume it again once some finish"
+            }
             writeParentBlock(toolUseId: toolUseId,
                              content: Self.jsonString([
                                 "ok": true, "status": "queued",
-                                "detail": "All slots are busy; this resume is queued and starts when one frees.",
+                                "detail": "All \(AgentJobRegistry.maxChildJobsPerParent) sub agent slots of this conversation are busy; this resume is queued and starts when one frees.",
                              ]),
                              status: .running)
             return nil
         }
+        // Held until the resumed job is running (see executeDelegateTask).
+        registry.reserveChildStart(key: toolUseId, parent: parentSid)
+        defer { registry.releaseChildStart(key: toolUseId) }
 
         // ── Child VM ─────────────────────────────────────────────────────
         // [T-vmcache-pools] Resume path — same child pool as the start path.
@@ -1654,6 +1741,7 @@ extension AIChatViewModel {
         // ── Continue the run ─────────────────────────────────────────────
         // The notice goes in as a normal programmatic prompt, so the child
         // reads it at the top of its next turn like any other injected text.
+        child.helperStoppedForTimeout = false   // [T-subagent-timeout-reason] fresh run
         let outcome = child.submitProgrammaticPrompt(Self.helperResumeNotice,
                                                      origin: .job(jobId: job.id), silent: true)
         guard outcome == .sent else {
@@ -1662,6 +1750,8 @@ extension AIChatViewModel {
             return "the sub agent session did not restart (\(String(describing: outcome)))"
         }
         registry.markRunning(job.id, sessionId: childId)
+        registry.releaseChildStart(key: toolUseId)   // [T-limits-per-parent] counted as running now
+        SubAgentTerminationStore.shared.begin(sessionId: childId, jobId: job.id, parentSessionId: parentSid)
         // [T-sub-agents-badge] Same rule on resume: named once it is running.
         for msg in messages where msg.role == .assistant {
             if let block = msg.blocks.first(where: { $0.toolUseId == toolUseId }) {

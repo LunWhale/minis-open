@@ -713,6 +713,42 @@ struct SyncedEnvVar: Syncable {
     }()
 }
 
+// MARK: - SyncedEnvVarState [T-envvar-disable]
+//
+// A variable's enabled / disabled state, one record per variable
+// (recordName = EnvVarEntry.id). Its own record type rather than a field on
+// EnvVarItem, so that builds predating the feature can never write or delete
+// it: they do not register the type (SyncCore ignores unknown types on
+// inbound) and never emit it. A field on EnvVarItem would be exposed to an
+// older build's delete-and-recreate of that record and to a fresh zone
+// re-upload by an older build; here neither can happen. `updatedAt` is the
+// state's own clock (EnvVarStateBook), independent of EnvVarItem's.
+// Note: like every new record type, it must be deployed to the CloudKit
+// Production schema before a release; until then only state sync is off.
+struct SyncedEnvVarState: Syncable {
+    var id: String         // EnvVarEntry.id - also CK recordName
+    var key: String        // variable name at the time; diagnostics only
+    var enabled: Int       // 1 enabled, 0 disabled
+    var updatedAt: Date    // the state's own LWW clock
+
+    static let syncMetadata: SyncTypeMetadata<SyncedEnvVarState> = {
+        typealias F = FieldDescriptor<SyncedEnvVarState>
+        return SyncTypeMetadata<SyncedEnvVarState>(
+            recordType: "EnvVarStateItem",
+            idKeyPath: \SyncedEnvVarState.id,
+            scope: .global,
+            fields: [
+                F.string("entryId",  \SyncedEnvVarState.id),
+                F.string("key",      \SyncedEnvVarState.key),
+                F.int("enabled",     \SyncedEnvVarState.enabled),
+                F.date("updatedAt",  \SyncedEnvVarState.updatedAt),
+            ],
+            conflictPolicy: .lastWriteWinsByField(\SyncedEnvVarState.updatedAt),
+            version: 1
+        )
+    }()
+}
+
 // MARK: - SyncedDevice
 
 struct SyncedDevice: Syncable {
@@ -911,6 +947,7 @@ enum SyncedTypesBootstrap {
         r.register(SyncedSubAgentV3.self)
         r.register(SyncedEnvVars.self)   // legacy whole-file, inbound only
         r.register(SyncedEnvVar.self)    // per-variable, current schema
+        r.register(SyncedEnvVarState.self) // [T-envvar-disable] enabled state
         r.register(SyncedDevice.self)
         r.register(SyncedSoul.self)
         r.register(SyncedMemoryGlobal.self)

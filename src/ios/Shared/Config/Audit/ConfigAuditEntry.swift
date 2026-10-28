@@ -63,4 +63,10 @@ struct ConfigAuditEntry: Identifiable, Codable, Hashable {
     /// scannable. Nil/empty when the caller didn't pass one. Older rows
     /// written before this column existed decode as nil.
     let caption: String?
+    /// [T-config-readable] Human-readable description rendered when the change
+    /// was requested (names frozen at that moment). Shown in Logs → Config
+    /// Changes only — `ConfigOffloadBridge.auditEntryDict` never emits it, so
+    /// the model cannot see it. nil for rows written before this column
+    /// existed; the UI then shows the raw diff with a "predates" note.
+    let readable: ReadableSummary?
 }

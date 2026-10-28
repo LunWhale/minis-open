@@ -12,7 +12,7 @@
 //   1. `compactBefore` (AIChatViewModel+Compaction.swift, `dividerInsertIdx`)
 //      inserts the divider immediately AFTER the anchor row and marks every
 //      row at index < dividerInsertIdx as `isCompactedHistory`.
-//   2. The in-loop call site (AIChatViewModel.swift, `case .needsCompact`)
+//   2. The in-loop call site (AIChatViewModel+AgentLoop.swift, `case .needsCompact`)
 //      picks the anchor as `messages.last(where: active)` — which during a
 //      run IS the assistant bubble currently being streamed into.
 //

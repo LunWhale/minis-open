@@ -78,4 +78,126 @@ final class SessionDeletionSupportTests: XCTestCase {
         XCTAssertTrue(fm.fileExists(atPath: base.appendingPathComponent("shared/docs/global.md").path))
         XCTAssertEqual(SessionStorageCleanup.measure([parent, child], minisBase: base), .init())
     }
+
+    // MARK: - Orphaned session directories  [T-storage-orphan-cleanup]
+
+    /// A `minis` base with one of everything a clean-up can meet. Everything
+    /// is aged two days unless a test touches it again.
+    private struct OrphanFixture {
+        let fm = FileManager.default
+        let base: URL
+        let live = UUID().uuidString, orphanA = UUID().uuidString, orphanB = UUID().uuidString
+        let fresh = UUID().uuidString, busy = UUID().uuidString
+        let looseUUIDFile = UUID().uuidString, linkName = UUID().uuidString
+
+        init() throws {
+            base = fm.temporaryDirectory.appendingPathComponent("minis-orphan-\(UUID().uuidString)", isDirectory: true)
+            try fm.createDirectory(at: base, withIntermediateDirectories: true)
+            try write(live, "workspace/keep.txt")
+            try write(orphanA, "workspace/old.txt")
+            try write(orphanB, "offloads/.hidden/deep.bin")
+            try write(fresh, "attachments/just-synced.png")
+            try write(busy, "workspace/running.log")
+            for global in ["shared", "skills", "memory", "not-a-uuid"] { try write(global, "data/file.md") }
+            try Data("{}".utf8).write(to: base.appendingPathComponent("mounted-folders.json"))
+            try Data("x".utf8).write(to: base.appendingPathComponent(looseUUIDFile))        // a FILE with a UUID name
+            try fm.createSymbolicLink(at: base.appendingPathComponent(linkName),
+                                      withDestinationURL: base.appendingPathComponent("shared"))   // a LINK with a UUID name
+            try age(base, by: 2 * 86_400)
+        }
+
+        func write(_ dir: String, _ rel: String) throws {
+            let url = base.appendingPathComponent(dir).appendingPathComponent(rel)
+            try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data(repeating: 0xCD, count: 256).write(to: url)
+        }
+
+        /// Set the modification date of `root` and everything beneath it.
+        func age(_ root: URL, by seconds: TimeInterval) throws {
+            let then = Date().addingTimeInterval(-seconds)
+            var all = [root]
+            if let e = fm.enumerator(at: root, includingPropertiesForKeys: nil) {
+                for case let url as URL in e { all.append(url) }
+            }
+            for url in all where (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink != true {
+                try fm.setAttributes([.modificationDate: then], ofItemAtPath: url.path)
+            }
+        }
+
+        func exists(_ rel: String) -> Bool { fm.fileExists(atPath: base.appendingPathComponent(rel).path) }
+        func cleanUp() { try? fm.removeItem(at: base) }
+    }
+
+    func testOnlyUUIDNamedRealDirectoriesAreSessionDirectories() throws {
+        let f = try OrphanFixture()
+        defer { f.cleanUp() }
+        let names = SessionStorageCleanup.sessionDirectoryNames(minisBase: f.base)
+        XCTAssertEqual(Set(names), [f.live, f.orphanA, f.orphanB, f.fresh, f.busy],
+                       "no shared / skills / memory, no loose file, no UUID-named file, no UUID-named symlink")
+        XCTAssertEqual(names, names.sorted())
+        XCTAssertEqual(SessionStorageCleanup.sessionDirectoryNames(minisBase: f.base.appendingPathComponent("missing")), [])
+    }
+
+    func testOrphanNameTest() {
+        let id = UUID().uuidString
+        XCTAssertTrue(SessionStorageCleanup.isOrphanDirectoryName(id, knownSessionIds: []))
+        XCTAssertFalse(SessionStorageCleanup.isOrphanDirectoryName(id, knownSessionIds: [id]))
+        XCTAssertFalse(SessionStorageCleanup.isOrphanDirectoryName(id.lowercased(), knownSessionIds: [id]),
+                       "a case twin of a live session is the same directory on a case-insensitive volume")
+        XCTAssertFalse(SessionStorageCleanup.isOrphanDirectoryName(id, knownSessionIds: [id.lowercased()]))
+        for global in ["shared", "skills", "memory", "mounted-folders.json", "", "..", "not-a-uuid"] {
+            XCTAssertFalse(SessionStorageCleanup.isOrphanDirectoryName(global, knownSessionIds: []), global)
+        }
+    }
+
+    func testOrphanScanLeavesLiveBusyAndRecentAlone() throws {
+        let f = try OrphanFixture()
+        defer { f.cleanUp() }
+        try f.write(f.fresh, "attachments/second.png")          // touched now
+        let names = SessionStorageCleanup.sessionDirectoryNames(minisBase: f.base)
+        let scan = SessionStorageCleanup.orphanedSessionDirectories(
+            among: names, minisBase: f.base, knownSessionIds: [f.live], inUse: [f.busy.lowercased()])
+        XCTAssertEqual(Set(scan.removable), [f.orphanA, f.orphanB])
+        XCTAssertEqual(scan.recentlyChanged, [f.fresh])
+
+        // Past the grace period the fresh one is an ordinary orphan.
+        let later = SessionStorageCleanup.orphanedSessionDirectories(
+            among: names, minisBase: f.base, knownSessionIds: [f.live], inUse: [f.busy],
+            now: Date().addingTimeInterval(SessionStorageCleanup.orphanGracePeriod + 60))
+        XCTAssertEqual(Set(later.removable), [f.orphanA, f.orphanB, f.fresh])
+        XCTAssertEqual(later.recentlyChanged, [])
+
+        // A change deep inside, in a hidden folder, counts as a change.
+        try f.write(f.orphanB, "offloads/.hidden/new.bin")
+        let touched = SessionStorageCleanup.orphanedSessionDirectories(
+            among: names, minisBase: f.base, knownSessionIds: [f.live], inUse: [f.busy])
+        XCTAssertEqual(touched.removable, [f.orphanA])
+        XCTAssertEqual(Set(touched.recentlyChanged), [f.orphanB, f.fresh])
+    }
+
+    func testCleaningOrphansRemovesOnlyThem() throws {
+        let f = try OrphanFixture()
+        defer { f.cleanUp() }
+        try f.write(f.fresh, "attachments/second.png")
+        let names = SessionStorageCleanup.sessionDirectoryNames(minisBase: f.base)
+        let scan = SessionStorageCleanup.orphanedSessionDirectories(
+            among: names, minisBase: f.base, knownSessionIds: [f.live], inUse: [f.busy])
+        for sid in scan.removable {
+            XCTAssertTrue(SessionStorageCleanup.removeSessionDirectory(sid, minisBase: f.base))
+        }
+        XCTAssertFalse(f.exists(f.orphanA))
+        XCTAssertFalse(f.exists(f.orphanB))
+        for kept in [f.live + "/workspace/keep.txt", f.fresh + "/attachments/just-synced.png", f.busy + "/workspace/running.log",
+                     "shared/data/file.md", "skills/data/file.md", "memory/data/file.md", "not-a-uuid/data/file.md",
+                     "mounted-folders.json", f.looseUUIDFile] {
+            XCTAssertTrue(f.exists(kept), kept)
+        }
+        XCTAssertNotNil(try? f.fm.destinationOfSymbolicLink(atPath: f.base.appendingPathComponent(f.linkName).path),
+                        "the UUID-named symlink is still there, and so is what it points to")
+        // Nothing left to remove; a second pass is a no-op.
+        let again = SessionStorageCleanup.orphanedSessionDirectories(
+            among: SessionStorageCleanup.sessionDirectoryNames(minisBase: f.base),
+            minisBase: f.base, knownSessionIds: [f.live], inUse: [f.busy])
+        XCTAssertEqual(again.removable, [])
+    }
 }

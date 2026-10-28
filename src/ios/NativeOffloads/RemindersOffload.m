@@ -4,7 +4,7 @@
 //
 //  Native offload handler for `apple-reminders`.
 //  Delegates to the shared reminder implementations in CalendarOffload.
-//  Subcommands: list, create, update, complete, delete
+//  Subcommands: list, lists, read, create, update, complete, delete
 //
 
 #import <Foundation/Foundation.h>
@@ -22,6 +22,8 @@ static NSString *const HELP_TEXT =
      "\n"
      "COMMANDS:\n"
      "  list        List reminders\n"
+     "  lists       List reminder lists (every list, empty ones too) with their ids\n"
+     "  read        Read one reminder by id\n"
      "  create      Create a new reminder\n"
      "  update      Update an existing reminder\n"
      "  complete    Mark a reminder as completed\n"
@@ -35,8 +37,22 @@ static NSString *const HELP_TEXT =
      "LIST OPTIONS:\n"
      "  --completed          Show only completed reminders\n"
      "  --incomplete         Show only incomplete reminders\n"
-     "  --list <name>        Filter by reminder list name\n"
+     "  --list-id <id>       Only this list, by exact id from `lists`\n"
+     "  --list <name>        Filter by list name (fuzzy: case-insensitive\n"
+     "                       substring, so \"Work\" also matches \"Workout\")\n"
      "  --limit <N>          Maximum number of results\n"
+     "  Every reminder carries list, list_id and list_source.\n"
+     "\n"
+     "LISTS OPTIONS:\n"
+     "  (none)               Returns id, title, source, source_id, color,\n"
+     "                       is_default, allows_content_modifications per list.\n"
+     "                       Titles repeat across accounts (iCloud / Exchange):\n"
+     "                       use the id to pick one. Ids are EventKit-local and\n"
+     "                       can change after a full account resync - re-run\n"
+     "                       `lists` rather than storing them for long.\n"
+     "\n"
+     "READ OPTIONS:\n"
+     "  --id <reminder_id>   Reminder ID (required). Same fields as list.\n"
      "\n"
      "CREATE OPTIONS:\n"
      "  --title <title>      Reminder title (required)\n"
@@ -50,7 +66,12 @@ static NSString *const HELP_TEXT =
      "                       on requires a due date. On update, a --due change moves an\n"
      "                       existing notification with it. Independent of the location\n"
      "                       alerts below — a reminder can have both.\n"
-     "  --list <name>        Reminder list name\n"
+     "  --list-id <id>       Target list by exact id (from `lists`). Preferred:\n"
+     "                       an unknown or read-only list is an error, never a\n"
+     "                       fallback to the default list.\n"
+     "  --list <name>        Target list by exact title (case-insensitive).\n"
+     "                       --list and --list-id are mutually exclusive.\n"
+     "                       Neither: the default list.\n"
      "  --priority <0-9>     Priority level\n"
      "  --notes <text>       Reminder notes\n"
      "  --url <url>          Store a link in the reminder's URL field (absolute,\n"
@@ -94,7 +115,8 @@ static NSString *const HELP_TEXT =
      "  --id <reminder_id>   Reminder ID (required, from list output)\n"
      "  --title <title>      New title\n"
      "  --due <datetime>     New due date\n"
-     "  --list <name>        Move to a different list\n"
+     "  --list-id <id>       Move to the list with this exact id\n"
+     "  --list <name>        Move to the list with this exact title\n"
      "  --priority <0-9>     New priority\n"
      "  --notes <text>       New notes\n"
      "  --url <url>          Set or replace the link\n"
@@ -115,6 +137,12 @@ static NSString *const HELP_TEXT =
      "  apple-reminders list\n"
      "  apple-reminders list --incomplete --limit 10\n"
      "  apple-reminders list --list \"Shopping\"\n"
+     "  apple-reminders lists\n"
+     "  # Two lists called \"Work\" (iCloud and Exchange)? Pick one by id:\n"
+     "  apple-reminders create --title \"Send deck\" --list-id <id-from-lists>\n"
+     "  apple-reminders list --list-id <id-from-lists> --incomplete\n"
+     "  apple-reminders update --id <reminder_id> --list-id <archive-list-id>\n"
+     "  apple-reminders read --id <reminder_id>\n"
      "  apple-reminders create --title \"Buy groceries\" --due 2026-02-25T18:00\n"
      "  # All-day (no 12:00 AM, no notification), with a link:\n"
      "  apple-reminders create --title \"Pay rent\" --due 2026-02-25 \\\n"
@@ -165,6 +193,8 @@ static int reminders_handler(int argc, char **argv,
     }
 
     if ([subcmd isEqualToString:@"list"])     return calendar_cmd_reminders(argc, argv, stdout_fd, compact, quiet);
+    if ([subcmd isEqualToString:@"lists"])    return calendar_cmd_reminder_lists(argc, argv, stdout_fd, compact, quiet);   // [T-issue282-list-id]
+    if ([subcmd isEqualToString:@"read"])     return calendar_cmd_read_reminder(argc, argv, stdout_fd, compact, quiet);    // [T-issue282-read-by-id]
     if ([subcmd isEqualToString:@"create"])   return calendar_cmd_remind(argc, argv, stdout_fd, stderr_fd, compact, quiet);
     if ([subcmd isEqualToString:@"update"])   return calendar_cmd_update_reminder(argc, argv, stdout_fd, compact, quiet);
     if ([subcmd isEqualToString:@"complete"]) return calendar_cmd_complete_reminder(argc, argv, stdout_fd, compact, quiet);
@@ -173,7 +203,7 @@ static int reminders_handler(int argc, char **argv,
     noff_emit_help(stderr_fd, HELP_TEXT);
     NSDictionary *err = noff_json_error(TOOL_NAME, subcmd,
                                          NOFF_ERR_INVALID_ARGS,
-                                         [NSString stringWithFormat:@"Unknown command '%@'. Valid commands: list, create, update, complete, delete. Use --help for details.", subcmd]);
+                                         [NSString stringWithFormat:@"Unknown command '%@'. Valid commands: list, lists, read, create, update, complete, delete. Use --help for details.", subcmd]);
     noff_emit_json(stdout_fd, err, compact, quiet);
     return NOFF_EXIT_INVALID_ARGS;
 }

@@ -23,7 +23,7 @@ import sys
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 PBX = os.path.join(ROOT, "src/ios/Minis.xcodeproj/project.pbxproj")
 PLIST = os.path.join(ROOT, "src/ios/Info.plist")
-PICKER = os.path.join(ROOT, "src/ios/Views/ContentView.swift")
+PICKER = os.path.join(ROOT, "src/ios/Views/Settings/AppearanceSettingsView.swift")
 
 
 def edit(path, checks):

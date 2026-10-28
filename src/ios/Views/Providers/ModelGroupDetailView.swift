@@ -8,6 +8,9 @@ struct ModelGroupDetailView: View {
 
     @State private var editingName = ""
     @State private var showAddModels = false
+    /// [T-quota-group-member-pill] Provider whose quota sheet a member's pill
+    /// opened; hosted at page level, not on the row.
+    @State private var quotaDetailProviderId: QuotaSheetTarget?
     @State private var showDeleteConfirm = false
     /// Holding `EditMode` directly (rather than a `Bool` + a derived
     /// `editMode` binding) lets SwiftUI own the same value the
@@ -349,12 +352,22 @@ struct ModelGroupDetailView: View {
                 }
             }
         }
-        .scrollDismissesKeyboard(.interactively)
+        // [T-ipad-sheet-keyboard-crash] `.immediately`, not `.interactively`:
+        // this page lives inside the Settings sheet, where an interactive
+        // keyboard drag and the sheet's drag-to-dismiss can share one gesture —
+        // the iPadOS 27 abort described at ModelEntryDetailSheet
+        // (ProviderInstanceDetailView.swift).
+        .scrollDismissesKeyboard(.immediately)
         .environment(\.editMode, $editMode)
         .sheet(isPresented: $showAddModels) {
             NavigationStack {
                 UnifiedModelPicker(config: addModelsConfig())
             }
+        }
+        .sheet(item: $quotaDetailProviderId) { target in
+            QuotaDetailSheet(instanceId: target.id)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
         }
     }
 
@@ -389,7 +402,7 @@ struct ModelGroupDetailView: View {
             onAddMulti: { ids in
                 guard var group = store.group(for: gid) else { return }
                 group.memberEntryIds.append(contentsOf: ids.sorted())
-                store.updateGroup(group)
+                store.updateGroup(group, orderReason: "user-add")
             }
         )
     }
@@ -404,9 +417,20 @@ struct ModelGroupDetailView: View {
                 .opacity(providerDisabled ? 0.35 : 1)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(entry.model.displayName)
-                    .font(.subheadline)
-                    .foregroundStyle(providerDisabled ? Color.secondary : Color(UIColor.label))
+                HStack(alignment: .quotaCapCenter, spacing: 4) {
+                    Text(entry.model.displayName)
+                        .font(.subheadline)
+                        .foregroundStyle(providerDisabled ? Color.secondary : Color(UIColor.label))
+                        .alignmentGuide(.quotaCapCenter) { $0.quotaCapCenter }
+                    // [T-quota-group-member-pill] The model's (or its account's)
+                    // quota; this page has no other way to the provider's quota.
+                    if !providerDisabled {
+                        ModelQuotaMemberPill(instanceId: entry.providerInstanceId,
+                                             modelId: entry.baseModel.id) {
+                            quotaDetailProviderId = QuotaSheetTarget(id: entry.providerInstanceId)
+                        }
+                    }
+                }
                 if let instance = instance {
                     HStack(spacing: 4) {
                         Text(instance.label)
@@ -535,20 +559,20 @@ struct ModelGroupDetailView: View {
         var updated = group
         updated.memberEntryIds.removeAll { $0 == entryId }
         clampThinkingLevelIfNeeded(&updated)
-        store.updateGroup(updated)
+        store.updateGroup(updated, orderReason: "user-delete")
     }
 
     private func moveMember(from source: IndexSet, to destination: Int, in group: ModelGroup) {
         var updated = group
         updated.memberEntryIds.move(fromOffsets: source, toOffset: destination)
-        store.updateGroup(updated)
+        store.updateGroup(updated, orderReason: "user-drag")
     }
 
     private func deleteMember(at offsets: IndexSet, from group: ModelGroup) {
         var updated = group
         updated.memberEntryIds.remove(atOffsets: offsets)
         clampThinkingLevelIfNeeded(&updated)
-        store.updateGroup(updated)
+        store.updateGroup(updated, orderReason: "user-delete")
     }
 
     private func clampThinkingLevelIfNeeded(_ group: inout ModelGroup) {

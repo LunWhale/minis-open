@@ -39,7 +39,6 @@ private let logger = AppLogger(category: "ScheduledOffload")
         }
         let prompt = str("prompt") ?? ""
         let label = str("label")
-        let targetRaw = (str("target") ?? "new").lowercased()
         let modelEntryId = str("model")
         // [T-scheduled-thinking-level] Validated here rather than silently
         // coerced: a typo like `--thinking hgih` must not quietly run the job
@@ -55,7 +54,20 @@ private let logger = AppLogger(category: "ScheduledOffload")
         let disabled = (args["disabled"] as? Bool) ?? false
 
         // ── Target ───────────────────────────────────────────────────────
-        let callerSid = ISHExecutionCoordinator.mountedSessionIdSnapshot
+        // [T-offload-caller-session] The chat that RAN the command, from the
+        // calling task's fs_context. mountedSessionIdSnapshot is only the chat
+        // that started a shell command last; with several chats running at
+        // once a default (follow-up) job could be filed under — and fire into
+        // — another chat. Same root cause as the browser crosstalk fix
+        // (T-browser-pool-caller-session, 9d5f9f7e8).
+        let callerFsContext = (args["caller_fs_context"] as? NSNumber)?.uint64Value ?? 0
+        let caller = ISHExecutionCoordinator.callerSessionId(fsContext: callerFsContext)
+        let callerSid = caller.sid
+        logger.info("[ScheduledOffload] create caller=\(callerSid?.prefix(8) ?? "nil") via=\(caller.source)")
+        // [T-scheduled-default-follow-up] Omitted --target means "this chat"
+        // when a chat ran the command, and a new chat only when none did.
+        let (targetRaw, targetDefaulted) = ScheduledTargetDelivery.resolveTarget(
+            explicit: str("target"), session: str("session"), callerSession: callerSid)
         let target: AgentJobTarget
         switch targetRaw {
         case "new":
@@ -85,6 +97,26 @@ private let logger = AppLogger(category: "ScheduledOffload")
         }
         if case .rerun = target {} else if prompt.isEmpty {
             return error("--prompt required (except for rerun target)")
+        }
+
+        // ── Preset first step [T-scheduled-preset-tool] ──────────────────
+        var timeoutSeconds: Double? = nil
+        if let raw = str("command_timeout") {
+            guard let secs = ScheduledJobRunner.parseDuration(raw) else {
+                return error("--command-timeout must be a duration like 90s, 2m, 1h")
+            }
+            timeoutSeconds = secs
+        }
+        let presetToolCall: ScheduledPresetToolCall?
+        switch ScheduledPresetToolCall.fromCLI(command: str("command"), timeoutSeconds: timeoutSeconds,
+                                               tool: str("tool"), toolArgs: str("tool_args")) {
+        case .success(let preset): presetToolCall = preset
+        case .failure(let e): return error(e.message)
+        }
+        // A rerun replays an existing user message; there is no fresh turn
+        // whose first step the preset could be.
+        if presetToolCall != nil, case .rerun = target {
+            return error("--command/--tool cannot be used with --target rerun (it replays an existing message)")
         }
 
         // ── Trigger (explicit --trigger, else inferred from the given args) ──
@@ -134,6 +166,8 @@ private let logger = AppLogger(category: "ScheduledOffload")
                 trigger = .once(after: next.timeIntervalSinceNow)
                 return finishCreate(prompt: prompt, label: label, trigger: trigger, target: target,
                                     modelEntryId: modelEntryId, thinkingLevel: thinkingLevel,
+                                    presetToolCall: presetToolCall,
+                                    targetDefaulted: targetDefaulted,
                                     creatorSessionId: callerSid, disabled: disabled)
             case "daily": days = Set(1...7)
             case "weekdays": days = Set(2...6)
@@ -155,25 +189,67 @@ private let logger = AppLogger(category: "ScheduledOffload")
         }
         return finishCreate(prompt: prompt, label: label, trigger: trigger, target: target,
                             modelEntryId: modelEntryId, thinkingLevel: thinkingLevel,
+                                    presetToolCall: presetToolCall,
+                                    targetDefaulted: targetDefaulted,
                                     creatorSessionId: callerSid, disabled: disabled)
     }
 
     private static func finishCreate(prompt: String, label: String?, trigger: AgentJobTrigger,
                                      target: AgentJobTarget, modelEntryId: String?, thinkingLevel: ThinkingLevel?,
+                                     presetToolCall: ScheduledPresetToolCall?,
+                                     targetDefaulted: Bool,
                                      creatorSessionId: String?, disabled: Bool) -> NSDictionary {
         onMain {
             let registry = AgentJobRegistry.shared
+            // [T-scheduled-default-follow-up] Resolve where the fires land NOW,
+            // so a bad session id fails at create time instead of on every fire,
+            // and so the answer can say it plainly.
+            var target = target
+            if case .followUp(let sid) = target, await ChatStore.shared.getSession(sid) == nil {
+                guard targetDefaulted else {
+                    return error("--session \(sid) does not exist; follow-up needs an existing chat")
+                }
+                // Defaulted onto a chat that is gone (a stale caller snapshot):
+                // fall back to what an omitted --target used to mean.
+                logger.warning("[minis-scheduled] defaulted follow-up session \(sid.prefix(8)) not found — using new")
+                target = .new
+            }
+            let destination = await Self.destination(for: target, callerSid: creatorSessionId,
+                                                      label: label)
             let job = registry.register(title: label ?? String(prompt.prefix(40)), label: label,
                                         origin: .cli, trigger: trigger, target: target, prompt: prompt)
             job.modelEntryId = modelEntryId
             job.thinkingLevel = thinkingLevel
+            job.presetToolCall = presetToolCall
             // [T-scheduled-session-ownership] The conversation that ran the CLI.
             job.creatorSessionId = creatorSessionId
             job.isEnabled = !disabled
             ScheduledJobRunner.arm(job)
             logger.info("[minis-scheduled] created \(job.logLabel)")
+            let delivery = ScheduledTargetDelivery.sentence(destination, defaulted: targetDefaulted)
+            logger.info("[minis-scheduled] \(job.id.prefix(8)) \(delivery)")
             return ["created": registry.jobDict(job),
+                    "delivery": delivery,
+                    "deliveryTarget": ScheduledTargetDelivery.summary(destination, defaulted: targetDefaulted),
                     "note": "Best effort: this timer lives only while the Minis app process is alive. A reminder notification is registered as insurance; for guaranteed background execution use an Apple Shortcuts automation."] as NSDictionary
+        }
+    }
+
+    /// Where `target`'s fires land, with session titles for the sentence.
+    @MainActor
+    private static func destination(for target: AgentJobTarget, callerSid: String?,
+                                     label: String?) async -> ScheduledTargetDelivery.Destination {
+        switch target {
+        case .new:
+            return .newChat(label: label)
+        case .followUp(let sid):
+            let title = await ChatStore.shared.getSession(sid)?.title
+            return .followUp(sessionId: sid, title: title, isCallerSession: sid == callerSid)
+        case .rerun(let sid, let mid):
+            let title = await ChatStore.shared.getSession(sid)?.title
+            return .rerun(sessionId: sid, messageId: mid, title: title)
+        case .childOfCurrent(let parent, _):
+            return .childOfCurrent(parentSessionId: parent, isCallerSession: parent == callerSid)
         }
     }
 
@@ -219,7 +295,13 @@ private let logger = AppLogger(category: "ScheduledOffload")
             let outcome = await ScheduledJobRunner.fireNow(job)
             var out: [String: Any] = ["id": job.id, "ran": outcome["fired"] ?? false]
             if let sid = outcome["session_id"] as? String { out["sessionId"] = sid }
-            out["note"] = "Returned as soon as the prompt was handed to the session; poll `minis-sessions-cli status --id <sessionId>` for completion."
+            if outcome["deferred"] as? Bool == true {
+                // [T-limits-per-parent] Child-of-current with the parent's sub agent slots full.
+                out["deferred"] = true
+                out["note"] = "The parent conversation already has \(AgentJobRegistry.maxChildJobsPerParent) sub agents running, so this run waits and starts by itself as soon as one finishes. Do not run it again."
+            } else {
+                out["note"] = "Returned as soon as the prompt was handed to the session; poll `minis-sessions-cli status --id <sessionId>` for completion."
+            }
             return out as NSDictionary
         }
     }

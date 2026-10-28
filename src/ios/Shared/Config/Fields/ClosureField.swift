@@ -16,16 +16,32 @@ struct ClosureField: ConfigField {
     var access: ConfigAccess = .readwrite
     var risk: ConfigRisk = .normal
     var revertable: Bool = true
+    /// [T-config-readable] Required (no default) — see ConfigField.readable.
+    let readable: ConfigReadable
 
     let reader: @MainActor () throws -> ConfigValue
     let writer: @MainActor (ConfigValue) throws -> Void
+    /// [T-container-network-dns] Optional: map an accepted input shape to the
+    /// stored one before validation (see ConfigField.normalizeForWrite).
+    var normalizer: ((ConfigValue) throws -> ConfigValue)? = nil
+    /// Optional: invariants beyond the schema, checked before the
+    /// confirmation sheet (see ConfigField.validateForWrite).
+    var validator: ((ConfigValue) throws -> Void)? = nil
 
     @MainActor func read() throws -> ConfigValue {
         try reader()
     }
     @MainActor func write(_ value: ConfigValue) throws {
-        try valueSchema.validate(value)
+        let value = try normalizeForWrite(value)
+        try validateForWrite(value)
         try writer(value)
+    }
+    func normalizeForWrite(_ value: ConfigValue) throws -> ConfigValue {
+        try normalizer?(value) ?? value
+    }
+    func validateForWrite(_ value: ConfigValue) throws {
+        try valueSchema.validate(value)
+        try validator?(value)
     }
 }
 
@@ -41,6 +57,7 @@ struct ReadOnlyField: ConfigField {
     var access: ConfigAccess = .readonly
     var risk: ConfigRisk = .normal
     var revertable: Bool { false }
+    var readable: ConfigReadable { .notWritable }
     let reader: @MainActor () throws -> ConfigValue
 
     @MainActor func read() throws -> ConfigValue { try reader() }
@@ -63,6 +80,7 @@ struct HiddenField: ConfigField {
     var access: ConfigAccess { .hidden }
     var risk: ConfigRisk { .destructive }
     var revertable: Bool { false }
+    var readable: ConfigReadable { .notWritable }
     let reason: String
 
     @MainActor func read() throws -> ConfigValue {
@@ -92,6 +110,7 @@ struct UnavailableField: ConfigField {
     var access: ConfigAccess { base.access }
     var risk: ConfigRisk { base.risk }
     var revertable: Bool { false }
+    var readable: ConfigReadable { base.readable }
     var unavailableReason: String? { reason }
 
     @MainActor func read() throws -> ConfigValue {
@@ -118,6 +137,8 @@ struct WriteOnlySecretField: ConfigField {
     var access: ConfigAccess { .readwrite }
     var risk: ConfigRisk { .sensitive }
     var revertable: Bool { false }
+    /// Never renders the value; a `$$VAR` reference names the variable only.
+    var readable: ConfigReadable { ConfigReadable(.secret) }
     let readDenyReason: String
     let writer: @MainActor (ConfigValue) throws -> Void
 

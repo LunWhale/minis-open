@@ -129,12 +129,15 @@ enum BackupKeepAlive {
 @MainActor
 enum BackupScreenAwake {
 
-    /// Reflects the live idle-timer state rather than a stored flag, so it
-    /// cannot drift from what the system is actually doing.
-    static var isEnabled: Bool { UIApplication.shared.isIdleTimerDisabled }
+    /// [T-idle-timer-lease] The backup's OWN lease. This used to read the
+    /// system flag, which is also on while Keep Screen Awake holds it during a
+    /// chat task: the toggle then showed ON for a choice the user never made,
+    /// and the end of the backup (BackupRunController) turned the flag off
+    /// under the chat task.
+    static var isEnabled: Bool { IdleTimerLease.isHeld(.backup) }
 
     static func set(_ on: Bool) {
-        UIApplication.shared.isIdleTimerDisabled = on
+        IdleTimerLease.set(.backup, held: on, reason: "backup")
         logger.info("[Backup] screen-awake \(on ? "ENABLED" : "disabled")")
     }
 }

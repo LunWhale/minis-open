@@ -1,11 +1,12 @@
 // Tests for [T-claude-version-parse] — round-2 item M16, iOS half.
 //
 // Pins 500abe41b (single-segment versions: `claude-fable-5` → (5,0)) and
-// 69be65763 (no `thinking.type=disabled` for Claude 5+). One regex on the
-// lowercased id drives three wire decisions:
+// 69be65763 (no `thinking.type=disabled` where Claude 5+ rejects it). One regex
+// on the lowercased id drives three wire decisions:
 //   * modelRejectsTemperature      — ≥ 4.6 drops `temperature`
 //   * modelUsesAdaptiveThinking    — ≥ 4.6 sends `output_config.effort`
-//   * modelAcceptsExplicitThinkingDisabled — 4.6 ≤ v < 5 ONLY
+//   * offThinking(for:)            — how "thinking off" is encoded, per model
+//                                    ([T-claude5-thinking-off])
 // so a parse miss silently sends the wrong body to a whole generation.
 //
 // Port: AnthropicProvider.parseClaudeVersion + the three predicates
@@ -62,7 +63,17 @@ func greedyUnanchoredParse(_ id: String) -> V? { parse(id, pattern: greedyUnanch
 
 func modelRejectsTemperature(_ id: String) -> Bool { guard let v = parseClaudeVersion(id) else { return false }; return v.major > 4 || (v.major == 4 && v.minor >= 6) }
 func modelUsesAdaptiveThinking(_ id: String) -> Bool { guard let v = parseClaudeVersion(id) else { return false }; return v.major > 4 || (v.major == 4 && v.minor >= 6) }
-func modelAcceptsExplicitThinkingDisabled(_ id: String) -> Bool { guard let v = parseClaudeVersion(id) else { return false }; return v.major == 4 && v.minor >= 6 }
+enum OffThinking: Equatable { case omit, disabled, betweenTools, lowEffort }
+func offThinking(for modelId: String) -> OffThinking {
+    guard let v = parseClaudeVersion(modelId) else { return .omit }
+    if v.major < 4 || (v.major == 4 && v.minor < 6) { return .omit }
+    if v.major == 4 { return .disabled }
+    if v.major == 5, modelId.lowercased().contains("sonnet") {
+        if v.minor == 0 { return .disabled }
+        if v.minor == 5 { return .betweenTools }
+    }
+    return .lowEffort
+}
 /// AnthropicProvider.effectiveTemperature
 func effectiveTemperature(_ id: String, _ t: Double?) -> Double? { modelRejectsTemperature(id) ? nil : t }
 
@@ -100,7 +111,7 @@ do {
     checkEq("anthropic/claude-sonnet-4-20250514 → (4,0)", parseClaudeVersion("anthropic/claude-sonnet-4-20250514"), V(major: 4, minor: 0))
     check("claude-opus-4-20250514 keeps its temperature", !modelRejectsTemperature("claude-opus-4-20250514"))
     check("…and uses legacy budget thinking, not adaptive", !modelUsesAdaptiveThinking("claude-opus-4-20250514"))
-    check("…and is not sent the disabled literal", !modelAcceptsExplicitThinkingDisabled("claude-opus-4-20250514"))
+    check("…and is not sent the disabled literal", offThinking(for: "claude-opus-4-20250514") == .omit)
     checkEq("a single-segment 5-series id sheds its stamp too", parseClaudeVersion("claude-opus-5-20260401"), V(major: 5, minor: 0))
     // A version PAIR was never affected — the pair consumes the separator first.
     checkEq("a version PAIR plus a stamp is unchanged", parseClaudeVersion("claude-opus-4-8-20260115"), V(major: 4, minor: 8))
@@ -127,12 +138,15 @@ do {
     for id in ["claude-sonnet-4-5", "claude-3-5-sonnet", "claude-opus-4-1", "claude-3-opus"] {
         check("\(id): keeps temperature, budget thinking", !modelRejectsTemperature(id) && !modelUsesAdaptiveThinking(id))
     }
-    check("non-Claude ids never trip any predicate", ["gpt-5", "MiniMax-M3", "deepseek-v4"].allSatisfy { !modelRejectsTemperature($0) && !modelUsesAdaptiveThinking($0) && !modelAcceptsExplicitThinkingDisabled($0) })
+    check("non-Claude ids never trip any predicate", ["gpt-5", "MiniMax-M3", "deepseek-v4"].allSatisfy { !modelRejectsTemperature($0) && !modelUsesAdaptiveThinking($0) && offThinking(for: $0) == .omit })
     // The disabled literal is a 4.6 ≤ v < 5 window, NOT "adaptive".
-    check("4.6–4.x accept thinking.type=disabled", ["claude-sonnet-4-6", "claude-opus-4-7", "claude-opus-4.8", "claude-opus-4-99"].allSatisfy(modelAcceptsExplicitThinkingDisabled))
-    check("Claude 5+ does NOT (69be65763)", ["claude-fable-5", "claude-opus-5", "claude-fable-5-1", "claude-sonnet-6"].allSatisfy { !modelAcceptsExplicitThinkingDisabled($0) })
-    check("≤ 4.5 does not either (off is already its default)", ["claude-sonnet-4-5", "claude-3-5-sonnet"].allSatisfy { !modelAcceptsExplicitThinkingDisabled($0) })
-    check("adaptive ⊋ acceptsDisabled: 5.x is adaptive but not disable-able", modelUsesAdaptiveThinking("claude-fable-5") && !modelAcceptsExplicitThinkingDisabled("claude-fable-5"))
+    // [T-claude5-thinking-off] Anthropic's per-model table ("Troubleshooting thinking").
+    check("4.6–4.x: thinking.type=disabled", ["claude-sonnet-4-6", "claude-opus-4-7", "claude-opus-4.8", "claude-opus-4-99"].allSatisfy { offThinking(for: $0) == .disabled })
+    check("Sonnet 5 accepts disabled", offThinking(for: "claude-sonnet-5") == .disabled && offThinking(for: "claude-sonnet-5-20260401") == .disabled)
+    check("Sonnet 5.5 400s on disabled → between_tools", offThinking(for: "claude-sonnet-5-5") == .betweenTools && offThinking(for: "anthropic/claude-sonnet-5.5") == .betweenTools)
+    check("always-on / tool-leak / unknown 5+ → adaptive + low, never disabled (69be65763)", ["claude-fable-5", "claude-opus-5", "claude-opus-5-5", "claude-fable-5-1", "claude-mythos-5", "claude-sonnet-6", "claude-sonnet-5-7"].allSatisfy { offThinking(for: $0) == .lowEffort })
+    check("≤ 4.5 omits the field (off is already its default)", ["claude-sonnet-4-5", "claude-3-5-sonnet", "claude-3-7-sonnet"].allSatisfy { offThinking(for: $0) == .omit })
+    check("every adaptive model states off explicitly: no adaptive id falls to .omit", ["claude-sonnet-4-6", "claude-fable-5", "claude-sonnet-5-5", "claude-opus-5-5"].allSatisfy { modelUsesAdaptiveThinking($0) && offThinking(for: $0) != .omit })
     checkEq("effectiveTemperature: 4.6+ → nil", effectiveTemperature("claude-sonnet-4-6", 0.7), nil)
     checkEq("effectiveTemperature: 4.5 → passthrough", effectiveTemperature("claude-sonnet-4-5", 0.7), 0.7)
     checkEq("effectiveTemperature: Claude 5 → nil (the 500abe41b symptom)", effectiveTemperature("claude-opus-5", 0.7), nil)
@@ -148,10 +162,11 @@ do {
         check("the search is anchored AFTER the family name", ap.contains("guard let claudeRange = lower.range(of: \"claude\") else { return nil }") && ap.contains("NSRange(claudeRange.upperBound..<lower.endIndex, in: lower)"))
         check("minor defaults to 0 when the group is absent", ap.contains("minor = 0"))
         check("rejectsTemperature = ≥ 4.6", ap.contains("static func modelRejectsTemperature(_ modelId: String) -> Bool {\n        guard let v = parseClaudeVersion(modelId) else { return false }\n        return v.major > 4 || (v.major == 4 && v.minor >= 6)"))
-        check("acceptsExplicitThinkingDisabled = 4.6 ≤ v < 5", ap.contains("return v.major == 4 && v.minor >= 6"))
+        check("offThinking ports the shipped table", ap.contains("        if v.major == 4 { return .disabled }\n        if v.major == 5, modelId.lowercased().contains(\"sonnet\") {\n            if v.minor == 0 { return .disabled }\n            if v.minor == 5 { return .betweenTools }\n        }\n        return .lowEffort"))
         check("effectiveTemperature consults the predicate", ap.contains("if Self.modelRejectsTemperature(model.id) { return nil }"))
         check("the wire patcher strips temperature for ≥ 4.6", http.contains("if AnthropicProvider.modelRejectsTemperature(modelId) {\n            json.removeValue(forKey: \"temperature\")"))
-        check("resolver's off shape asks acceptsExplicitThinkingDisabled, not adaptive", res.contains("return AnthropicProvider.modelAcceptsExplicitThinkingDisabled(modelId)\n            ? [\"disabled\": true]"))
+        check("resolver states off for every non-legacy model", res.contains("return AnthropicProvider.offThinking(for: modelId) == .omit\n            ? [:]\n            : [\"disabled\": true]"))
+        check("the wire encodes off per model", http.contains("switch AnthropicProvider.offThinking(for: modelId) {"))
     }
 }
 

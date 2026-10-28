@@ -32,6 +32,19 @@
 // rather than silently passing a stale copy.
 import Foundation
 
+/// [T-messagelist-v3-split] CollectionViewMessageListV3.swift became the folder
+/// Agent/MessageList/CollectionViewMessageListV3/ (code moved verbatim); read all
+/// of it as one text, the way the single file used to be read.
+func messageListV3Source() -> String {
+    let ios = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let dir = ios.appendingPathComponent("Agent/MessageList/CollectionViewMessageListV3")
+    let files = (FileManager.default.enumerator(at: dir, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? [])
+        .filter { $0.pathExtension == "swift" }
+    return files.sorted { $0.path < $1.path }
+        .compactMap { try? String(contentsOf: $0, encoding: .utf8) }.joined(separator: "\n")
+}
+
 var failures = 0
 func check(_ label: String, _ actual: Bool, _ expected: Bool = true) {
     if actual == expected { print("  ✅ \(label)") }
@@ -111,7 +124,7 @@ do {
 
 print("\n▶️  4. shipping source carries the fix")
 do {
-    let cell = codeOnly(source("Agent/MessageList/CollectionViewMessageListV3.swift"))
+    let cell = codeOnly(messageListV3Source())
     let card = codeOnly(source("Views/Chat/AgentCallbackCellView.swift"))
     if cell.isEmpty || card.isEmpty { print("  ⏭  sources not readable") } else {
         // The inset is now a named constant owned by the card…
@@ -131,7 +144,7 @@ do {
         // is vacuously true — an earlier draft of this test made exactly that
         // mistake and passed while the padding sat before the cap.
         let body: String = {
-            guard let start = cell.range(of: "private struct BridgedWholeMessageV3") else { return "" }
+            guard let start = cell.range(of: "struct BridgedWholeMessageV3") else { return "" }
             let rest = cell[start.lowerBound...]
             guard let end = rest.range(of: "\n}") else { return String(rest) }
             return String(rest[rest.startIndex..<end.upperBound])

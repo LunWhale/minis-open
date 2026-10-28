@@ -17,6 +17,27 @@ struct ProviderConfigTombstone: Codable, Hashable {
     let deletedAt: Date
 }
 
+// [T-backup-restore-tombstone] BEGIN restore-tombstone-rule
+extension ProviderConfigTombstone {
+    /// The local tombstones that survive a backup RESTORE carrying `restoring`.
+    ///
+    /// Sync and restore disagree on what a tombstone means. For sync it is a
+    /// peer's delete intent that must beat a stale snapshot. For a restore the
+    /// package IS the user's intent: they deleted a group, then explicitly asked
+    /// for their backup back. Keeping the tombstone made the merger drop the
+    /// very group the user was restoring, silently, while reporting success.
+    ///
+    /// So on restore an id the package carries clears its local tombstone, and
+    /// the package's OWN tombstones are not applied at all: the restore
+    /// confirmation promises "Nothing is deleted". Ids the package does not
+    /// carry keep their tombstones untouched.
+    static func survivingRestore(_ local: [ProviderConfigTombstone],
+                                 restoring: Set<String>) -> [ProviderConfigTombstone] {
+        local.filter { !restoring.contains($0.id) }
+    }
+}
+// [T-backup-restore-tombstone] END restore-tombstone-rule
+
 /// Top-level JSON structure for provider-config.json.
 struct ProviderConfig: Codable, Equatable {
     var instances: [ProviderInstance]
@@ -166,7 +187,39 @@ struct ProviderConfig: Codable, Equatable {
 final class ProviderConfigStore: ObservableObject {
     static let shared = ProviderConfigStore()
 
-    @Published private(set) var config: ProviderConfig
+    @Published private(set) var config: ProviderConfig {
+        // [T-composer-typing-lag] Any change to the config drops the entry index.
+        didSet { entryIndex = nil }
+    }
+
+    /// [T-composer-typing-lag] Positions in `config.modelEntries` by each
+    /// reference form `entry(for:)` accepts. A chat's body resolves the bound
+    /// entry ~6 times per evaluation (title, toolbar, thinking levels, fast
+    /// mode, cache toggle), and during streaming the body re-runs per token;
+    /// each lookup was up to four linear scans copying ModelEntry structs —
+    /// ~15% of the main thread in an iOS 16 Time Profiler trace, enough to make
+    /// typing in the composer lag while a reply streamed. Built lazily, dropped
+    /// whenever `config` changes.
+    private struct EntryIndex {
+        var byId: [String: Int] = [:]
+        var byUuid: [String: Int] = [:]
+        var byColonKey: [String: Int] = [:]
+    }
+    private var entryIndex: EntryIndex?
+
+    private func currentEntryIndex() -> EntryIndex {
+        if let entryIndex { return entryIndex }
+        var index = EntryIndex()
+        // First occurrence wins, matching the `first(where:)` scans it replaces.
+        for (i, e) in config.modelEntries.enumerated() {
+            if index.byId[e.id] == nil { index.byId[e.id] = i }
+            if index.byUuid[e.uuid] == nil { index.byUuid[e.uuid] = i }
+            let colon = e.legacyColonCompositeKey
+            if index.byColonKey[colon] == nil { index.byColonKey[colon] = i }
+        }
+        entryIndex = index
+        return index
+    }
 
     /// Bumped whenever an OAuth token or string is saved/deleted in the Keychain,
     /// so views observing the store re-evaluate auth state. Also an L1 cache key
@@ -314,6 +367,10 @@ final class ProviderConfigStore: ObservableObject {
                 // is deterministic so it converges with peers; pruned rows are
                 // deleted + tombstoned so they don't resurrect.
                 let (deduped, prunedAtLoad) = Self.dedupeEntriesByModel(fresh)
+                // [T-group-order-log] The JSON mirror and the V3 database can
+                // disagree; from here on the database's order is the one used.
+                GroupOrderLog.noteAll(reason: "reload-db", before: self.config.modelGroups,
+                                      after: deduped.modelGroups, detail: "stage=init json-vs-db")
                 self.config = deduped
                 self.lastSavedSnapshot = deduped
                 // [T-provider-entry-composite-key] Build the legacyUuid map from
@@ -398,7 +455,7 @@ final class ProviderConfigStore: ObservableObject {
     /// from "file present but unreadable/undecodable" (must NOT clobber disk).
     private static func loadGuarded(from url: URL) -> (config: ProviderConfig, degradation: ConfigLoadDegradation) {
         guard FileManager.default.fileExists(atPath: url.path) else { return (.empty, .none) }
-        guard let data = try? Data(contentsOf: url) else {
+        guard let data = readConfigData(from: url) else {
             logger.error("[RebootGuard] provider-config.json exists but is UNREADABLE (protected data locked before first unlock, or I/O error) — degraded mode, save() suppressed")
             return (.empty, .unreadable)
         }
@@ -504,10 +561,100 @@ final class ProviderConfigStore: ObservableObject {
 
     // MARK: - Persistence
 
+    /// [T-model-entry-voice-seed-doubling] A healthy provider-config.json is
+    /// well under 1 MB (1,160 entries over 22 instances: 455 KB); past this
+    /// size it is almost certainly full of repeated model entries, and
+    /// decoding them all into `ModelEntry` on the main thread is slow - a
+    /// 303 MB file outlasted the launch watchdog on every launch. A large
+    /// file with nothing repeated only costs one extra JSONSerialization pass.
+    static let bloatedConfigThreshold = 4 * 1024 * 1024
+
+    /// One entry per (instance, uuid), in first-seen order. The copies the old
+    /// refresh produced are the same entry and differ only in `absentSince`:
+    /// every refresh stamped the still-unstamped copies with its own time, so
+    /// they drifted apart. Keep the EARLIEST stamp - when the provider first
+    /// stopped listing the model, which is what the grace window counts from.
+    static func collapsingRepeatedEntries(_ entries: [ModelEntry]) -> [ModelEntry] {
+        var indexByKey: [String: Int] = [:]
+        var unique: [ModelEntry] = []
+        unique.reserveCapacity(entries.count)
+        for entry in entries {
+            let key = "\(entry.providerInstanceId)/\(entry.uuid)"
+            guard let i = indexByKey[key] else {
+                indexByKey[key] = unique.count
+                unique.append(entry)
+                continue
+            }
+            if let since = entry.absentSince, unique[i].absentSince.map({ since < $0 }) ?? true {
+                unique[i].absentSince = since
+            }
+        }
+        return unique
+    }
+
+    /// `collapsingRepeatedEntries` on the raw JSON, which is several times
+    /// cheaper than decoding the entries. Entries without a uuid are kept
+    /// as they are. Returns nil when the data is not a config object or
+    /// nothing was repeated.
+    static func collapsingDuplicateModelEntries(in data: Data) -> Data? {
+        guard var root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let entries = root["modelEntries"] as? [[String: Any]] else { return nil }
+        var indexByKey: [String: Int] = [:]
+        var unique: [[String: Any]] = []
+        unique.reserveCapacity(entries.count)
+        for entry in entries {
+            guard let uuid = entry["uuid"] as? String else { unique.append(entry); continue }
+            let key = "\(entry["providerInstanceId"] as? String ?? "")/\(uuid)"
+            guard let i = indexByKey[key] else {
+                indexByKey[key] = unique.count
+                unique.append(entry)
+                continue
+            }
+            if let since = entry["absentSince"] as? Double,
+               (unique[i]["absentSince"] as? Double).map({ since < $0 }) ?? true {
+                unique[i]["absentSince"] = since
+            }
+        }
+        guard unique.count != entries.count else { return nil }
+        root["modelEntries"] = unique
+        return try? JSONSerialization.data(withJSONObject: root)
+    }
+
+    /// Read provider-config.json, first collapsing a bloated file (see
+    /// `bloatedConfigThreshold`) and writing the collapsed bytes back so the
+    /// next launch reads the small file directly.
+    private static func readConfigData(from url: URL) -> Data? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        guard data.count > bloatedConfigThreshold,
+              let healed = collapsingDuplicateModelEntries(in: data) else { return data }
+        // Never replace a readable file with one the app cannot read: a
+        // collapsed copy that fails to decode is dropped, and the original
+        // bytes go down the normal (degraded-mode) path untouched.
+        guard (try? JSONDecoder().decode(ProviderConfig.self, from: healed)) != nil else {
+            logger.error("[ModelList] collapsed provider-config.json (\(healed.count) bytes) does not decode; keeping the original \(data.count) bytes")
+            return data
+        }
+        logger.warning("[ModelList] provider-config.json was \(data.count) bytes of repeated model entries; collapsed to \(healed.count) bytes before decoding")
+        do {
+            try healed.write(to: url, options: .atomic)
+        } catch {
+            logger.error("[ModelList] could not write the collapsed provider-config.json back: \(error)")
+        }
+        return healed
+    }
+
     private static func load(from url: URL) -> ProviderConfig {
-        guard let data = try? Data(contentsOf: url),
+        guard let data = readConfigData(from: url),
               var config = try? JSONDecoder().decode(ProviderConfig.self, from: data) else {
             return .empty
+        }
+        // [T-model-entry-voice-seed-doubling] Merge the repeated copies of one
+        // entry that replaceEntries used to append on every refresh. Distinct
+        // entries never share a uuid within an instance, so nothing real goes.
+        let entryCountBefore = config.modelEntries.count
+        config.modelEntries = collapsingRepeatedEntries(config.modelEntries)
+        if config.modelEntries.count != entryCountBefore {
+            logger.warning("[ModelList] load dropped \(entryCountBefore - config.modelEntries.count) duplicate model entr(ies) (same uuid); \(config.modelEntries.count) remain")
         }
         // Migrate group memberEntryIds from legacy composite keys to stable UUIDs.
         //
@@ -558,6 +705,13 @@ final class ProviderConfigStore: ObservableObject {
                 logger.warning("[GroupLoad] group \(config.modelGroups[i].id.prefix(8)) dropping unrecognisable member token '\(entryId.prefix(12))' (not a UUID, not a known composite key)")
                 return nil
             }
+            // [T-group-order-log] Legacy composite keys are mapped to ids and
+            // unrecognisable tokens dropped just above.
+            GroupOrderLog.note(reason: "normalize", groupId: config.modelGroups[i].id,
+                               name: config.modelGroups[i].name,
+                               before: before.map { compositeToUUID[$0] ?? $0 },
+                               after: config.modelGroups[i].memberEntryIds, warnOnReorder: true,
+                               detail: "stage=load-json")
             if unresolvedPreserved > 0 {
                 logger.info("[GroupLoad] group \(config.modelGroups[i].id.prefix(8)) (\(config.modelGroups[i].name)) preserved \(unresolvedPreserved) unresolved UUID member(s) across load — entries may still be syncing; members=\(before.count)→\(config.modelGroups[i].memberEntryIds.count)")
             }
@@ -657,6 +811,20 @@ final class ProviderConfigStore: ObservableObject {
         // the record behind "You can't save the same record twice" (CKError
         // 12) whenever two saves raced. The inbound merger stays so a
         // not-yet-upgraded peer's snapshot can still be read.
+    }
+
+    /// [T-backup-restore-tombstone] Queue v3 upserts for everything a backup
+    /// restore changed, relative to the config before the restore.
+    ///
+    /// The restore merge commits through `applyMergedConfigFromSync`, which is
+    /// shaped for INBOUND data and so suppresses v3 emission; its only upload
+    /// signal was the whole-file record v3 peers drop. A restore is local
+    /// authorship, so it uses the same per-record diff as `save()`. The
+    /// re-inserted rows carry `updated_at = now` (bulkReplace), which is what
+    /// lets a peer's recently-deleted guard accept them as a genuine re-create.
+    func markRestoredRecordsDirty(prior: ProviderConfig) async {
+        let current = config
+        await Self.emitV3MarkDirty(prior: prior, current: current)
     }
 
     /// Diff `prior` vs `current` and emit per-record V3 markDirty calls
@@ -799,6 +967,8 @@ final class ProviderConfigStore: ObservableObject {
             let priorMembers = config.modelGroups.reduce(0) { $0 + $1.memberEntryIds.count }
             let fresh = await db.dumpProviderConfig()
             let freshMembers = fresh.modelGroups.reduce(0) { $0 + $1.memberEntryIds.count }
+            GroupOrderLog.noteAll(reason: "reload-db", before: config.modelGroups,
+                                  after: fresh.modelGroups, detail: "stage=reloadFromDisk")   // [T-group-order-log]
             config = fresh
             lastSavedSnapshot = fresh
             logger.info("[GroupLoad] reloadFromDisk: V3 DB dump — groups=\(fresh.modelGroups.count) groupMembers(\(priorMembers)→\(freshMembers))")
@@ -806,7 +976,10 @@ final class ProviderConfigStore: ObservableObject {
             return
         }
         logger.info("[GroupLoad] reloadFromDisk: V2 JSON path (no DB / v3 disabled / not migrated)")
-        config = Self.load(from: fileURL)
+        let reloadedFromJSON = Self.load(from: fileURL)
+        GroupOrderLog.noteAll(reason: "reload-json", before: config.modelGroups,
+                              after: reloadedFromJSON.modelGroups, detail: "stage=reloadFromDisk")   // [T-group-order-log]
+        config = reloadedFromJSON
         objectWillChange.send()
     }
 
@@ -1043,6 +1216,7 @@ final class ProviderConfigStore: ObservableObject {
         // Remove from groups — stamp member-removal tombstones so the removal
         // survives the inbound union-merge on peers.
         let nowTs = Date()
+        let groupsBeforePrune = config.modelGroups   // [T-group-order-log]
         for i in config.modelGroups.indices {
             let hit = config.modelGroups[i].memberEntryIds.filter { removedEntryIds.contains($0) }
             guard !hit.isEmpty else { continue }
@@ -1052,6 +1226,8 @@ final class ProviderConfigStore: ObservableObject {
                 config.modelGroups[i].addedMembers[e] = nil
             }
         }
+        GroupOrderLog.noteAll(reason: "entry-prune", before: groupsBeforePrune, after: config.modelGroups,
+                              detail: "cause=remove-instance instance=\(instanceId.prefix(8))")
         // [T-icloud-provider-sync-consistency] Remove ONLY the groups that
         // became empty as a direct result of THIS instance removal (computed
         // above as removedGroupIds). The old code removed EVERY empty group —
@@ -1592,11 +1768,13 @@ final class ProviderConfigStore: ObservableObject {
         // to composite keys over time, but this lookup keeps them working in the
         // meantime — never returns nil just because a reference is still in an
         // old form.
-        if let hit = config.modelEntries.first(where: { $0.id == entryId }) { return hit }
-        if let hit = config.modelEntries.first(where: { $0.uuid == entryId }) { return hit }
-        if let mapped = legacyUuidToCompositeKey[entryId],
-           let hit = config.modelEntries.first(where: { $0.id == mapped }) { return hit }
-        if let hit = config.modelEntries.first(where: { $0.legacyColonCompositeKey == entryId }) { return hit }
+        // [T-composer-typing-lag] Same precedence as before, via the index.
+        let index = currentEntryIndex()
+        let entries = config.modelEntries
+        if let i = index.byId[entryId] { return entries[i] }
+        if let i = index.byUuid[entryId] { return entries[i] }
+        if let mapped = legacyUuidToCompositeKey[entryId], let i = index.byId[mapped] { return entries[i] }
+        if let i = index.byColonKey[entryId] { return entries[i] }
         return nil
     }
 
@@ -1646,11 +1824,14 @@ final class ProviderConfigStore: ObservableObject {
         // Also remove from groups — stamp a member-removal tombstone on each
         // group so the removal survives the inbound union-merge on peers.
         let now = Date()
+        let groupsBeforePrune = config.modelGroups   // [T-group-order-log]
         for i in config.modelGroups.indices where config.modelGroups[i].memberEntryIds.contains(entryId) {
             config.modelGroups[i].memberEntryIds.removeAll { $0 == entryId }
             config.modelGroups[i].removedMembers[entryId] = now
             config.modelGroups[i].addedMembers[entryId] = nil
         }
+        GroupOrderLog.noteAll(reason: "entry-prune", before: groupsBeforePrune, after: config.modelGroups,
+                              detail: "cause=remove-entry entry=\(GroupOrderDiff.shortId(entryId))")
         // Remove from agent loop list
         config.agentLoopModelEntryIds.removeAll { $0 == entryId }
         Self.recordTombstone(in: &config.deletedModelEntries, ids: [entryId])
@@ -1669,7 +1850,10 @@ final class ProviderConfigStore: ObservableObject {
     /// When a built-in model matches a previously custom entry, the custom entry's UUID and
     /// overrides are preserved and the entry is converted to non-custom (so the user's
     /// selected model keeps working after refresh).
-    func replaceEntries(for instanceId: String, models rawModels: [LLMModel], caller: String = #function) {
+    /// - Returns: [T-ios-model-refresh-visible] what this call did to the
+    ///   instance's list, for the Refresh row and the outcome log line.
+    @discardableResult
+    func replaceEntries(for instanceId: String, models rawModels: [LLMModel], caller: String = #function) -> ModelListDiff {
         // [T-icloud-provider-sync-consistency] Deduplicate the incoming model
         // list by id BEFORE building entries. Some provider /v1/models
         // endpoints (notably the OpenAI-compatible OAuth path) can return the
@@ -1681,7 +1865,12 @@ final class ProviderConfigStore: ObservableObject {
         if models.count != rawModels.count {
             logger.warning("[ModelList] replaceEntries caller=\(caller) instance=\(instanceId.prefix(8)) — provider returned \(rawModels.count - models.count) duplicate model id(s); deduped to \(models.count)")
         }
-        let existing = config.modelEntries.filter { $0.providerInstanceId == instanceId }
+        // [T-model-entry-voice-seed-doubling] One entry per uuid. Builds since
+        // 974c19cbf appended an absent voice-template seed twice per refresh
+        // (see `preservedVoice` below), so a store can hold the same entry
+        // 2^n times; collapsing the copies here heals it on the next refresh.
+        let existing = Self.collapsingRepeatedEntries(
+            config.modelEntries.filter { $0.providerInstanceId == instanceId })
         // Capture UUIDs that existed before the refresh. Any that are absent afterward
         // must be pruned from groups / agent-loop list so stale references don't linger.
         let existingEntryIds = Set(existing.map(\.id))
@@ -1826,10 +2015,19 @@ final class ProviderConfigStore: ObservableObject {
             let templateVoiceIds = Set(tpl.mockModels
                 .filter { ($0.modalityOverride ?? []).contains(.audioInput) || ($0.modalityOverride ?? []).contains(.audioOutput) }
                 .map { $0.id })
+            // [T-model-entry-voice-seed-doubling] Skip seeds the absence-grace
+            // pass above already re-added: a non-custom entry missing from the
+            // list is in `keptAbsent` too, and appending it here as well put
+            // two copies back on every refresh - each copy was then preserved
+            // twice on the next one (2^n; 1,048,574 copies of two MiniMax
+            // speech seeds and a 303 MB provider-config.json after ~20
+            // refreshes, so launch blew the 19 s scene-create watchdog).
+            let keptAbsentUUIDs = Set(keptAbsent.map(\.uuid))
             let preservedVoice = existing.filter { e in
                 !e.isCustom
                 && !refreshedModelIds.contains(e.baseModel.id)
                 && templateVoiceIds.contains(e.baseModel.id)
+                && !keptAbsentUUIDs.contains(e.uuid)
             }
             if !preservedVoice.isEmpty {
                 config.modelEntries.append(contentsOf: preservedVoice)
@@ -1873,6 +2071,7 @@ final class ProviderConfigStore: ObservableObject {
                 logger.warning("[ModelList] replaceEntries caller=\(caller) instance=\(instanceLabel)(\(instanceId.prefix(8))) SUSPICIOUS SHRINK before=\(existing.count) after=\(models.count) — stale entries removed from modelEntries but group/agent-loop references PRESERVED as stale (user will see them as unavailable)")
             } else {
                 var affectedGroups: [String] = []
+                let groupsBeforePrune = config.modelGroups   // [T-group-order-log]
                 for i in config.modelGroups.indices {
                     let before = config.modelGroups[i].memberEntryIds.count
                     config.modelGroups[i].memberEntryIds.removeAll { prunedEntryIds.contains($0) }
@@ -1880,12 +2079,18 @@ final class ProviderConfigStore: ObservableObject {
                         affectedGroups.append(config.modelGroups[i].name)
                     }
                 }
+                GroupOrderLog.noteAll(reason: "entry-prune", before: groupsBeforePrune, after: config.modelGroups,
+                                      detail: "cause=replace-entries instance=\(instanceId.prefix(8)) caller=\(caller)")
                 config.agentLoopModelEntryIds.removeAll { prunedEntryIds.contains($0) }
                 logger.info("[ModelList] replaceEntries caller=\(caller) instance=\(instanceLabel)(\(instanceId.prefix(8))) pruned \(prunedEntryIds.count) stale entries from groups=[\(affectedGroups.joined(separator: ","))]")
             }
         }
 
         save()
+        // `removed` is what really left the list now; a model the provider
+        // merely stopped listing stays for the grace window and is `unlisted`.
+        return ModelListDiff(total: models.count, added: added.count,
+                             removed: expiredAbsent.count, unlisted: keptAbsent.count)
     }
 
     // MARK: - Model Groups
@@ -1897,8 +2102,19 @@ final class ProviderConfigStore: ObservableObject {
         save()
     }
 
-    func updateGroup(_ group: ModelGroup) {
+    /// - Parameter orderReason: [T-group-order-log] why the caller is writing
+    ///   the group, used ONLY for the `[GroupOrder]` log line when the member
+    ///   order or membership differs from what is stored (`user-drag`,
+    ///   `user-add`, `user-delete`, `config-tool`, `debug-rpc`; `group-update`
+    ///   for a caller that only meant to change a setting - a reorder logged
+    ///   under that reason means it wrote back a stale copy of the members).
+    func updateGroup(_ group: ModelGroup, orderReason: String = "group-update",
+                     file: String = #fileID, line: Int = #line) {
         guard let idx = config.modelGroups.firstIndex(where: { $0.id == group.id }) else { return }
+        GroupOrderLog.note(reason: orderReason, groupId: group.id, name: group.name,
+                           before: config.modelGroups[idx].memberEntryIds, after: group.memberEntryIds,
+                           warnOnReorder: orderReason == "group-update",
+                           detail: "via=\(file):\(line)")
         // [T-icloud-provider-sync-consistency] Stamp per-member add/remove
         // timestamps by diffing the prior member list against the new one, so
         // the inbound union-merge on other devices can arbitrate concurrent
@@ -2161,7 +2377,10 @@ final class ProviderConfigStore: ObservableObject {
 
     // MARK: - Bulk Update (for migration)
 
-    func applyConfig(_ newConfig: ProviderConfig) {
+    /// - Parameter orderReason: [T-group-order-log] for the `[GroupOrder]`
+    ///   log only (`restore-merge` from a backup restore).
+    func applyConfig(_ newConfig: ProviderConfig, orderReason: String = "apply-config") {
+        GroupOrderLog.noteAll(reason: orderReason, before: config.modelGroups, after: newConfig.modelGroups)
         config = newConfig
         save()
     }
@@ -2207,14 +2426,19 @@ final class ProviderConfigStore: ObservableObject {
                 self.syncApplyRetryTimer = nil
                 guard let pending = self.pendingSyncApply else { return }
                 self.pendingSyncApply = nil
-                self.applyMergedConfigFromSync(pending)
+                self.applyMergedConfigFromSync(pending, source: "deferred")
             }
         }
         syncApplyRetryTimer = timer
         RunLoop.main.add(timer, forMode: .default)
     }
 
-    func applyMergedConfigFromSync(_ newConfig: ProviderConfig) {
+    /// - Parameter source: [T-group-order-log] who produced `newConfig`, for
+    ///   the `[GroupOrder] reason=sync-apply` line only: `v3-db-refresh` (the
+    ///   row-level inbound merges, read back from the database),
+    ///   `legacy-merge`, `restore`, or `deferred` for an apply that was held
+    ///   back and is replayed.
+    func applyMergedConfigFromSync(_ newConfig: ProviderConfig, source: String = "v3-db-refresh") {
         // Compute the set of instances that ended up with zero model
         // entries after the merge. The remote ProviderConfig snapshot
         // can be missing model rows when the peer hadn't refreshed yet
@@ -2287,6 +2511,11 @@ final class ProviderConfigStore: ObservableObject {
             return
         }
 
+        // [T-group-order-log] The moment an inbound result replaces what the
+        // app is using. The sync paths log their own decision in detail; this
+        // line also catches anything they did not (and the dedupe above).
+        GroupOrderLog.noteAll(reason: "sync-apply", before: config.modelGroups,
+                              after: deduped.modelGroups, detail: "source=\(source)")
         config = deduped
         // [T-icloud-fresh-restore-provider-groups] Summary of what this device
         // holds after an inbound merge — the single most useful triage line for
@@ -2412,6 +2641,11 @@ final class ProviderConfigStore: ObservableObject {
         }
         config.modelEntries = survivors
         if !uuidRewrite.isEmpty {
+            let groupsBeforeRewrite = config.modelGroups   // [T-group-order-log]
+            defer {
+                GroupOrderLog.noteAll(reason: "dedupe", before: groupsBeforeRewrite, after: config.modelGroups,
+                                      detail: "rewrittenEntries=\(uuidRewrite.count)")
+            }
             // Rewrite group member references from pruned uuids → representative.
             for i in config.modelGroups.indices {
                 var seen = Set<String>()
@@ -2463,7 +2697,16 @@ final class ProviderConfigStore: ObservableObject {
                 let m = remap(mid)
                 return seen.insert(m).inserted ? m : nil
             }
-            if after != before { config.modelGroups[i].memberEntryIds = after; changed = true }
+            if after != before {
+                // [T-group-order-log] Ids are remapped here, so compare the
+                // remapped "before" with the result: what is left is a member
+                // dropped as a duplicate or one that changed places.
+                GroupOrderLog.note(reason: "normalize", groupId: config.modelGroups[i].id,
+                                   name: config.modelGroups[i].name,
+                                   before: before.map(remap), after: after, warnOnReorder: true,
+                                   detail: "stage=legacy-uuid-remap")
+                config.modelGroups[i].memberEntryIds = after; changed = true
+            }
 
             for (oldKey, t) in config.modelGroups[i].addedMembers where map[oldKey] != nil {
                 let nk = map[oldKey]!
@@ -2692,21 +2935,54 @@ final class ProviderConfigStore: ObservableObject {
     /// Manual refresh: fetch models from the API (with models.dev fallback) and merge into entries.
     /// Appends new models without removing user-added custom entries.
     /// Errors are logged but not thrown (fire-and-forget friendly).
-    func refreshModels(for instance: ProviderInstance) async {
+    ///
+    /// - Returns: [T-ios-model-refresh-visible] what the refresh did - where the
+    ///   list came from, how it changed, and the provider's error if it had
+    ///   one. A failed refresh returns `.kept`; it never throws and never
+    ///   touches the stored list.
+    @discardableResult
+    func refreshModels(for instance: ProviderInstance, caller: String = "refreshModels(manual)") async -> ModelRefreshOutcome {
         // [T-mimo-shadow-voice] No longer skipped for "voice-only" providers.
         // Refresh ALWAYS runs the real /models fetch so a mixed vendor (e.g.
         // MiMo: text chat + voice on one host) gets its text models; audio-modality
         // template seed entries are preserved by replaceEntries (see below), so
         // the voice models are never wiped by the text list.
+        logger.info("[ModelList] \(caller): instance=\(instance.label) starting fetch")
+        let outcome: ModelRefreshOutcome
         do {
-            logger.info("[ModelList] refreshModels (MANUAL): instance=\(instance.label) starting fetch")
             let result = try await Self.fetchModelsWithFallback(instance, forceRefresh: true)
-            replaceEntries(for: instance.id, models: result.models, caller: "refreshModels(manual)")
-            logger.info("[ModelList] refreshModels (MANUAL): instance=\(instance.label) source=\(result.source) count=\(result.models.count)")
+            let diff = replaceEntries(for: instance.id, models: result.models, caller: caller)
             for w in result.warnings { logger.warning("⚠️ \(w)") }
+            outcome = ModelRefreshOutcome(source: ModelRefreshSource(fetchSource: result.source),
+                                          diff: diff, vendorError: result.vendorError)
         } catch {
-            logger.error("[ModelList] refreshModels (MANUAL): instance=\(instance.label) FAILED — \(error)")
+            // Nothing was replaced: the list on screen is the list from before.
+            let kept = config.modelEntries.filter { $0.providerInstanceId == instance.id }.count
+            outcome = ModelRefreshOutcome(source: .kept, diff: ModelListDiff(total: kept),
+                                          vendorError: Self.keptReason(error))
         }
+        // One line per refresh, whatever happened.
+        logger.info("[ModelList] refresh outcome caller=\(caller) instance=\(instance.label)(\(instance.id.prefix(8))) \(outcome.logLine)")
+        return outcome
+    }
+
+    /// Why a refresh kept the old list, as shown under the Refresh row.
+    static func keptReason(_ error: Error) -> String {
+        switch error {
+        case ModelRefreshError.noCredential:
+            return "no API key is set for this provider"
+        case ModelRefreshError.modelsDevNoMatch(_, let vendorError):
+            return vendorError ?? "no model list is available"
+        default:
+            return vendorErrorReason(error)
+        }
+    }
+
+    /// The provider-side reason of a failed /models call.
+    static func vendorErrorReason(_ error: Error) -> String {
+        if let listError = error as? ModelListFetchError { return listError.reason }
+        if case LLMError.invalidAPIKey(let detail) = error, !detail.isEmpty { return detail }
+        return "could not read the model list: \(error.localizedDescription)"
     }
 
     /// Auto-refresh: fetch models for a single instance, skipping if user has custom models.
@@ -2718,14 +2994,7 @@ final class ProviderConfigStore: ObservableObject {
             logger.info("[ModelList] autoRefreshModels (DAILY): instance=\(instance.label) SKIP — user has custom models")
             return
         }
-        do {
-            logger.info("[ModelList] autoRefreshModels (DAILY): instance=\(instance.label) starting fetch")
-            let result = try await Self.fetchModelsWithFallback(instance, forceRefresh: true)
-            replaceEntries(for: instance.id, models: result.models, caller: "autoRefreshModels(daily)")
-            logger.info("[ModelList] autoRefreshModels (DAILY): instance=\(instance.label) source=\(result.source) count=\(result.models.count)")
-        } catch {
-            logger.error("[ModelList] autoRefreshModels (DAILY): instance=\(instance.label) FAILED — \(error)")
-        }
+        await refreshModels(for: instance, caller: "autoRefreshModels(daily)")
     }
 
     /// [T-mimo-shadow-voice] One-time upgrade migration: existing users whose
@@ -2806,7 +3075,17 @@ final class ProviderConfigStore: ObservableObject {
         // next return to the app. Cost: at most four /models calls per
         // provider per day of continuous use.
         _ = calendar
-        if let lastRefresh, Date().timeIntervalSince(lastRefresh) < Self.modelsRefreshWindow {
+        // [T-codex-client-0159] A new Codex client version can change what the
+        // Codex catalogue offers (the 0.159.0 bump is for gpt-6.1-sol), so the
+        // first launch after an update refreshes once without waiting out the
+        // window — no manual "Refresh" needed. The discovery cache is keyed on
+        // the version too, so this refresh really re-fetches.
+        let versionKey = "lastModelsRefreshCodexClientVersion"
+        let versionChanged = UserDefaults.standard.string(forKey: versionKey) != OpenAIProvider.codexClientVersion
+        if versionChanged {
+            logger.info("[ModelList] refreshAllModelsIfNeeded: Codex client version changed → \(OpenAIProvider.codexClientVersion), refreshing now")
+        }
+        if !versionChanged, let lastRefresh, Date().timeIntervalSince(lastRefresh) < Self.modelsRefreshWindow {
             logger.info("[ModelList] refreshAllModelsIfNeeded: SKIP — refreshed \(Int(Date().timeIntervalSince(lastRefresh)))s ago (window \(Int(Self.modelsRefreshWindow))s, lastRefresh=\(lastStr))")
             return
         }
@@ -2819,6 +3098,7 @@ final class ProviderConfigStore: ObservableObject {
 
         logger.info("[ModelList] refreshAllModelsIfNeeded: FIRE — lastRefresh=\(lastStr) instanceCount=\(enabledInstances.count) instances=[\(enabledInstances.map { $0.label }.joined(separator: ","))]")
         UserDefaults.standard.set(Date(), forKey: key)
+        UserDefaults.standard.set(OpenAIProvider.codexClientVersion, forKey: versionKey)
 
         for instance in enabledInstances {
             Task {
@@ -3024,8 +3304,11 @@ final class ProviderConfigStore: ObservableObject {
     /// Result of a model fetch with fallback — includes diagnostic warnings for each step.
     struct ModelFetchResult {
         let models: [LLMModel]
-        let source: String            // "api", "models.dev", or "none"
+        let source: String            // "api", "models.dev", or "built-in"
         let warnings: [String]        // Diagnostic messages from each failed step
+        /// [T-ios-model-refresh-visible] Why the provider's own list was not
+        /// used, when `source` is a fallback; nil for a list from the provider.
+        var vendorError: String? = nil
     }
 
     /// Whether the instance uses a third-party (non-official) OpenAI-compatible base URL
@@ -3117,6 +3400,10 @@ final class ProviderConfigStore: ObservableObject {
     static func fetchModelsWithFallback(_ instance: ProviderInstance, forceRefresh: Bool = false) async throws -> ModelFetchResult {
         var warnings: [String] = []
         let isThirdParty = isThirdPartyOpenAICompat(instance)
+        // [T-ios-model-refresh-visible] Why the provider's own list is not
+        // being used, in words the Refresh row can show.
+        var vendorError: String?
+        var vendorThrew = false
 
         // Step 1: Try /v1/models API
         do {
@@ -3124,63 +3411,58 @@ final class ProviderConfigStore: ObservableObject {
             if !models.isEmpty {
                 return ModelFetchResult(models: models, source: "api", warnings: [])
             }
+            vendorError = "the provider listed no models"
             let msg = "API returned empty model list"
             warnings.append(msg)
             logger.info("\(msg) for \(instance.label)")
         } catch let error as ModelRefreshError {
             throw error  // No credential — don't attempt fallback
         } catch {
+            vendorThrew = true
+            vendorError = vendorErrorReason(error)
             let msg = "API fetch failed: \(error.localizedDescription)"
             warnings.append(msg)
             logger.info("\(msg) for \(instance.label)")
-            // Third-party endpoints (vLLM, Ollama, etc.): do not fall back to
-            // built-in GPT models — keep the previously fetched list intact.
-            if isThirdParty {
-                logger.info("Third-party endpoint unreachable, preserving existing models for \(instance.label)")
-                throw ModelRefreshError.modelsDevNoMatch(warnings: warnings)
-            }
         }
 
-        // Step 2: Try models.dev fallback (skip for third-party endpoints)
+        // Step 2: models.dev, matched by base URL. Step 3: the provider's
+        // built-in list. Which one applies is `ModelRefreshFallback.decide`:
+        // a third-party endpoint (vLLM, Ollama, a relay) that FAILED keeps its
+        // previously fetched list, and never gets the built-in GPT models.
         let baseURL = modelsDevBaseURL(for: instance)
-        guard let baseURL else {
+        var catalog: [LLMModel] = []
+        if vendorThrew && isThirdParty {
+            logger.info("Third-party endpoint unreachable, preserving existing models for \(instance.label)")
+        } else if let baseURL {
+            logger.info("models.dev fallback: matching baseURL=\(baseURL) for \(instance.label)")
+            catalog = ModelsDevAPI.fetchModels(forBaseURL: baseURL)
+            if catalog.isEmpty {
+                let msg = "models.dev: no match for baseURL \(baseURL)"
+                warnings.append(msg)
+                logger.info("\(msg)")
+            }
+        } else {
             let msg = "No base URL resolved, cannot try models.dev"
             warnings.append(msg)
             logger.info("\(msg) for \(instance.label)")
-            if isThirdParty {
-                throw ModelRefreshError.modelsDevNoMatch(warnings: warnings)
-            }
-            // Fall back to built-in models
-            let builtIn = ModelsDevAPI.enrichModels(instance.providerType.builtInModels)
-            if !builtIn.isEmpty {
-                logger.info("Using \(builtIn.count) built-in models for \(instance.label)")
-                return ModelFetchResult(models: builtIn, source: "built-in", warnings: warnings)
-            }
-            throw ModelRefreshError.modelsDevNoMatch(warnings: warnings)
         }
+        let builtIn = (catalog.isEmpty && !isThirdParty)
+            ? ModelsDevAPI.enrichModels(instance.providerType.builtInModels) : []
 
-        logger.info("models.dev fallback: matching baseURL=\(baseURL) for \(instance.label)")
-        let fallbackModels = ModelsDevAPI.fetchModels(forBaseURL: baseURL)
-        if !fallbackModels.isEmpty {
-            logger.info("models.dev fallback returned \(fallbackModels.count) models for \(instance.label)")
-            return ModelFetchResult(models: fallbackModels, source: "models.dev", warnings: warnings)
-        }
-        let msg = "models.dev: no match for baseURL \(baseURL)"
-        warnings.append(msg)
-        logger.info("\(msg)")
-
-        // Step 3: Fall back to provider's built-in models (skip for third-party endpoints)
-        if isThirdParty {
-            logger.info("Third-party endpoint, skipping built-in fallback for \(instance.label)")
-            throw ModelRefreshError.modelsDevNoMatch(warnings: warnings)
-        }
-        let builtIn = ModelsDevAPI.enrichModels(instance.providerType.builtInModels)
-        if !builtIn.isEmpty {
+        switch ModelRefreshFallback.decide(vendorThrew: vendorThrew, isThirdParty: isThirdParty,
+                                           catalogCount: catalog.count, builtInCount: builtIn.count) {
+        case .modelsDev:
+            logger.info("models.dev fallback returned \(catalog.count) models for \(instance.label)")
+            return ModelFetchResult(models: catalog, source: "models.dev", warnings: warnings, vendorError: vendorError)
+        case .builtIn:
             logger.info("Using \(builtIn.count) built-in models for \(instance.label)")
-            return ModelFetchResult(models: builtIn, source: "built-in", warnings: warnings)
+            return ModelFetchResult(models: builtIn, source: "built-in", warnings: warnings, vendorError: vendorError)
+        case .kept, .vendor:
+            if isThirdParty {
+                logger.info("Third-party endpoint, skipping built-in fallback for \(instance.label)")
+            }
+            throw ModelRefreshError.modelsDevNoMatch(warnings: warnings, vendorError: vendorError)
         }
-
-        throw ModelRefreshError.modelsDevNoMatch(warnings: warnings)
     }
 
     /// Resolve the effective API base URL for an instance (for models.dev matching).
@@ -3285,13 +3567,15 @@ final class ProviderConfigStore: ObservableObject {
 
 enum ModelRefreshError: LocalizedError {
     case noCredential
-    case modelsDevNoMatch(warnings: [String])
+    /// `vendorError`: [T-ios-model-refresh-visible] why the provider's own
+    /// list could not be used, for the Refresh row.
+    case modelsDevNoMatch(warnings: [String], vendorError: String? = nil)
 
     var errorDescription: String? {
         switch self {
         case .noCredential:
             return "No API key configured for this provider instance."
-        case .modelsDevNoMatch(let warnings):
+        case .modelsDevNoMatch(let warnings, _):
             let detail = warnings.isEmpty ? "" : "\n" + warnings.joined(separator: "\n")
             return "Could not fetch models from API or models.dev fallback.\(detail)"
         }
@@ -3600,7 +3884,21 @@ enum ProviderKeychainHelper {
 
     static func markOAuthNeedsReauth(instanceId: String, caller: String = #function) {
         guard let data = loadRawOAuthToken(instanceId: instanceId) else { return }
-        UserDefaults.standard.set(oauthFingerprint(data), forKey: oauthNeedsReauthUDKey(instanceId: instanceId))
+        let fingerprint = oauthFingerprint(data)
+        let key = oauthNeedsReauthUDKey(instanceId: instanceId)
+        // [T-oauth-reauth-mark-loop] Marking the credential that is already
+        // marked changes nothing, so it must not announce a change. It used
+        // to notify every time, and a notification is itself a trigger:
+        // authRevision → QuotaStore.credentialsChanged → quota re-check of
+        // recently viewed instances → on-demand refresh with the rejected
+        // token → rejected again → mark → notify … every ~0.45 s (device log
+        // 2026-10-07 19:29:48-19:31:24, instance 37D5CC24: 153 marks). Each
+        // round re-rendered every provider row and dropped the row credential
+        // cache, so Settings › AI Providers re-read the Keychain on the main
+        // thread twice a second while scrolling - the reported stutter - and
+        // the app posted the dead refresh token to claude.ai at the same rate.
+        if UserDefaults.standard.string(forKey: key) == fingerprint { return }
+        UserDefaults.standard.set(fingerprint, forKey: key)
         AppLogger(category: "Keychain").warning("mark oauthNeedsReauth instanceId=\(instanceId.prefix(8)) credentials kept caller=\(caller)")
         notifyAuthChanged(instanceId: instanceId)
     }
@@ -3699,3 +3997,72 @@ enum ProviderKeychainHelper {
         notifyAuthChanged(instanceId: instanceId)
     }
 }
+
+// BEGIN ModelRefreshOutcome
+/// [T-ios-model-refresh-visible] Where a refreshed model list came from.
+/// Mirrors Android `ModelRefreshOutcome.Source`.
+enum ModelRefreshSource: String {
+    /// The provider's own /models answer.
+    case vendor
+    /// The provider type's compiled-in list.
+    case builtIn = "built-in"
+    /// The public models.dev catalog, matched by base URL.
+    case modelsDev = "models.dev"
+    /// Nothing usable came back: the list from before was left as it was.
+    case kept
+
+    /// From `ModelFetchResult.source` ("api" / "models.dev" / "built-in").
+    init(fetchSource: String) {
+        switch fetchSource {
+        case "api": self = .vendor
+        case "models.dev": self = .modelsDev
+        default: self = .builtIn
+        }
+    }
+}
+
+/// What one `replaceEntries` did to an instance's list.
+struct ModelListDiff: Equatable {
+    /// Models in the list that was applied (for `.kept`: entries left in place).
+    var total = 0
+    /// Ids that were not in the list before.
+    var added = 0
+    /// Entries deleted now: unlisted for longer than the grace window.
+    var removed = 0
+    /// Entries the provider no longer lists, kept (marked "Not listed by
+    /// provider") until the grace window runs out.
+    var unlisted = 0
+}
+
+/// The result of one model-list refresh, for the Refresh row, the log and
+/// the `provider.models.refresh` debug RPC.
+struct ModelRefreshOutcome: Equatable {
+    let source: ModelRefreshSource
+    let diff: ModelListDiff
+    /// "HTTP <code>: <provider message>", "the response is not a model list:
+    /// …", "the provider listed no models", "could not read the model list:
+    /// …", "no API key is set for this provider"; nil when the provider's own
+    /// list was used.
+    let vendorError: String?
+
+    var logLine: String {
+        "source=\(source.rawValue) total=\(diff.total) added=\(diff.added) removed=\(diff.removed) unlisted=\(diff.unlisted)"
+            + (vendorError.map { " vendorError=\($0)" } ?? "")
+    }
+}
+
+/// Which list replaces the provider's own when that one failed or was empty.
+enum ModelRefreshFallback {
+    /// - vendorThrew: the /models call failed (as opposed to answering with
+    ///   an empty list).
+    /// - isThirdParty: a custom base URL that is not an official host.
+    static func decide(vendorThrew: Bool, isThirdParty: Bool, catalogCount: Int, builtInCount: Int) -> ModelRefreshSource {
+        // An unreachable relay keeps what it had: its models are its own, and
+        // neither the catalog nor the built-in GPT list describes them.
+        if vendorThrew && isThirdParty { return .kept }
+        if catalogCount > 0 { return .modelsDev }
+        if !isThirdParty && builtInCount > 0 { return .builtIn }
+        return .kept
+    }
+}
+// END ModelRefreshOutcome

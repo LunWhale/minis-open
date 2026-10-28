@@ -1,4 +1,5 @@
 import XCTest
+@testable import Minis
 
 /// [T-gemini-empty-part-oneof-400] Regression tests pinning the Gemini
 /// wire-format invariant: a part's text is NEVER the empty string, so the

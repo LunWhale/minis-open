@@ -1,4 +1,5 @@
 import XCTest
+@testable import Minis
 
 /// Unit tests for the pure-logic parts of voice correction: the truncator, the phonetic
 /// normalizer, the LCS/word-boundary diff, the vocabulary filter, and confidence math.
@@ -206,6 +207,17 @@ final class VoiceCorrectionTests: XCTestCase {
         XCTAssertLessThan(r, VoiceCorrectionConfig.maxCharChangeRatio)
     }
 
+    func testCharChangeRatio_latinTermRestoreIsOneUnit() {
+        // [T-voice-mixed-term-restore] Restoring a transliterated English word is one
+        // word swapped, not a rewrite, even in a short utterance.
+        XCTAssertLessThanOrEqual(VoiceCorrectionDiff.charChangeRatio(from: "看看遗穴", to: "看看Issue"),
+                                 VoiceCorrectionConfig.maxCharChangeRatio)
+        XCTAssertLessThan(VoiceCorrectionDiff.charChangeRatio(from: "接下来再看看下一个遗穴。",
+                                                              to: "接下来再看看下一个Issue。"),
+                          VoiceCorrectionConfig.maxCharChangeRatio)
+        XCTAssertEqual(VoiceCorrectionDiff.editUnits("修 Issue 399"), ["修", " ", "Issue", " ", "399"])
+    }
+
     func testCharChangeRatio_rewriteExceedsThreshold() {
         // A model that "helpfully" rewrote instead of correcting must be rejected.
         let r = VoiceCorrectionDiff.charChangeRatio(from: "今天去吃饭",
@@ -348,6 +360,44 @@ final class CorrectionContextBuilderTests: XCTestCase {
         }
     }
 
+    func testBuilder_recurringPlainLatinWordReachesDigest() {
+        // [T-voice-mixed-term-restore] "Issue" scores 20 on its own; recurring in a
+        // Chinese conversation it is a term the user is discussing and must reach the
+        // digest, ahead of a common-char word (40).
+        let msgs = [
+            CorrectionSourceMessage(role: .assistant, text: "下一个 Issue 是 闪退 问题。"),
+            CorrectionSourceMessage(role: .user, text: "这个 Issue 怎么修"),
+            CorrectionSourceMessage(role: .assistant, text: "所有 Issue 都已经 闭环。"),
+        ]
+        let digest = CorrectionContextBuilder.build(messages: msgs, rankProvider: fakeRank).rareTermsDigest ?? ""
+        XCTAssertTrue(digest.contains("Issue"), "recurring Latin word must reach the digest: \(digest)")
+        if let a = digest.range(of: "Issue"), let b = digest.range(of: "闪退") {
+            XCTAssertLessThan(a.lowerBound, b.lowerBound)
+        }
+    }
+
+    func testBuilder_englishChatDoesNotPromoteOrdinaryWords() {
+        // In an English conversation every recurring word is Latin; none is a term.
+        let msgs = [
+            CorrectionSourceMessage(role: .assistant, text: "open the file and check the code"),
+            CorrectionSourceMessage(role: .user, text: "which file has the code"),
+            CorrectionSourceMessage(role: .assistant, text: "this file holds the code"),
+        ]
+        let digest = CorrectionContextBuilder.build(messages: msgs, rankProvider: fakeRank).rareTermsDigest ?? ""
+        XCTAssertFalse(digest.contains("file"), "ordinary English words must stay out: \(digest)")
+    }
+
+    func testBuilder_rarePlainLatinWordAndFunctionWordsStayOut() {
+        let msgs = [
+            CorrectionSourceMessage(role: .assistant, text: "the world and the world"),
+            CorrectionSourceMessage(role: .user, text: "the and the and"),
+        ]
+        let digest = CorrectionContextBuilder.build(messages: msgs, rankProvider: fakeRank).rareTermsDigest ?? ""
+        XCTAssertFalse(digest.contains("world"), "two occurrences are below the bar: \(digest)")
+        XCTAssertFalse(digest.contains("the"), "English function words never promote: \(digest)")
+        XCTAssertFalse(digest.contains("and"), "English function words never promote: \(digest)")
+    }
+
     func testBuilder_expandsBeyondTwoMessagesForRareContent() {
         // Old design stopped at the last user+assistant pair. An older message
         // carrying a rare term must now still contribute an excerpt.
@@ -389,5 +439,155 @@ final class CorrectionContextBuilderTests: XCTestCase {
         // Every kept sentence still ends with its terminator (or explicit ellipsis).
         let body = excerpt.drop(while: { $0 != "】" }).dropFirst()
         XCTAssertTrue(body.hasSuffix("。") || body.hasSuffix("…"), "excerpt tail: \(body.suffix(12))")
+    }
+}
+
+// MARK: - [T-voice-viewport-context] On-screen context
+
+/// Centre-out selection, the 2000-char budget and its cut direction, window clipping, and
+/// deduplication of the latest reply against the screen. The same scenarios run
+/// standalone (no simulator) in MinisTests/Standalone/VoiceViewportContextTests.swift.
+/// [T-voice-mixed-term-restore] Which language's failure-mode rules the prompt carries.
+final class CorrectionLanguageProfileTests: XCTestCase {
+
+    func testChineseTranscriptWithEnglishTermIsChinese() {
+        XCTAssertEqual(CorrectionLanguageProfile.resolve(locale: "zh-CN", transcript: "接下来再看看下一个遗穴。"), .chinese)
+        XCTAssertEqual(CorrectionLanguageProfile.resolve(locale: "zh-CN", transcript: "看看 Issue 399"), .chinese)
+    }
+
+    func testScriptBeatsLocaleWhenTheyDisagree() {
+        // A zh-CN recognizer that returned an English sentence gets the Western rules.
+        XCTAssertEqual(CorrectionLanguageProfile.resolve(locale: "zh-CN", transcript: "please fix the get hub issue"), .western)
+        XCTAssertEqual(CorrectionLanguageProfile.resolve(locale: "en-US", transcript: "看看这个"), .chinese)
+    }
+
+    func testJapaneseAndKorean() {
+        XCTAssertEqual(CorrectionLanguageProfile.resolve(locale: "ja-JP", transcript: "次のイシューを見て"), .japanese)
+        // Kanji only: the script alone reads as Chinese, the locale says Japanese.
+        XCTAssertEqual(CorrectionLanguageProfile.resolve(locale: "ja-JP", transcript: "機能確認"), .japanese)
+        XCTAssertEqual(CorrectionLanguageProfile.resolve(locale: "ko-KR", transcript: "다음 이슈 보자"), .korean)
+    }
+
+    func testWesternLanguagesAndFallbacks() {
+        XCTAssertEqual(CorrectionLanguageProfile.resolve(locale: "fr-FR", transcript: "regarde le problème"), .western)
+        XCTAssertEqual(CorrectionLanguageProfile.resolve(locale: "ru-RU", transcript: "посмотри задачу"), .western)
+        XCTAssertEqual(CorrectionLanguageProfile.resolve(locale: "ar-SA", transcript: "انظر إلى المشكلة"), .generic)
+        XCTAssertEqual(CorrectionLanguageProfile.resolve(locale: "yue-CN", transcript: "123"), .chinese)
+    }
+
+    func testEveryProfileHasItsOwnRules() {
+        let rules = CorrectionLanguageProfile.allCases.map(\.failureModes)
+        XCTAssertEqual(Set(rules).count, rules.count)
+        XCTAssertTrue(CorrectionLanguageProfile.chinese.failureModes.contains("\"遗穴\" for \"Issue\""))
+        XCTAssertFalse(CorrectionLanguageProfile.western.failureModes.contains("遗穴"))
+        XCTAssertTrue(CorrectionLanguageProfile.japanese.failureModes.contains("katakana"))
+        XCTAssertTrue(CorrectionLanguageProfile.korean.failureModes.contains("Hangul"))
+    }
+}
+
+final class ViewportContextBuilderTests: XCTestCase {
+
+    /// Rows stacked top→bottom, each `height` points tall, starting at y = 0.
+    private func rows(_ specs: [(ViewportSourceItem.Kind, String, String?, String)], height: Double = 100) -> [ViewportSourceItem] {
+        specs.enumerated().map { i, s in
+            ViewportSourceItem(kind: s.0, messageId: s.1, blockId: s.2, text: s.3,
+                               minY: Double(i) * height, maxY: Double(i + 1) * height)
+        }
+    }
+
+    func testSelectsWindowAroundCentreAndRendersTopToBottom() {
+        // 20 rows of 100pt; visible 800…1200 → centre 1000, window 600…1400.
+        let items = rows((0..<20).map { (.user, "m\($0)", nil, "行\($0)") })
+        let snap = ViewportSnapshot(items: items, visibleMinY: 800, visibleMaxY: 1200)
+        let out = ViewportContextBuilder.build(snapshot: snap, latestReply: nil)
+        XCTAssertEqual(out.lines, (6...13).map { "【用户】行\($0)" })
+        XCTAssertEqual(out.report.candidateRows, 8)
+        XCTAssertEqual(out.report.rows.first?.distance, 0)
+    }
+
+    func testBudgetKeepsNearestRowsAndStaysUnder2000() {
+        let body = String(repeating: "字", count: 300)
+        let items = rows((0..<20).map { (.assistant, "m\($0)", "b\($0)", body) })
+        let snap = ViewportSnapshot(items: items, visibleMinY: 800, visibleMaxY: 1200)
+        let out = ViewportContextBuilder.build(snapshot: snap, latestReply: nil)
+        let total = out.lines.joined(separator: "\n").count
+        XCTAssertLessThanOrEqual(total, CorrectionContextBudget.viewportBlock)
+        XCTAssertGreaterThan(total, CorrectionContextBudget.viewportBlock - 30)
+        // Rows 9 and 10 border the centre (1000): both must be kept whole.
+        let kept = Set(out.report.rows.map(\.messageId))
+        XCTAssertTrue(kept.isSuperset(of: ["m9", "m10"]))
+        // The far edges of the window (rows 6 and 13) are what the budget drops.
+        XCTAssertFalse(kept.contains("m6") && kept.contains("m13"))
+        XCTAssertEqual(out.report.rows.filter(\.cut).count, 1, "exactly the last row taken is cut")
+    }
+
+    func testCutRowAboveCentreKeepsItsEndAndBelowKeepsItsStart() {
+        let above = ViewportContextBuilder.cutAround("ABCDEFGHIJ", keep: 5, centerFraction: 1)
+        XCTAssertEqual(above, "…GHIJ")
+        let below = ViewportContextBuilder.cutAround("ABCDEFGHIJ", keep: 5, centerFraction: 0)
+        XCTAssertEqual(below, "ABCD…")
+        let middle = ViewportContextBuilder.cutAround("ABCDEFGHIJ", keep: 5, centerFraction: 0.5)
+        XCTAssertEqual(middle.count, 5)
+        XCTAssertTrue(middle.hasPrefix("…") && middle.hasSuffix("…"))
+    }
+
+    func testTallRowIsClippedToTheWindow() {
+        // One 10 000pt reply; window 600…1400 is 8% of it.
+        let text = (0..<1000).map { String($0 % 10) }.joined()
+        let item = ViewportSourceItem(kind: .assistant, messageId: "m", blockId: "b", text: text, minY: 0, maxY: 10_000)
+        let out = ViewportContextBuilder.build(
+            snapshot: ViewportSnapshot(items: [item], visibleMinY: 800, visibleMaxY: 1200), latestReply: nil)
+        let line = out.lines.first ?? ""
+        XCTAssertLessThan(line.count, 120, "only the on-window slice, not the whole reply: \(line.count)")
+        XCTAssertTrue(line.hasPrefix("【AI】…"))
+    }
+
+    func testToolRowsCarryTheirTitle() {
+        let items = rows([(.user, "u", nil, "查一下日志"), (.tool, "a", "t1", "搜索日志文件"), (.assistant, "a", "b1", "找到了。")])
+        let out = ViewportContextBuilder.build(
+            snapshot: ViewportSnapshot(items: items, visibleMinY: 0, visibleMaxY: 300), latestReply: nil)
+        XCTAssertEqual(out.lines, ["【用户】查一下日志", "【工具】搜索日志文件", "【AI】找到了。"])
+    }
+
+    func testLatestReplyFullyOnScreenIsNotRepeated() {
+        let items = rows([(.user, "u", nil, "问题"), (.assistant, "a", "b1", "第一段。"), (.assistant, "a", "b2", "第二段。")])
+        let reply = LatestReplySource(messageId: "a", blocks: [.init(id: "b1", text: "第一段。"), .init(id: "b2", text: "第二段。")])
+        let out = ViewportContextBuilder.build(
+            snapshot: ViewportSnapshot(items: items, visibleMinY: 0, visibleMaxY: 300), latestReply: reply)
+        XCTAssertNil(out.latestReply)
+        XCTAssertEqual(out.report.latestReplyDedup, "fully_on_screen")
+        XCTAssertEqual(out.lines.filter { $0.hasPrefix("【AI·最新回复】") }.count, 2)
+        XCTAssertEqual(out.lines.joined().components(separatedBy: "第一段").count - 1, 1)
+    }
+
+    func testLatestReplyPartlyOnScreenKeepsOnlyTheRest() {
+        // Visible 0…200 → window −100…300: rows 0-2 in, row 3 (b3) out.
+        let items = rows([(.user, "u", nil, "问题"), (.assistant, "a", "b1", "甲。"), (.assistant, "a", "b2", "乙。"), (.assistant, "a", "b3", "丙。")])
+        let reply = LatestReplySource(messageId: "a", blocks: [.init(id: "b1", text: "甲。"), .init(id: "b2", text: "乙。"), .init(id: "b3", text: "丙。")])
+        let out = ViewportContextBuilder.build(
+            snapshot: ViewportSnapshot(items: items, visibleMinY: 0, visibleMaxY: 200), latestReply: reply)
+        XCTAssertEqual(out.latestReply, "丙。")
+        XCTAssertEqual(out.report.latestReplyDedup, "partially_on_screen")
+        XCTAssertEqual(out.report.latestReplyBlocksDropped, 2)
+    }
+
+    func testLatestReplyOffScreenIsKeptAndCappedFromTheEnd() {
+        let long = String(repeating: "旧", count: 1500) + String(repeating: "新", count: 1500)
+        let reply = LatestReplySource(messageId: "z", blocks: [.init(id: "bz", text: long)])
+        let items = rows([(.user, "u", nil, "很早的问题")])
+        let out = ViewportContextBuilder.build(
+            snapshot: ViewportSnapshot(items: items, visibleMinY: 0, visibleMaxY: 100), latestReply: reply)
+        XCTAssertEqual(out.report.latestReplyDedup, "not_on_screen")
+        XCTAssertEqual(out.latestReply?.count, CorrectionContextBudget.latestReplyBlock)
+        XCTAssertTrue(out.latestReply?.hasPrefix("…") ?? false)
+        XCTAssertTrue(out.latestReply?.hasSuffix("新") ?? false)
+        XCTAssertTrue(out.report.latestReplyTruncated)
+    }
+
+    func testNoViewportStillSendsLatestReply() {
+        let reply = LatestReplySource(messageId: "a", blocks: [.init(id: "b", text: "最新回复")])
+        let out = ViewportContextBuilder.build(snapshot: nil, latestReply: reply)
+        XCTAssertTrue(out.lines.isEmpty)
+        XCTAssertEqual(out.latestReply, "最新回复")
     }
 }

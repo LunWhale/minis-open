@@ -396,9 +396,11 @@ class ISHTerminalViewModel: ObservableObject {
         // Inject user-defined environment variables
         stepStart = CFAbsoluteTimeGetCurrent()
         let customEnv = EnvVarStore.shared.allAsDict()
-        if !customEnv.isEmpty {
-            ISHKernel.shared.customEnvironment = customEnv
-        }
+        // [T-envvar-disable] Always assign, even when empty. With the old
+        // `if !customEnv.isEmpty` guard, deleting or disabling the last
+        // variable left the kernel holding the previous environment, so the
+        // next terminal still received the variables the user turned off.
+        ISHKernel.shared.customEnvironment = customEnv
         logger.info("[StartShell] envVars: \(String(format: "%.1f", (CFAbsoluteTimeGetCurrent() - stepStart) * 1000))ms (\(customEnv.count) vars)")
 
         // Start shell

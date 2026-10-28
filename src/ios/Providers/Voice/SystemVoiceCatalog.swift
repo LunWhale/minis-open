@@ -19,7 +19,6 @@ import SwiftUI
 // enum is just the read side used by the synthesis paths.
 enum SystemVoicePreferences {
     private static let pitchKey  = "speechPitch"
-    private static let volumeKey = "speechVolume"
 
     /// Pitch multiplier (0.5–2.0). Default 1.0.
     static var pitch: Float {
@@ -27,10 +26,12 @@ enum SystemVoicePreferences {
         set { UserDefaults.standard.set(newValue, forKey: pitchKey) }
     }
 
-    /// Volume (0.0–1.0). Default 1.0.
+    /// Volume (0.0–1.0). Default 1.0. [T-readaloud-volume] This IS the
+    /// read-aloud volume (same key, `ReadAloudVolume`), shared with the cloud
+    /// TTS player and the read-aloud capsule's slider.
     static var volume: Float {
-        get { UserDefaults.standard.object(forKey: volumeKey) as? Float ?? 1.0 }
-        set { UserDefaults.standard.set(newValue, forKey: volumeKey) }
+        get { ReadAloudVolume.read(UserDefaults.standard) }
+        set { ReadAloudVolume.write(newValue, to: UserDefaults.standard) }
     }
 }
 

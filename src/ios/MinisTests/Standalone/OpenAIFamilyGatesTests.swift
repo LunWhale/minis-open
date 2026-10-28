@@ -24,7 +24,7 @@
 // Ports (structure preserved so a change to either side has to change here):
 //   the Responses fast-mode block   — OpenAIProvider.swift ~L1262 / OpenAIAgentProvider.swift ~L582
 //   sendsPriorityServiceTier        — OpenAIProvider.swift ~L257
-//   activeModelSupportsFastMode     — AIChatView.swift ~L2151
+//   activeModelSupportsFastMode     — AIChatView+NavigationTitle.swift
 //   needsOpenRouterAnthropicCacheControl — OpenAIProvider.swift ~L296
 //   isOpenRouter / isMistral / isDashScope / isXAI — OpenAIProvider.swift ~L262-350
 //   the openai-native rules + isOpenAINative — ThinkingRuleResolver.swift ~L263-276 / ~L531
@@ -32,6 +32,20 @@
 //
 // Standalone (`swift OpenAIFamilyGatesTests.swift`) like its neighbours.
 import Foundation
+
+/// The chat page's sources, read as one text: AIChatView.swift (state and
+/// `body`) first, then every other file under Views/Chat/AIChatView/ - the
+/// old single AIChatView.swift was split into them.
+func chatViewSource() -> String {
+    let ios = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let dir = ios.appendingPathComponent("Views/Chat/AIChatView")
+    let main = dir.appendingPathComponent("AIChatView.swift")
+    let rest = (FileManager.default.enumerator(at: dir, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? [])
+        .filter { $0.pathExtension == "swift" && $0.lastPathComponent != "AIChatView.swift" }
+        .sorted { $0.path < $1.path }
+    return ([main] + rest).compactMap { try? String(contentsOf: $0, encoding: .utf8) }.joined(separator: "\n")
+}
 
 var failures = 0
 func check(_ l: String, _ a: Bool, _ e: Bool = true) {
@@ -263,11 +277,17 @@ do {
     let op = source("Providers/OpenAI/OpenAIProvider.swift")
     let agent = source("Providers/OpenAI/OpenAIAgentProvider.swift")
     let res = source("Providers/Thinking/ThinkingRuleResolver.swift")
-    let view = source("Views/Chat/AIChatView.swift")
+    let view = chatViewSource()
     if op.isEmpty || agent.isEmpty || res.isEmpty || view.isEmpty { print("  ⏭  sources not readable") } else {
-        check("Responses builder gates fast mode on a gpt id", op.contains("if UserDefaults.standard.bool(forKey: Self.fastModeDefaultsKey),\n           model.id.lowercased().contains(\"gpt\") {"))
-        check("agent Responses path gates it the same way", agent.contains("if UserDefaults.standard.bool(forKey: OpenAIProvider.fastModeDefaultsKey),\n           model.id.lowercased().contains(\"gpt\") {"))
-        check("xAI priority reads the SAME defaults key and adds isXAI", op.contains("isXAI && UserDefaults.standard.bool(forKey: Self.fastModeDefaultsKey)"))
+        // [T-codex-speed-tier] The Bool switch became a tier; the gates are the
+        // same, now in SpeedTierSettings (gpt-id gate: responsesServiceTier).
+        let tiers = source("Providers/OpenAI/SpeedTier.swift")
+        let tierCall = "if let tier = SpeedTierSettings.responsesServiceTier(\n            stored: SpeedTierSettings.storedTier(), modelId: model.id) {"
+        check("Responses builder gates fast mode on a gpt id", op.contains(tierCall)
+              && tiers.contains("guard modelId.lowercased().contains(\"gpt\") else { return nil }"))
+        check("agent Responses path gates it the same way", agent.contains(tierCall))
+        check("xAI priority reads the SAME setting and adds isXAI",
+              op.contains("isXAI && SpeedTierSettings.xaiServiceTier(stored: SpeedTierSettings.storedTier()) != nil"))
         check("the UI gate checks xAI before the gpt guard", (view.range(of: "if instance.providerType == .xAI { return true }")?.lowerBound ?? view.endIndex)
               < (view.range(of: "guard modelId.lowercased().contains(\"gpt\") else { return false }")?.lowerBound ?? view.startIndex))
         check("cache_control gate is host AND anthropic/ prefix", op.contains("isOpenRouter && model.id.lowercased().hasPrefix(\"anthropic/\")"))

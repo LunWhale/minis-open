@@ -15,6 +15,23 @@
 
 import Foundation
 
+/// The sources that used to be the single file Agent/Chat/AIChatViewModel.swift -
+/// the class body plus the AIChatViewModel+<Concern>.swift files it was split
+/// into (the older extension files are NOT included) - read as one text.
+func chatViewModelSource() -> String {
+    let chat = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Agent/Chat")
+    let names = ["AIChatViewModel", "AIChatViewModel+Lifecycle", "AIChatViewModel+ContextUsage",
+                 "AIChatViewModel+StreamingUI", "AIChatViewModel+Speech", "AIChatViewModel+AutoPlayAudio",
+                 "AIChatViewModel+SystemPrompt", "AIChatViewModel+Send", "AIChatViewModel+Rerun",
+                 "AIChatViewModel+EditMessage", "AIChatViewModel+Cancel", "AIChatViewModel+PromptQueue",
+                 "AIChatViewModel+DebugDumps", "AIChatViewModel+TurnCompletion", "AIChatViewModel+AgentLoop",
+                 "AIChatViewModel+ThinkingLevel", "LLMProviderError"]
+    return names.compactMap { try? String(contentsOf: chat.appendingPathComponent($0 + ".swift"), encoding: .utf8) }
+        .joined(separator: "\n")
+}
+
 var failures = 0
 func check(_ label: String, _ actual: Bool, _ expected: Bool = true) {
     if actual == expected { print("  ✅ \(label)") }
@@ -26,10 +43,23 @@ let root = URL(fileURLWithPath: #filePath)
 func src(_ rel: String) -> String {
     (try? String(contentsOf: root.appendingPathComponent(rel), encoding: .utf8)) ?? ""
 }
+
+/// The markdown renderer module (Views/Chat/Markdown/, formerly the single file
+/// SelectableMarkdownView.swift), read as one text with its files in path order.
+func markdownModuleSource() -> String {
+    let dir = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Views/Chat/Markdown")
+    let files = (FileManager.default.enumerator(at: dir, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? [])
+        .filter { $0.pathExtension == "swift" }
+        .sorted { $0.path < $1.path }
+    return files.compactMap { try? String(contentsOf: $0, encoding: .utf8) }.joined(separator: "\n")
+}
+
 let compaction = src("Agent/Chat/AIChatViewModel+Compaction.swift")
 let persist = src("Agent/Chat/AIChatViewModel+Persistence.swift")
-let vm = src("Agent/Chat/AIChatViewModel.swift")
-let markdown = src("Views/Chat/SelectableMarkdownView.swift")
+let vm = chatViewModelSource()
+let markdown = markdownModuleSource()
 let toolSheet = src("Views/Chat/ToolLiveSheet.swift")
 check("sources found", !compaction.isEmpty && !persist.isEmpty && !vm.isEmpty && !markdown.isEmpty && !toolSheet.isEmpty)
 

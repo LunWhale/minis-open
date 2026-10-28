@@ -302,6 +302,20 @@ check("the refresh is fire-and-forget (does not block the sheet)",
 // Re-authentication of an EXISTING instance, and the Kimi device-code sheet.
 checkEq("the detail view consults the same bit (re-auth + device-code paths)",
         detail.components(separatedBy: "oauthSupportsModelDiscovery").count - 1, 3)
+// [T-issue265-reauth-refresh-detached] Re-auth refreshes after a successful
+// login, fire-and-forget like the other two paths: awaiting it delayed the
+// "signed in" UI until the whole /models fetch finished.
+check("re-auth (oauthLogin) fires the refresh without awaiting it", {
+    guard let a = detail.range(of: "private func oauthLogin(_ instance: ProviderInstance) async {"),
+          let b = detail.range(of: "} catch {", range: a.upperBound..<detail.endIndex) else { return false }
+    let fn = String(detail[a.lowerBound..<b.lowerBound])
+    return fn.contains("Task { await store.refreshModels(for: instance) }")
+        && !fn.contains("                await store.refreshModels(for: instance)\n")
+        && (fn.range(of: "XAIOAuthManager.shared.login")?.lowerBound ?? fn.endIndex)
+            < (fn.range(of: "Task { await store.refreshModels(for: instance) }")?.lowerBound ?? fn.startIndex)
+}())
+checkEq("all three sign-in paths in the detail view refresh detached",
+        detail.components(separatedBy: "Task { await store.refreshModels(for: instance) }").count - 1, 3)
 
 // 2 — the keyless helper and exactly which cases route through it.
 check("modelFetchAPIKey exists", store.contains("private static func modelFetchAPIKey(for instance: ProviderInstance) -> String?"))

@@ -456,7 +456,7 @@ enum DebugRPCProvider {
         if params.keys.contains("contextLimitTokens") {
             group.contextLimitTokens = params["contextLimitTokens"] as? Int
         }
-        store.updateGroup(group)
+        store.updateGroup(group, orderReason: "debug-rpc")
         return ["group": groupDict(group, store: store, includeMembers: true)]
     }
 
@@ -566,11 +566,17 @@ enum DebugRPCProvider {
         }
         let beforeIds = Set(store.entries(for: id).map(\.baseModel.id))
         let start = Date()
-        await store.refreshModels(for: instance)
+        let outcome = await store.refreshModels(for: instance, caller: "refreshModels(rpc)")
         let afterEntries = store.entries(for: id)
         let afterIds = Set(afterEntries.map(\.baseModel.id))
         return [
             "instanceId": id,
+            // [T-ios-model-refresh-visible] Same outcome the Refresh row shows.
+            "source": outcome.source.rawValue,
+            "vendorError": outcome.vendorError ?? NSNull(),
+            "listed": outcome.diff.total,
+            "removed": outcome.diff.removed,
+            "unlisted": outcome.diff.unlisted,
             "added": afterIds.subtracting(beforeIds).count,
             "updated": afterIds.intersection(beforeIds).count,
             "disappeared": beforeIds.subtracting(afterIds).count,
@@ -1425,7 +1431,9 @@ enum DebugRPCChat {
         let id = try require(params["sessionId"] as? String, "sessionId")
         let cachedVM = ViewModelCache.shared.get(for: id)
         let wasRunning = cachedVM?.isProcessing ?? false
-        cachedVM?.cancel()
+        // Same entry point as the composer's Stop, so the RPC reproduces what a
+        // user tap does ([T-subagent-stop-from-own-page]).
+        cachedVM?.stopByUser()
         return ["sessionId": id, "wasRunning": wasRunning, "cancelled": wasRunning]
     }
 

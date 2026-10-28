@@ -48,8 +48,28 @@ struct ConfigConfirmSheet: View {
                         .padding(.top, 8)
                 }
                 List {
-                    ForEach($workingItems) { $item in
-                        ConfigConfirmRow(item: $item)
+                    Section {
+                        ForEach($workingItems) { $item in
+                            ConfigConfirmRow(item: $item)
+                        }
+                    }
+                    // [T-config-readable] Batch summary: the readable sentences
+                    // of the rows still switched on, grouped by the record they
+                    // touch. Updates live as rows are toggled.
+                    if workingItems.count > 1, !summaryLines.isEmpty {
+                        Section {
+                            ForEach(Array(summaryLines.enumerated()), id: \.offset) { _, line in
+                                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                    Text(verbatim: "•")
+                                        .foregroundStyle(.secondary)
+                                    Text(verbatim: line)
+                                        .font(.subheadline)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                        } header: {
+                            Text("Summary of approved changes")
+                        }
                     }
                 }
                 .listStyle(.insetGrouped)
@@ -80,6 +100,33 @@ struct ConfigConfirmSheet: View {
 
     private var approvedCount: Int {
         workingItems.filter { $0.isApproved }.count
+    }
+
+    /// Approved rows' readable sentences, rows about the same record kept
+    /// together (first-appearance order), global settings as their own group.
+    private var summaryLines: [String] {
+        var order: [String] = []
+        var bySubject: [String: [String]] = [:]
+        for item in workingItems where item.isApproved {
+            guard let r = item.readable else { continue }
+            let key = r.subject ?? "~global"
+            if bySubject[key] == nil { order.append(key) }
+            bySubject[key, default: []].append(contentsOf: r.displayText.components(separatedBy: "\n"))
+        }
+        return order.flatMap { bySubject[$0] ?? [] }
+    }
+}
+
+/// [T-config-readable] Hairline between a change's raw values (path, old →
+/// new) and its readable sentence. System separator color: legible in light
+/// and dark mode without competing with the row separators between items.
+struct ConfigReadableDivider: View {
+    var body: some View {
+        Rectangle()
+            .fill(Color(uiColor: .separator))
+            .frame(height: 1 / UIScreen.main.scale)
+            .padding(.vertical, 2)
+            .accessibilityHidden(true)
     }
 }
 
@@ -127,6 +174,23 @@ private struct ConfigConfirmRow: View {
                 }
             }
             .font(.system(.footnote, design: .monospaced))
+
+            // [T-config-readable] What the raw values above mean, in words,
+            // set apart from them by a hairline. Both appear only together, so
+            // a row without readable text never shows a stray line.
+            if let readable = item.readable, !readable.displayText.isEmpty {
+                ConfigReadableDivider()
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: "text.bubble")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(verbatim: readable.displayText)
+                        .font(.subheadline)
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.top, 2)
+            }
 
             if item.risk == .destructive {
                 Label("This may affect later tool calls.", systemImage: "exclamationmark.triangle.fill")

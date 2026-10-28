@@ -1,0 +1,2508 @@
+{
+  "_about": "B01 restore completion counts for the providers category, shared by the iOS and Android tests. local/remote use the provider_config.json wire shape of b01_restore_scenarios.json. credentialsWritten = instance ids whose credential the restore wrote over a different value. Unit = the package's instances: new -> imported, content really changed (fields, a model entry added/changed, a credential written) -> updated once, otherwise skipped ('up to date'). Groups count on top: a restored group -> imported, a changed or same-name-merged group -> updated, an unchanged group is not counted.",
+  "cases": {
+    "identical": {
+      "about": "Backup identical to this device: everything up to date (must not regress to the 93cad55ae 'Updated N' false reading).",
+      "local": {
+        "instances": [
+          {
+            "id": "inst-1",
+            "label": "Provider 1",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p1.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-2",
+            "label": "Provider 2",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p2.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-3",
+            "label": "Provider 3",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p3.example.com",
+            "appendV1Suffix": true
+          }
+        ],
+        "modelEntries": [
+          {
+            "providerInstanceId": "inst-1",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 1A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-1/m-a"
+          },
+          {
+            "providerInstanceId": "inst-2",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 2A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-2/m-a"
+          },
+          {
+            "providerInstanceId": "inst-3",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 3A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-3/m-a"
+          }
+        ],
+        "modelGroups": [
+          {
+            "id": "g-1",
+            "name": "G1",
+            "memberEntryIds": [
+              "inst-1/m-a",
+              "inst-2/m-a"
+            ],
+            "fallbackStrategy": "default"
+          }
+        ]
+      },
+      "remote": {
+        "instances": [
+          {
+            "id": "inst-1",
+            "label": "Provider 1",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p1.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-2",
+            "label": "Provider 2",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p2.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-3",
+            "label": "Provider 3",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p3.example.com",
+            "appendV1Suffix": true
+          }
+        ],
+        "modelEntries": [
+          {
+            "providerInstanceId": "inst-1",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 1A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-1/m-a"
+          },
+          {
+            "providerInstanceId": "inst-2",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 2A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-2/m-a"
+          },
+          {
+            "providerInstanceId": "inst-3",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 3A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-3/m-a"
+          }
+        ],
+        "modelGroups": [
+          {
+            "id": "g-1",
+            "name": "G1",
+            "memberEntryIds": [
+              "inst-1/m-a",
+              "inst-2/m-a"
+            ],
+            "fallbackStrategy": "default"
+          }
+        ]
+      },
+      "credentialsWritten": [],
+      "expect": {
+        "imported": 0,
+        "updated": 0,
+        "skipped": 3
+      }
+    },
+    "instance_field_changed": {
+      "about": "Same-id instance whose label the backup changes.",
+      "local": {
+        "instances": [
+          {
+            "id": "inst-1",
+            "label": "Provider 1",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p1.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-2",
+            "label": "Provider 2",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p2.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-3",
+            "label": "Provider 3",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p3.example.com",
+            "appendV1Suffix": true
+          }
+        ],
+        "modelEntries": [
+          {
+            "providerInstanceId": "inst-1",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 1A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-1/m-a"
+          },
+          {
+            "providerInstanceId": "inst-2",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 2A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-2/m-a"
+          },
+          {
+            "providerInstanceId": "inst-3",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 3A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-3/m-a"
+          }
+        ],
+        "modelGroups": [
+          {
+            "id": "g-1",
+            "name": "G1",
+            "memberEntryIds": [
+              "inst-1/m-a",
+              "inst-2/m-a"
+            ],
+            "fallbackStrategy": "default"
+          }
+        ]
+      },
+      "remote": {
+        "instances": [
+          {
+            "id": "inst-1",
+            "label": "Renamed in backup",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p1.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-2",
+            "label": "Provider 2",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p2.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-3",
+            "label": "Provider 3",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p3.example.com",
+            "appendV1Suffix": true
+          }
+        ],
+        "modelEntries": [
+          {
+            "providerInstanceId": "inst-1",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 1A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-1/m-a"
+          },
+          {
+            "providerInstanceId": "inst-2",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 2A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-2/m-a"
+          },
+          {
+            "providerInstanceId": "inst-3",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 3A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-3/m-a"
+          }
+        ],
+        "modelGroups": [
+          {
+            "id": "g-1",
+            "name": "G1",
+            "memberEntryIds": [
+              "inst-1/m-a",
+              "inst-2/m-a"
+            ],
+            "fallbackStrategy": "default"
+          }
+        ]
+      },
+      "credentialsWritten": [],
+      "expect": {
+        "imported": 0,
+        "updated": 1,
+        "skipped": 2
+      }
+    },
+    "entry_parameter_changed": {
+      "about": "A model's parameters replaced by the backup's: its instance is updated.",
+      "local": {
+        "instances": [
+          {
+            "id": "inst-1",
+            "label": "Provider 1",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p1.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-2",
+            "label": "Provider 2",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p2.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-3",
+            "label": "Provider 3",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p3.example.com",
+            "appendV1Suffix": true
+          }
+        ],
+        "modelEntries": [
+          {
+            "providerInstanceId": "inst-1",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 1A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-1/m-a"
+          },
+          {
+            "providerInstanceId": "inst-2",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 2A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-2/m-a"
+          },
+          {
+            "providerInstanceId": "inst-3",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 3A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-3/m-a"
+          }
+        ],
+        "modelGroups": [
+          {
+            "id": "g-1",
+            "name": "G1",
+            "memberEntryIds": [
+              "inst-1/m-a",
+              "inst-2/m-a"
+            ],
+            "fallbackStrategy": "default"
+          }
+        ]
+      },
+      "remote": {
+        "instances": [
+          {
+            "id": "inst-1",
+            "label": "Provider 1",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p1.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-2",
+            "label": "Provider 2",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p2.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-3",
+            "label": "Provider 3",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p3.example.com",
+            "appendV1Suffix": true
+          }
+        ],
+        "modelEntries": [
+          {
+            "providerInstanceId": "inst-1",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 1A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-1/m-a"
+          },
+          {
+            "providerInstanceId": "inst-2",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 2A",
+              "provider": "openAI"
+            },
+            "overrides": {
+              "maxOutputTokens": 4096
+            },
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-2/m-a"
+          },
+          {
+            "providerInstanceId": "inst-3",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 3A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-3/m-a"
+          }
+        ],
+        "modelGroups": [
+          {
+            "id": "g-1",
+            "name": "G1",
+            "memberEntryIds": [
+              "inst-1/m-a",
+              "inst-2/m-a"
+            ],
+            "fallbackStrategy": "default"
+          }
+        ]
+      },
+      "credentialsWritten": [],
+      "expect": {
+        "imported": 0,
+        "updated": 1,
+        "skipped": 2
+      }
+    },
+    "entry_hidden_changed": {
+      "about": "A model's hidden state replaced by the backup's.",
+      "local": {
+        "instances": [
+          {
+            "id": "inst-1",
+            "label": "Provider 1",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p1.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-2",
+            "label": "Provider 2",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p2.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-3",
+            "label": "Provider 3",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p3.example.com",
+            "appendV1Suffix": true
+          }
+        ],
+        "modelEntries": [
+          {
+            "providerInstanceId": "inst-1",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 1A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-1/m-a"
+          },
+          {
+            "providerInstanceId": "inst-2",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 2A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-2/m-a"
+          },
+          {
+            "providerInstanceId": "inst-3",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 3A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-3/m-a"
+          }
+        ],
+        "modelGroups": [
+          {
+            "id": "g-1",
+            "name": "G1",
+            "memberEntryIds": [
+              "inst-1/m-a",
+              "inst-2/m-a"
+            ],
+            "fallbackStrategy": "default"
+          }
+        ]
+      },
+      "remote": {
+        "instances": [
+          {
+            "id": "inst-1",
+            "label": "Provider 1",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p1.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-2",
+            "label": "Provider 2",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p2.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-3",
+            "label": "Provider 3",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p3.example.com",
+            "appendV1Suffix": true
+          }
+        ],
+        "modelEntries": [
+          {
+            "providerInstanceId": "inst-1",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 1A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-1/m-a"
+          },
+          {
+            "providerInstanceId": "inst-2",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 2A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": true,
+            "uuid": "inst-2/m-a"
+          },
+          {
+            "providerInstanceId": "inst-3",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 3A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-3/m-a"
+          }
+        ],
+        "modelGroups": [
+          {
+            "id": "g-1",
+            "name": "G1",
+            "memberEntryIds": [
+              "inst-1/m-a",
+              "inst-2/m-a"
+            ],
+            "fallbackStrategy": "default"
+          }
+        ]
+      },
+      "credentialsWritten": [],
+      "expect": {
+        "imported": 0,
+        "updated": 1,
+        "skipped": 2
+      }
+    },
+    "entry_added_to_existing_instance": {
+      "about": "The backup brings a model this device's instance lacks.",
+      "local": {
+        "instances": [
+          {
+            "id": "inst-1",
+            "label": "Provider 1",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p1.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-2",
+            "label": "Provider 2",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p2.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-3",
+            "label": "Provider 3",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p3.example.com",
+            "appendV1Suffix": true
+          }
+        ],
+        "modelEntries": [
+          {
+            "providerInstanceId": "inst-1",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 1A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-1/m-a"
+          },
+          {
+            "providerInstanceId": "inst-2",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 2A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-2/m-a"
+          },
+          {
+            "providerInstanceId": "inst-3",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 3A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-3/m-a"
+          }
+        ],
+        "modelGroups": [
+          {
+            "id": "g-1",
+            "name": "G1",
+            "memberEntryIds": [
+              "inst-1/m-a",
+              "inst-2/m-a"
+            ],
+            "fallbackStrategy": "default"
+          }
+        ]
+      },
+      "remote": {
+        "instances": [
+          {
+            "id": "inst-1",
+            "label": "Provider 1",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p1.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-2",
+            "label": "Provider 2",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p2.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-3",
+            "label": "Provider 3",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p3.example.com",
+            "appendV1Suffix": true
+          }
+        ],
+        "modelEntries": [
+          {
+            "providerInstanceId": "inst-1",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 1A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-1/m-a"
+          },
+          {
+            "providerInstanceId": "inst-2",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 2A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-2/m-a"
+          },
+          {
+            "providerInstanceId": "inst-3",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 3A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-3/m-a"
+          },
+          {
+            "providerInstanceId": "inst-2",
+            "model": {
+              "id": "m-b",
+              "displayName": "Model 2B",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-2/m-b"
+          }
+        ],
+        "modelGroups": [
+          {
+            "id": "g-1",
+            "name": "G1",
+            "memberEntryIds": [
+              "inst-1/m-a",
+              "inst-2/m-a"
+            ],
+            "fallbackStrategy": "default"
+          }
+        ]
+      },
+      "credentialsWritten": [],
+      "expect": {
+        "imported": 0,
+        "updated": 1,
+        "skipped": 2
+      }
+    },
+    "credential_written": {
+      "about": "The backup's API key written over a different one (credentialsWritten comes from the credential restore).",
+      "local": {
+        "instances": [
+          {
+            "id": "inst-1",
+            "label": "Provider 1",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p1.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-2",
+            "label": "Provider 2",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p2.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-3",
+            "label": "Provider 3",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p3.example.com",
+            "appendV1Suffix": true
+          }
+        ],
+        "modelEntries": [
+          {
+            "providerInstanceId": "inst-1",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 1A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-1/m-a"
+          },
+          {
+            "providerInstanceId": "inst-2",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 2A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-2/m-a"
+          },
+          {
+            "providerInstanceId": "inst-3",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 3A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-3/m-a"
+          }
+        ],
+        "modelGroups": [
+          {
+            "id": "g-1",
+            "name": "G1",
+            "memberEntryIds": [
+              "inst-1/m-a",
+              "inst-2/m-a"
+            ],
+            "fallbackStrategy": "default"
+          }
+        ]
+      },
+      "remote": {
+        "instances": [
+          {
+            "id": "inst-1",
+            "label": "Provider 1",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p1.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-2",
+            "label": "Provider 2",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p2.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-3",
+            "label": "Provider 3",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p3.example.com",
+            "appendV1Suffix": true
+          }
+        ],
+        "modelEntries": [
+          {
+            "providerInstanceId": "inst-1",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 1A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-1/m-a"
+          },
+          {
+            "providerInstanceId": "inst-2",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 2A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-2/m-a"
+          },
+          {
+            "providerInstanceId": "inst-3",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 3A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-3/m-a"
+          }
+        ],
+        "modelGroups": [
+          {
+            "id": "g-1",
+            "name": "G1",
+            "memberEntryIds": [
+              "inst-1/m-a",
+              "inst-2/m-a"
+            ],
+            "fallbackStrategy": "default"
+          }
+        ]
+      },
+      "credentialsWritten": [
+        "inst-3"
+      ],
+      "expect": {
+        "imported": 0,
+        "updated": 1,
+        "skipped": 2
+      }
+    },
+    "instance_changed_several_ways": {
+      "about": "Fields, a model and the key of one instance all change: counted once.",
+      "local": {
+        "instances": [
+          {
+            "id": "inst-1",
+            "label": "Provider 1",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p1.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-2",
+            "label": "Provider 2",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p2.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-3",
+            "label": "Provider 3",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p3.example.com",
+            "appendV1Suffix": true
+          }
+        ],
+        "modelEntries": [
+          {
+            "providerInstanceId": "inst-1",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 1A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-1/m-a"
+          },
+          {
+            "providerInstanceId": "inst-2",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 2A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-2/m-a"
+          },
+          {
+            "providerInstanceId": "inst-3",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 3A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-3/m-a"
+          }
+        ],
+        "modelGroups": [
+          {
+            "id": "g-1",
+            "name": "G1",
+            "memberEntryIds": [
+              "inst-1/m-a",
+              "inst-2/m-a"
+            ],
+            "fallbackStrategy": "default"
+          }
+        ]
+      },
+      "remote": {
+        "instances": [
+          {
+            "id": "inst-1",
+            "label": "Renamed",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p1.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-2",
+            "label": "Provider 2",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p2.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-3",
+            "label": "Provider 3",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p3.example.com",
+            "appendV1Suffix": true
+          }
+        ],
+        "modelEntries": [
+          {
+            "providerInstanceId": "inst-1",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 1A",
+              "provider": "openAI"
+            },
+            "overrides": {
+              "displayName": "X"
+            },
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-1/m-a"
+          },
+          {
+            "providerInstanceId": "inst-2",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 2A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-2/m-a"
+          },
+          {
+            "providerInstanceId": "inst-3",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 3A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-3/m-a"
+          }
+        ],
+        "modelGroups": [
+          {
+            "id": "g-1",
+            "name": "G1",
+            "memberEntryIds": [
+              "inst-1/m-a",
+              "inst-2/m-a"
+            ],
+            "fallbackStrategy": "default"
+          }
+        ]
+      },
+      "credentialsWritten": [
+        "inst-1"
+      ],
+      "expect": {
+        "imported": 0,
+        "updated": 1,
+        "skipped": 2
+      }
+    },
+    "new_instance": {
+      "about": "An instance this device does not have is imported; its key being written does not also make it updated.",
+      "local": {
+        "instances": [
+          {
+            "id": "inst-1",
+            "label": "Provider 1",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p1.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-2",
+            "label": "Provider 2",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p2.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-3",
+            "label": "Provider 3",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p3.example.com",
+            "appendV1Suffix": true
+          }
+        ],
+        "modelEntries": [
+          {
+            "providerInstanceId": "inst-1",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 1A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-1/m-a"
+          },
+          {
+            "providerInstanceId": "inst-2",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 2A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-2/m-a"
+          },
+          {
+            "providerInstanceId": "inst-3",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 3A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-3/m-a"
+          }
+        ],
+        "modelGroups": [
+          {
+            "id": "g-1",
+            "name": "G1",
+            "memberEntryIds": [
+              "inst-1/m-a",
+              "inst-2/m-a"
+            ],
+            "fallbackStrategy": "default"
+          }
+        ]
+      },
+      "remote": {
+        "instances": [
+          {
+            "id": "inst-1",
+            "label": "Provider 1",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p1.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-2",
+            "label": "Provider 2",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p2.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-3",
+            "label": "Provider 3",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p3.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-4",
+            "label": "Provider 4",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p4.example.com",
+            "appendV1Suffix": true
+          }
+        ],
+        "modelEntries": [
+          {
+            "providerInstanceId": "inst-1",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 1A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-1/m-a"
+          },
+          {
+            "providerInstanceId": "inst-2",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 2A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-2/m-a"
+          },
+          {
+            "providerInstanceId": "inst-3",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 3A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-3/m-a"
+          },
+          {
+            "providerInstanceId": "inst-4",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 4A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-4/m-a"
+          }
+        ],
+        "modelGroups": [
+          {
+            "id": "g-1",
+            "name": "G1",
+            "memberEntryIds": [
+              "inst-1/m-a",
+              "inst-2/m-a"
+            ],
+            "fallbackStrategy": "default"
+          }
+        ]
+      },
+      "credentialsWritten": [
+        "inst-4"
+      ],
+      "expect": {
+        "imported": 1,
+        "updated": 0,
+        "skipped": 3
+      }
+    },
+    "local_only_instance_ignored": {
+      "about": "An instance only on this device is not part of the package and not counted.",
+      "local": {
+        "instances": [
+          {
+            "id": "inst-1",
+            "label": "Provider 1",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p1.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-2",
+            "label": "Provider 2",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p2.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-3",
+            "label": "Provider 3",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p3.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-9",
+            "label": "Provider 9",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p9.example.com",
+            "appendV1Suffix": true
+          }
+        ],
+        "modelEntries": [
+          {
+            "providerInstanceId": "inst-1",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 1A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-1/m-a"
+          },
+          {
+            "providerInstanceId": "inst-2",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 2A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-2/m-a"
+          },
+          {
+            "providerInstanceId": "inst-3",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 3A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-3/m-a"
+          },
+          {
+            "providerInstanceId": "inst-9",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 9A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-9/m-a"
+          }
+        ],
+        "modelGroups": [
+          {
+            "id": "g-1",
+            "name": "G1",
+            "memberEntryIds": [
+              "inst-1/m-a",
+              "inst-2/m-a"
+            ],
+            "fallbackStrategy": "default"
+          }
+        ]
+      },
+      "remote": {
+        "instances": [
+          {
+            "id": "inst-1",
+            "label": "Provider 1",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p1.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-2",
+            "label": "Provider 2",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p2.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-3",
+            "label": "Provider 3",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p3.example.com",
+            "appendV1Suffix": true
+          }
+        ],
+        "modelEntries": [
+          {
+            "providerInstanceId": "inst-1",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 1A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-1/m-a"
+          },
+          {
+            "providerInstanceId": "inst-2",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 2A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-2/m-a"
+          },
+          {
+            "providerInstanceId": "inst-3",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 3A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-3/m-a"
+          }
+        ],
+        "modelGroups": [
+          {
+            "id": "g-1",
+            "name": "G1",
+            "memberEntryIds": [
+              "inst-1/m-a",
+              "inst-2/m-a"
+            ],
+            "fallbackStrategy": "default"
+          }
+        ]
+      },
+      "credentialsWritten": [],
+      "expect": {
+        "imported": 0,
+        "updated": 0,
+        "skipped": 3
+      }
+    },
+    "group_restored": {
+      "about": "A group deleted on this device comes back: imported.",
+      "local": {
+        "instances": [
+          {
+            "id": "inst-1",
+            "label": "Provider 1",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p1.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-2",
+            "label": "Provider 2",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p2.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-3",
+            "label": "Provider 3",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p3.example.com",
+            "appendV1Suffix": true
+          }
+        ],
+        "modelEntries": [
+          {
+            "providerInstanceId": "inst-1",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 1A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-1/m-a"
+          },
+          {
+            "providerInstanceId": "inst-2",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 2A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-2/m-a"
+          },
+          {
+            "providerInstanceId": "inst-3",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 3A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-3/m-a"
+          }
+        ],
+        "modelGroups": []
+      },
+      "remote": {
+        "instances": [
+          {
+            "id": "inst-1",
+            "label": "Provider 1",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p1.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-2",
+            "label": "Provider 2",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p2.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-3",
+            "label": "Provider 3",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p3.example.com",
+            "appendV1Suffix": true
+          }
+        ],
+        "modelEntries": [
+          {
+            "providerInstanceId": "inst-1",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 1A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-1/m-a"
+          },
+          {
+            "providerInstanceId": "inst-2",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 2A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-2/m-a"
+          },
+          {
+            "providerInstanceId": "inst-3",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 3A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-3/m-a"
+          }
+        ],
+        "modelGroups": [
+          {
+            "id": "g-1",
+            "name": "G1",
+            "memberEntryIds": [
+              "inst-1/m-a",
+              "inst-2/m-a"
+            ],
+            "fallbackStrategy": "default"
+          }
+        ]
+      },
+      "credentialsWritten": [],
+      "expect": {
+        "imported": 1,
+        "updated": 0,
+        "skipped": 3
+      }
+    },
+    "group_content_changed": {
+      "about": "A same-id group whose content the backup changes: updated.",
+      "local": {
+        "instances": [
+          {
+            "id": "inst-1",
+            "label": "Provider 1",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p1.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-2",
+            "label": "Provider 2",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p2.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-3",
+            "label": "Provider 3",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p3.example.com",
+            "appendV1Suffix": true
+          }
+        ],
+        "modelEntries": [
+          {
+            "providerInstanceId": "inst-1",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 1A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-1/m-a"
+          },
+          {
+            "providerInstanceId": "inst-2",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 2A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-2/m-a"
+          },
+          {
+            "providerInstanceId": "inst-3",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 3A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-3/m-a"
+          }
+        ],
+        "modelGroups": [
+          {
+            "id": "g-1",
+            "name": "G1",
+            "memberEntryIds": [
+              "inst-1/m-a",
+              "inst-2/m-a"
+            ],
+            "fallbackStrategy": "default"
+          }
+        ]
+      },
+      "remote": {
+        "instances": [
+          {
+            "id": "inst-1",
+            "label": "Provider 1",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p1.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-2",
+            "label": "Provider 2",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p2.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-3",
+            "label": "Provider 3",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p3.example.com",
+            "appendV1Suffix": true
+          }
+        ],
+        "modelEntries": [
+          {
+            "providerInstanceId": "inst-1",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 1A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-1/m-a"
+          },
+          {
+            "providerInstanceId": "inst-2",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 2A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-2/m-a"
+          },
+          {
+            "providerInstanceId": "inst-3",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 3A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-3/m-a"
+          }
+        ],
+        "modelGroups": [
+          {
+            "id": "g-1",
+            "name": "G1",
+            "memberEntryIds": [
+              "inst-1/m-a",
+              "inst-2/m-a"
+            ],
+            "fallbackStrategy": "always"
+          }
+        ]
+      },
+      "credentialsWritten": [],
+      "expect": {
+        "imported": 0,
+        "updated": 1,
+        "skipped": 3
+      }
+    },
+    "same_name_merge": {
+      "about": "A backup group with this device's group name and another id merges into the local one: updated even when the content matched.",
+      "local": {
+        "instances": [
+          {
+            "id": "inst-1",
+            "label": "Provider 1",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p1.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-2",
+            "label": "Provider 2",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p2.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-3",
+            "label": "Provider 3",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p3.example.com",
+            "appendV1Suffix": true
+          }
+        ],
+        "modelEntries": [
+          {
+            "providerInstanceId": "inst-1",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 1A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-1/m-a"
+          },
+          {
+            "providerInstanceId": "inst-2",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 2A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-2/m-a"
+          },
+          {
+            "providerInstanceId": "inst-3",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 3A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-3/m-a"
+          }
+        ],
+        "modelGroups": [
+          {
+            "id": "g-1",
+            "name": "G1",
+            "memberEntryIds": [
+              "inst-1/m-a",
+              "inst-2/m-a"
+            ],
+            "fallbackStrategy": "default"
+          }
+        ]
+      },
+      "remote": {
+        "instances": [
+          {
+            "id": "inst-1",
+            "label": "Provider 1",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p1.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-2",
+            "label": "Provider 2",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p2.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-3",
+            "label": "Provider 3",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p3.example.com",
+            "appendV1Suffix": true
+          }
+        ],
+        "modelEntries": [
+          {
+            "providerInstanceId": "inst-1",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 1A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-1/m-a"
+          },
+          {
+            "providerInstanceId": "inst-2",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 2A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-2/m-a"
+          },
+          {
+            "providerInstanceId": "inst-3",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 3A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-3/m-a"
+          }
+        ],
+        "modelGroups": [
+          {
+            "id": "g-backup",
+            "name": "G1",
+            "memberEntryIds": [
+              "inst-1/m-a",
+              "inst-2/m-a"
+            ],
+            "fallbackStrategy": "default"
+          }
+        ]
+      },
+      "credentialsWritten": [],
+      "expect": {
+        "imported": 0,
+        "updated": 1,
+        "skipped": 3,
+        "mergedByName": {
+          "g-backup": "g-1"
+        }
+      }
+    },
+    "device_repro_2026_10_15": {
+      "about": "The Pixel 4a run: group deleted, a model renamed and the key changed on the device, then the backup restored. Was imported=0 updated=0 skipped=27.",
+      "local": {
+        "instances": [
+          {
+            "id": "inst-1",
+            "label": "Provider 1",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p1.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-2",
+            "label": "Provider 2",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p2.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-3",
+            "label": "Provider 3",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p3.example.com",
+            "appendV1Suffix": true
+          }
+        ],
+        "modelEntries": [
+          {
+            "providerInstanceId": "inst-1",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 1A",
+              "provider": "openAI"
+            },
+            "overrides": {
+              "displayName": "RENAMED-A"
+            },
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-1/m-a"
+          },
+          {
+            "providerInstanceId": "inst-2",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 2A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-2/m-a"
+          },
+          {
+            "providerInstanceId": "inst-3",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 3A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-3/m-a"
+          }
+        ],
+        "modelGroups": []
+      },
+      "remote": {
+        "instances": [
+          {
+            "id": "inst-1",
+            "label": "Provider 1",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p1.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-2",
+            "label": "Provider 2",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p2.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-3",
+            "label": "Provider 3",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p3.example.com",
+            "appendV1Suffix": true
+          }
+        ],
+        "modelEntries": [
+          {
+            "providerInstanceId": "inst-1",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 1A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-1/m-a"
+          },
+          {
+            "providerInstanceId": "inst-2",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 2A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-2/m-a"
+          },
+          {
+            "providerInstanceId": "inst-3",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 3A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-3/m-a"
+          }
+        ],
+        "modelGroups": [
+          {
+            "id": "g-1",
+            "name": "G1",
+            "memberEntryIds": [
+              "inst-1/m-a",
+              "inst-2/m-a"
+            ],
+            "fallbackStrategy": "default"
+          }
+        ]
+      },
+      "credentialsWritten": [
+        "inst-1"
+      ],
+      "expect": {
+        "imported": 1,
+        "updated": 1,
+        "skipped": 2
+      }
+    },
+    "created_at_precision_only": {
+      "about": "Only createdAt differs, by the milliseconds an iOS package drops: not content, so still up to date.",
+      "local": {
+        "instances": [
+          {
+            "id": "inst-1",
+            "label": "Provider 1",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00.123Z",
+            "customBaseURL": "https://p1.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-2",
+            "label": "Provider 2",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00.123Z",
+            "customBaseURL": "https://p2.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-3",
+            "label": "Provider 3",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00.123Z",
+            "customBaseURL": "https://p3.example.com",
+            "appendV1Suffix": true
+          }
+        ],
+        "modelEntries": [
+          {
+            "providerInstanceId": "inst-1",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 1A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-1/m-a"
+          },
+          {
+            "providerInstanceId": "inst-2",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 2A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-2/m-a"
+          },
+          {
+            "providerInstanceId": "inst-3",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 3A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-3/m-a"
+          }
+        ],
+        "modelGroups": [
+          {
+            "id": "g-1",
+            "name": "G1",
+            "memberEntryIds": [
+              "inst-1/m-a",
+              "inst-2/m-a"
+            ],
+            "fallbackStrategy": "default"
+          }
+        ]
+      },
+      "remote": {
+        "instances": [
+          {
+            "id": "inst-1",
+            "label": "Provider 1",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p1.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-2",
+            "label": "Provider 2",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p2.example.com",
+            "appendV1Suffix": true
+          },
+          {
+            "id": "inst-3",
+            "label": "Provider 3",
+            "providerType": "openAI",
+            "credentialType": "apiKey",
+            "isEnabled": true,
+            "createdAt": "2026-10-01T08:00:00Z",
+            "customBaseURL": "https://p3.example.com",
+            "appendV1Suffix": true
+          }
+        ],
+        "modelEntries": [
+          {
+            "providerInstanceId": "inst-1",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 1A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-1/m-a"
+          },
+          {
+            "providerInstanceId": "inst-2",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 2A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-2/m-a"
+          },
+          {
+            "providerInstanceId": "inst-3",
+            "model": {
+              "id": "m-a",
+              "displayName": "Model 3A",
+              "provider": "openAI"
+            },
+            "overrides": {},
+            "isCustom": true,
+            "isHidden": false,
+            "uuid": "inst-3/m-a"
+          }
+        ],
+        "modelGroups": [
+          {
+            "id": "g-1",
+            "name": "G1",
+            "memberEntryIds": [
+              "inst-1/m-a",
+              "inst-2/m-a"
+            ],
+            "fallbackStrategy": "default"
+          }
+        ]
+      },
+      "credentialsWritten": [],
+      "expect": {
+        "imported": 0,
+        "updated": 0,
+        "skipped": 3
+      }
+    }
+  }
+}

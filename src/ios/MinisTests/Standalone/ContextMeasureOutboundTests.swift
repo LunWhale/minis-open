@@ -26,6 +26,41 @@
 // the real sources so a rewrite fails here instead of passing a stale copy.
 import Foundation
 
+/// The sources that used to be the single file Agent/Chat/ChatStore.swift -
+/// the actor plus the files it was split into - read as one text.
+func chatStoreSource() -> String {
+    let chat = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Agent/Chat")
+    let names = ["ChatStore", "ChatStore+Schema", "ChatStore+SessionCRUD", "ChatStore+SessionList",
+                 "ChatStore+Search", "ChatStore+SessionQueries", "ChatStore+Folders",
+                 "ChatStore+SessionDeletion", "ChatStore+StoredPreview", "ChatStore+Messages",
+                 "ChatStore+Media", "ChatStore+CompactMarkers", "ChatStore+Tombstones",
+                 "ChatStore+WebAppShortcuts", "ChatStore+Maintenance", "ChatStore+Helpers",
+                 "ChatStore+UsageStats", "ChatStoreModels", "ContentPart+ProviderConversion",
+                 "RawMessage+Conversion", "ChatStore+SyncDirty", "ChatStore+SyncRemoteSessions",
+                 "ChatStore+SyncRemoteRecords", "ChatStore+BackupRestore"]
+    return names.compactMap { try? String(contentsOf: chat.appendingPathComponent($0 + ".swift"), encoding: .utf8) }
+        .joined(separator: "\n")
+}
+
+/// The sources that used to be the single file Agent/Chat/AIChatViewModel.swift -
+/// the class body plus the AIChatViewModel+<Concern>.swift files it was split
+/// into (the older extension files are NOT included) - read as one text.
+func chatViewModelSource() -> String {
+    let chat = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Agent/Chat")
+    let names = ["AIChatViewModel", "AIChatViewModel+Lifecycle", "AIChatViewModel+ContextUsage",
+                 "AIChatViewModel+StreamingUI", "AIChatViewModel+Speech", "AIChatViewModel+AutoPlayAudio",
+                 "AIChatViewModel+SystemPrompt", "AIChatViewModel+Send", "AIChatViewModel+Rerun",
+                 "AIChatViewModel+EditMessage", "AIChatViewModel+Cancel", "AIChatViewModel+PromptQueue",
+                 "AIChatViewModel+DebugDumps", "AIChatViewModel+TurnCompletion", "AIChatViewModel+AgentLoop",
+                 "AIChatViewModel+ThinkingLevel", "LLMProviderError"]
+    return names.compactMap { try? String(contentsOf: chat.appendingPathComponent($0 + ".swift"), encoding: .utf8) }
+        .joined(separator: "\n")
+}
+
 var failures = 0
 func check(_ label: String, _ cond: Bool) {
     print(cond ? "  ✅ \(label)" : "  ❌ \(label) — expected true, got false")
@@ -384,9 +419,9 @@ print("\n══ [9] source invariants ══")
 do {
     let policy = source("Agent/Chat/ContextPolicy.swift")
     let compaction = source("Agent/Chat/AIChatViewModel+Compaction.swift")
-    let vm = source("Agent/Chat/AIChatViewModel.swift")
+    let vm = chatViewModelSource()
     let persist = source("Agent/Chat/AIChatViewModel+Persistence.swift")
-    let store = source("Agent/Chat/ChatStore.swift")
+    let store = chatStoreSource()
     let models = source("Agent/Chat/ChatModels.swift")
     guard ![policy, compaction, vm, persist, store, models].contains(where: \.isEmpty) else {
         check("sources readable", false); exit(1)
@@ -396,14 +431,14 @@ do {
     check("estimator weights match the port",
           policy.contains("let tokens = Double(letters) / 4.5 + Double(digits) / 2.0")
           && policy.contains("+ Double(asciiOther) * 0.35 + Double(nonASCII)"))
-    check("calibration band matches the port", policy.contains("calibrationRange: ClosedRange<Double> = 0.8...3.0"))
+    check("calibration band matches the port", policy.contains("calibrationRange: ClosedRange<Double> = 0.8...8.0"))
 
     // The guard judges the measurement; the stale raw report is gone.
     check("the check judges the outbound measurement", compaction.contains("let measured = m.measured\n        let result = policy.check(estimatedTokens: measured, contextWindow: contextWindow)"))
     check("…not max(estimate, report)", !compaction.contains("max(estimated, apiReported)"))
     check("the raw-report mirror no longer exists", !vm.contains("var liveContextTokensForCapacity"))
     check("the measurement reads the compaction-aware history",
-          compaction.contains("let history = ContextSizeMeter.estimateTokens(effectiveAgentHistoryUncounted())")
+          compaction.contains("let history = ContextSizeMeter.estimateTokens(effectiveAgentHistoryUncounted(),\n                                                      includeReasoning: contextEchoesReasoning)")
           && compaction.contains("ContextSizeMeter.calibrated(history + contextFixedTokens, ratio: ratio)"))
 
     // Calibration is paired with the SAME request.
@@ -552,11 +587,12 @@ print("\n══ [14] source invariants — optimisation round ══")
 do {
     let policy = source("Agent/Chat/ContextPolicy.swift")
     let compaction = source("Agent/Chat/AIChatViewModel+Compaction.swift")
-    let vm = source("Agent/Chat/AIChatViewModel.swift")
-    let store = source("Agent/Chat/ChatStore.swift")
+    let vm = chatViewModelSource()
+    let store = chatStoreSource()
     check("byte scan in the shipping meter", policy.contains("if b & 0xC0 != 0x80 { nonASCII += 1 }"))
     check("persisted messages are cached by id AND content shape",
-          policy.contains("guard let id = msg.dbMessageId else { return uncachedEstimate(msg) }")
+          policy.contains("guard let id = msg.dbMessageId else { return uncachedEstimate(msg, reasoning: reasoning, echoesField: echoesField) }")
+          && policy.contains("if includeReasoning { shape += \"|R\\(reasoning.utf8.count)\\(echoesField ? \"f\" : \"\")\" }")
           && policy.contains("shape += \"|r\\(content.utf8.count)"))
     check("…and an offloaded argument changes the key", policy.contains("offloaded ? \"o\" : \"\""))
     check("ratios are kept per model", vm.contains("var contextCalibrationRatios: [String: Double] = [:]"))
@@ -601,7 +637,7 @@ do {
     let compaction = source("Agent/Chat/AIChatViewModel+Compaction.swift")
     check("the builder trims the warm-up before appending it",
           persist.contains("let fitted = trimWarmUpToFit(preAnchorPruned, rest: postAnchor, summaryText: summaryText)"))
-    check("only when over the line", compaction.contains("guard ContextSizeMeter.estimateTokens(warmUp) + restTokens >= budget else { return (warmUp, true) }"))
+    check("only when over the line", compaction.contains("guard ContextSizeMeter.estimateTokens(warmUp, includeReasoning: echo) + restTokens >= budget else { return (warmUp, true) }"))
     // [T-ctx-warmup-trim-undecided] Nothing to measure against → undecided.
     check("no entry / window / fixed size yet → undecided, not 'drop nothing'",
           compaction.contains("guard let entry = resolveCurrentEntry() else { return (warmUp, false) }")
@@ -694,7 +730,7 @@ do {
 
     let policy = source("Agent/Chat/ContextPolicy.swift")
     let compaction = source("Agent/Chat/AIChatViewModel+Compaction.swift")
-    let vm = source("Agent/Chat/AIChatViewModel.swift")
+    let vm = chatViewModelSource()
     check("shipping rule matches the port", policy.contains("static let calibrationFallRate = 0.3")
           && policy.contains("return previous + calibrationFallRate * (sample - previous)"))
     check("live calibration blends into the model's OWN ratio only",

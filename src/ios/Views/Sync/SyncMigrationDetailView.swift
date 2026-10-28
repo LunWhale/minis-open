@@ -98,6 +98,11 @@ struct SyncMigrationDetailView: View {
         /// until the app is relaunched. Distinct from `status`, which stays
         /// "in_progress" across a deferral.
         let isSuspended: Bool
+        /// [T-icloud-migration-keeps-going] Why it suspended, the engine is
+        /// driving right now, and what the Phase 3 drain is doing.
+        var suspendedReason: String? = nil
+        var isDriving: Bool = false
+        var activity: MigrationDrain.Activity? = nil
     }
 
     var body: some View {
@@ -301,15 +306,34 @@ struct SyncMigrationDetailView: View {
                     // counter plus an ETA computed from a rate of zero. Say
                     // plainly that it is paused and name the one action that
                     // resumes it, and drop the meaningless estimate.
+                    //
+                    // [T-icloud-migration-keeps-going] Suspension now happens only
+                    // after a whole window with no progress, resumes on its own
+                    // (foreground, opening this page), and can be resumed here.
+                    // While it runs, say what it is actually doing instead of
+                    // letting a throttled wait read as "stuck".
                     if m.isSuspended {
-                        HStack(spacing: 8) {
+                        HStack(alignment: .top, spacing: 8) {
                             Image(systemName: "pause.circle.fill")
                                 .foregroundStyle(.orange)
-                            Text("Paused — reopen Minis to continue")
+                            Text("Paused — no progress for 30 minutes. Minis continues automatically when you come back to the app.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
+                        Button {
+                            Task { await MigrationEngine.shared.resumeIfSuspended(trigger: "continueButton", force: true) }
+                            Task {
+                                try? await Task.sleep(nanoseconds: 500_000_000)
+                                await refresh()
+                            }
+                        } label: {
+                            Text("Continue Migration")
+                                .frame(maxWidth: .infinity, alignment: .center)
+                        }
                     } else {
+                        if let line = migrationActivityLine(m.activity) {
+                            LabeledContent(AppLocalized("Activity"), value: line)
+                        }
                         LabeledContent(AppLocalized("Estimated time"), value: estimateETA(remaining: max(0, m.pushTotal - m.pushDone), rps: vm.ratePerSecond))
                     }
                     Button(role: .destructive) {
@@ -842,9 +866,12 @@ struct SyncMigrationDetailView: View {
         setIdleTimerDisabled(hasWork && scenePhase == .active)
     }
 
+    /// [T-idle-timer-lease] The sheet's own lease. Writing the flag directly
+    /// set it to false whenever there was no pending push, which also turned
+    /// off Keep Screen Awake and the backup's lock.
     private func setIdleTimerDisabled(_ disabled: Bool) {
 #if canImport(UIKit) && !os(macOS)
-        UIApplication.shared.isIdleTimerDisabled = disabled
+        IdleTimerLease.set(.syncMigration, held: disabled, reason: "migration")
 #endif
     }
 
@@ -999,7 +1026,30 @@ struct SyncMigrationDetailView: View {
     /// then every 5s. Skips the refresh while backgrounded — the sheet has nothing to
     /// display then, and it resumes on the next tick after return to foreground.
     @MainActor
+    /// [T-icloud-migration-keeps-going] One line for what the Phase 3 drain is
+    /// doing; nil when there is nothing to add to the status row.
+    private func migrationActivityLine(_ activity: MigrationDrain.Activity?) -> String? {
+        guard let activity else { return nil }
+        let time: (Date) -> String = { $0.formatted(date: .omitted, time: .shortened) }
+        switch activity {
+        case .pushing(let window):
+            return String(format: AppLocalized("Pushing (window %lld)"), window)
+        case .blocked(.throttled(let until), _):
+            return String(format: AppLocalized("Waiting — iCloud rate limit until %@"), time(until))
+        case .blocked(.userPaused(let until), _):
+            return String(format: AppLocalized("Paused by you until %@"), time(until))
+        case .blocked(.offline, _):
+            return AppLocalized("Waiting for network")
+        }
+    }
+
     private func refreshLoop() async {
+        // [T-icloud-migration-keeps-going] Opening this page resumes a
+        // suspended migration (subject to the auto-resume interval). Its own
+        // Task: the run lasts far longer than the page, and must not end with it.
+        if #available(iOS 17.0, *) {
+            Task { await MigrationEngine.shared.resumeIfSuspended(trigger: "syncSheet") }
+        }
         await refresh()
         while !Task.isCancelled {
             do {
@@ -1058,7 +1108,10 @@ struct SyncMigrationDetailView: View {
                 v1Deleted: s.v1Deleted,
                 v1DeletePending: s.v1DeletePending,
                 lastError: s.lastError,
-                isSuspended: s.isSuspended
+                isSuspended: s.isSuspended,
+                suspendedReason: s.suspendedReason,
+                isDriving: s.isDriving,
+                activity: s.activity
             )
         }
         vm = next

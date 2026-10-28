@@ -70,7 +70,7 @@ Five things move together; missing any one fails silently:
    App Store review reads them.
 4. `Info.plist` → `CFBundleLocalizations` — a locale missing here is not
    offered in iOS Settings and system controls fall back to English.
-5. The in-app picker in `ContentView.swift`. `Bundle.setLanguage` resolves via
+5. The in-app picker in `Views/Settings/AppearanceSettingsView.swift`. `Bundle.setLanguage` resolves via
    `path(forResource:ofType:"lproj")` and falls back to the system language in
    silence, so a picker entry without a real `.lproj` looks like a no-op bug.
 

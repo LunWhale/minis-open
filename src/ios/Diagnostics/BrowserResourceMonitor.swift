@@ -13,7 +13,7 @@ private let logger = AppLogger(category: "BrowserResourceMonitor")
 /// don't have enough signal to tell those apart, so this samples the resource
 /// picture around every action.
 ///
-/// Deliberately NOT reusing `SystemResourceMonitor` (AIChatView.swift): that is
+/// Deliberately NOT reusing `SystemResourceMonitor` (AIChatView/Support/): that is
 /// a `@Published` UI ticker on a 2s main-run-loop `Timer` scoped to a visible
 /// sheet, samples *system-wide* CPU via `host_statistics`, and stops when its
 /// view disappears — precisely the moment we most need data (backgrounded, no

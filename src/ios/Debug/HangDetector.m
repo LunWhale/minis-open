@@ -11,6 +11,7 @@
 #import <os/lock.h>
 #import <pthread.h>
 #import <dlfcn.h>
+#import <mach-o/loader.h>
 #import <stdatomic.h>
 #import <unistd.h>
 #import <fcntl.h>
@@ -47,6 +48,10 @@ static uint64_t g_allThreadsDumpedHash = 0;
 // Fixed 100ms poll regardless of threshold — lets us re-sample throughout
 // a 10s watchdog window instead of only once per second.
 static const useconds_t kPollUs = 100 * 1000;
+// [T-hang-suspend-gap] A monitor poll that comes back this late means the
+// whole process was not running (suspended in the background, device asleep):
+// the main thread was frozen, not busy. That time is excluded from busyMs.
+static const double kSuspendGapMs = 1000.0;
 // Stack-hash de-dup: when the captured frame addresses match the last
 // recorded event exactly, increment a counter on the last event instead
 // of pushing a duplicate. Prevents a 10s spin from filling the ring with
@@ -67,6 +72,44 @@ static dispatch_source_t g_memPressureSource = nil;
 
 // Mach time -> ms conversion factor, computed once at first use.
 static double g_machToMs = 0.0;
+/// [T-hang-symbol-section] dladdr names the nearest PRECEDING exported
+/// symbol, which is meaningless for a PC outside the image's __text section:
+/// a call through a symbol stub (swift_retain / swift_bridgeObjectRelease …)
+/// or into the iSH AOT blob came out as "restore_termios" - an unrelated iSH C
+/// function hundreds of MB away (field report 2026-10-03, 1.15 (8): PCs
+/// Minis+0xeb98160 / +0xeb98178 are the __stubs entries for
+/// swift_bridgeObjectRelease / swift_bridgeObjectRetain). Returns the
+/// __TEXT section name when the PC is in __TEXT but not in __text, so the
+/// frame can be labelled "<__stubs>" instead (copied NUL-terminated into
+/// `out`, since sectname is a fixed 16-byte field); false otherwise.
+static bool hd_nonCodeTextSection(const Dl_info *info, uintptr_t pc, char out[17]) {
+    if (!info || !info->dli_fbase) return false;
+    const struct mach_header_64 *mh = (const struct mach_header_64 *)info->dli_fbase;
+    if (mh->magic != MH_MAGIC_64) return false;
+    const struct load_command *lc = (const struct load_command *)(mh + 1);
+    for (uint32_t i = 0; i < mh->ncmds; i++) {
+        if (lc->cmd == LC_SEGMENT_64) {
+            const struct segment_command_64 *seg = (const struct segment_command_64 *)lc;
+            if (strncmp(seg->segname, "__TEXT", 16) == 0) {
+                uintptr_t slide = (uintptr_t)mh - (uintptr_t)seg->vmaddr;
+                const struct section_64 *sect = (const struct section_64 *)(seg + 1);
+                for (uint32_t j = 0; j < seg->nsects; j++, sect++) {
+                    uintptr_t lo = (uintptr_t)sect->addr + slide;
+                    if (pc >= lo && pc < lo + (uintptr_t)sect->size) {
+                        if (strncmp(sect->sectname, "__text", 16) == 0) return false;
+                        memcpy(out, sect->sectname, 16);
+                        out[16] = 0;
+                        return true;
+                    }
+                }
+                return false;
+            }
+        }
+        lc = (const struct load_command *)((const char *)lc + lc->cmdsize);
+    }
+    return false;
+}
+
 static void initMachTimebase(void) {
     if (g_machToMs != 0.0) return;
     mach_timebase_info_data_t tb;
@@ -181,6 +224,9 @@ static void dumpAllThreadsToLog(thread_t monitorTid, double busyMs) {
                     img = slash ? slash + 1 : info.dli_fname;
                 }
                 if (info.dli_sname) sym = info.dli_sname;
+                // [T-hang-symbol-section] No borrowed name for stub / AOT PCs.
+                static char sectBuf[17];
+                if (hd_nonCodeTextSection(&info, frames[j], sectBuf)) sym = sectBuf;
                 if (info.dli_fbase) off = frames[j] - (uintptr_t)info.dli_fbase;
             }
             [out appendFormat:@"\n    #%d %s + 0x%lx %s", j, img,
@@ -243,6 +289,8 @@ static struct {
 } g_activityRing[ACTIVITY_RING_CAPACITY] = {{0}};
 static atomic_uint_fast32_t g_activityRingHead = 0;
 static atomic_int g_activityRingFilled = 0;
+// [T-main-stall-diag] Start of the current main run-loop awake span (main thread only).
+static uint64_t g_awakeStart = 0;
 
 static void runLoopObserverCallback(CFRunLoopObserverRef observer,
                                      CFRunLoopActivity activity,
@@ -258,12 +306,172 @@ static void runLoopObserverCallback(CFRunLoopObserverRef observer,
     g_activityRing[head].activity = (uint32_t)activity;
     g_activityRing[head].mach_ts = now;
     atomic_store_explicit(&g_activityRingFilled, 1, memory_order_relaxed);
+    // [T-main-stall-diag] Open an awake span on wake-up; closed by
+    // lateBeforeWaitingCallback. Entry also fires on a mode switch while
+    // already awake, so only the first opener counts.
+    if ((activity == kCFRunLoopAfterWaiting || activity == kCFRunLoopEntry) && g_awakeStart == 0) {
+        g_awakeStart = now;
+    }
+}
+
+#pragma mark - [T-main-stall-diag] Sub-threshold main-thread stalls
+
+// The hang path below fires only at g_thresholdMs (2 s in the field), so the
+// stalls users see while browsing - a 30-150 ms freeze as a back swipe starts,
+// dropped frames in a list fling (field video 2026-10-03) - never reached the
+// log. This measures every main run-loop "awake span": from waking
+// (AfterWaiting / Entry) to going back to sleep, closed by a second observer
+// ordered AFTER Core Animation's commit so the layout and SwiftUI graph work
+// done inside the commit is counted. No frame is committed during a span, so
+// a 60 ms span is a 60 ms freeze.
+//
+// Cost: the main thread does one subtraction and compare per loop iteration;
+// the monitor thread, already polling every 100 ms, writes the lines - a
+// summary at most every 10 s and only when something was slow, plus one line
+// per span >= kStallDetailMs (at most one per second). No display link: an
+// always-on CADisplayLink costs a wake-up per frame and perturbs the very
+// frame timing it measures (see ThinkingHitchMonitor).
+static const double kStallBucketMs[3] = {25.0, 50.0, 100.0};
+// Lowered from 200 ms: the back-swipe hitch users report is 100-250 ms, and
+// with the marks below each detail line now names its cause. Still at most
+// one detail line per second.
+static const double kStallDetailMs = 100.0;
+// Longer spans are a suspension or a nested run loop in another mode; real
+// ones that long are the hang path's, with a stack.
+static const double kStallIgnoreMs = 5000.0;
+static const double kStallSummaryEveryMs = 10000.0;
+static atomic_uint_fast32_t g_stallCount[3];
+static atomic_uint_fast32_t g_stallMaxMs = ATOMIC_VAR_INIT(0);
+static atomic_uint_fast64_t g_stallMaxAtMs = ATOMIC_VAR_INIT(0);     // wall clock, ms since 1970
+static atomic_uint_fast32_t g_stallDetailMs = ATOMIC_VAR_INIT(0);
+static atomic_uint_fast64_t g_stallDetailAtMs = ATOMIC_VAR_INIT(0);
+static CFRunLoopObserverRef g_lateObserver = NULL;
+
+// [T-main-stall-marks] Ring of named main-thread events (written on main only).
+#define MARK_RING 16
+#define MARK_LABEL 40
+static struct { uint64_t ts; char label[MARK_LABEL]; } g_marks[MARK_RING];
+static uint32_t g_markHead = 0;          // main thread only
+// What the last detail span contained, written on main before g_stallDetailMs
+// is published (release) and read by the monitor after it (acquire).
+static char g_stallDetailMarks[320];
+
+static uint64_t hd_wallMs(void) {
+    return (uint64_t)((CFAbsoluteTimeGetCurrent() + kCFAbsoluteTimeIntervalSince1970) * 1000.0);
+}
+
+/// "HH:mm:ss.SSS" local time, so a line can be matched to the log's own
+/// timestamps and to the [HomeListPerf] / nav lines around it.
+static void hd_formatClock(uint64_t wallMs, char out[16]) {
+    time_t secs = (time_t)(wallMs / 1000);
+    struct tm tmv;
+    localtime_r(&secs, &tmv);
+    snprintf(out, 16, "%02d:%02d:%02d.%03d", tmv.tm_hour, tmv.tm_min, tmv.tm_sec, (int)(wallMs % 1000));
+}
+
+static void lateBeforeWaitingCallback(CFRunLoopObserverRef observer,
+                                      CFRunLoopActivity activity,
+                                      void *info) {
+    uint64_t start = g_awakeStart;
+    g_awakeStart = 0;
+    if (start == 0) return;
+    uint64_t now = mach_continuous_time();
+    if (now <= start) return;
+    double ms = ticksToMs(now - start);
+    if (ms < kStallBucketMs[0] || ms >= kStallIgnoreMs) return;
+    for (int i = 0; i < 3; i++) {
+        if (ms >= kStallBucketMs[i]) atomic_fetch_add_explicit(&g_stallCount[i], 1, memory_order_relaxed);
+    }
+    uint64_t at = hd_wallMs();
+    uint32_t whole = (uint32_t)ms;
+    if (whole > atomic_load_explicit(&g_stallMaxMs, memory_order_relaxed)) {
+        atomic_store_explicit(&g_stallMaxMs, whole, memory_order_relaxed);
+        atomic_store_explicit(&g_stallMaxAtMs, at, memory_order_relaxed);
+    }
+    if (ms >= kStallDetailMs) {
+        // [T-main-stall-marks] The marks made inside this span, oldest first,
+        // with their offset from the span start; dropped from the front if
+        // they do not fit.
+        size_t used = 0;
+        g_stallDetailMarks[0] = 0;
+        uint32_t n = g_markHead < MARK_RING ? g_markHead : MARK_RING;
+        // The last mark BEFORE the span too: a stall often lands a pass or two
+        // after the event that set it off (a pop, then the home list pass).
+        int before = -1;
+        for (uint32_t k = n; k > 0; k--) {
+            uint32_t i = (g_markHead - k) % MARK_RING;
+            if (g_marks[i].ts < start) before = (int)i;
+        }
+        if (before >= 0) {
+            int w = snprintf(g_stallDetailMarks, sizeof(g_stallDetailMarks), "(after %s -%.0fms)",
+                             g_marks[before].label, ticksToMs(start - g_marks[before].ts));
+            if (w > 0 && (size_t)w < sizeof(g_stallDetailMarks)) used = (size_t)w;
+        }
+        for (uint32_t k = n; k > 0; k--) {
+            uint32_t i = (g_markHead - k) % MARK_RING;
+            if (g_marks[i].ts < start || g_marks[i].ts > now) continue;
+            int w = snprintf(g_stallDetailMarks + used, sizeof(g_stallDetailMarks) - used,
+                             "%s%s +%.0fms", used ? ", " : "", g_marks[i].label,
+                             ticksToMs(g_marks[i].ts - start));
+            if (w < 0 || used + (size_t)w >= sizeof(g_stallDetailMarks)) break;
+            used += (size_t)w;
+        }
+        atomic_store_explicit(&g_stallDetailAtMs, at, memory_order_relaxed);
+        atomic_store_explicit(&g_stallDetailMs, whole, memory_order_release);
+    }
+}
+
+/// Monitor-thread side: the per-span detail line and the periodic summary.
+static void hd_reportStalls(void) {
+    static uint64_t lastSummaryTicks = 0;
+    static uint64_t lastDetailTicks = 0;
+    uint64_t t = mach_continuous_time();
+    char clock[16];
+
+    uint32_t detail = atomic_load_explicit(&g_stallDetailMs, memory_order_acquire);
+    if (detail != 0 && (lastDetailTicks == 0 || ticksToMs(t - lastDetailTicks) >= 1000.0)) {
+        atomic_store_explicit(&g_stallDetailMs, 0, memory_order_relaxed);
+        lastDetailTicks = t;
+        hd_formatClock(atomic_load_explicit(&g_stallDetailAtMs, memory_order_relaxed), clock);
+        if (g_stallDetailMarks[0]) {
+            NSLog(@"[MainStall] 🐢 main thread busy %ums with no frame committed (ended %s) | during: %s", detail, clock, g_stallDetailMarks);
+        } else {
+            NSLog(@"[MainStall] 🐢 main thread busy %ums with no frame committed (ended %s) | during: no marks", detail, clock);
+        }
+    }
+
+    if (lastSummaryTicks == 0) { lastSummaryTicks = t; return; }
+    double sinceMs = ticksToMs(t - lastSummaryTicks);
+    if (sinceMs < kStallSummaryEveryMs) return;
+    lastSummaryTicks = t;
+    uint32_t c25 = (uint32_t)atomic_exchange_explicit(&g_stallCount[0], 0, memory_order_relaxed);
+    uint32_t c50 = (uint32_t)atomic_exchange_explicit(&g_stallCount[1], 0, memory_order_relaxed);
+    uint32_t c100 = (uint32_t)atomic_exchange_explicit(&g_stallCount[2], 0, memory_order_relaxed);
+    uint32_t maxMs = (uint32_t)atomic_exchange_explicit(&g_stallMaxMs, 0, memory_order_relaxed);
+    if (c25 == 0) return;
+    hd_formatClock(atomic_load_explicit(&g_stallMaxAtMs, memory_order_relaxed), clock);
+    NSLog(@"[MainStall] last %.0fs: busy spans >=25ms=%u >=50ms=%u >=100ms=%u, longest %ums ended %s",
+          sinceMs / 1000.0, c25, c50, c100, maxMs, clock);
 }
 
 #pragma mark - Monitor thread
 
 static void *monitorThreadMain(void *arg) {
     pthread_setname_np("com.minis.hangdetector.monitor");
+    initMachTimebase();
+
+    // [T-hang-suspend-gap] busyMs is measured with mach_continuous_time, which
+    // keeps counting while the process is suspended. When iOS suspended the
+    // app with the main run loop mid-pass (any activity but BeforeWaiting),
+    // the first poll after resume saw the whole suspension as one main-thread
+    // stall and captured whatever main happened to run on resume - field
+    // reports of "1095217ms" / "55848ms" hangs (2026-10-03, 1.15 (8)) whose
+    // start was minutes after the app had gone to the background. Track the
+    // monitor thread's own gaps and subtract those belonging to the current
+    // beat.
+    uint64_t lastPollTicks = 0;
+    uint64_t suspendedTicks = 0;   // frozen time since `suspendedBeat`
+    uint64_t suspendedBeat = 0;    // the main-thread beat those gaps belong to
 
     // Monitor cadence: 1/4 of the threshold, clamped. 50ms is a sane default
     // for a 100ms threshold — gives ~2 samples worth of headroom without
@@ -273,6 +481,22 @@ static void *monitorThreadMain(void *arg) {
         usleep(kPollUs);
 
         if (!atomic_load_explicit(&g_running, memory_order_relaxed)) break;
+
+        {   // [T-hang-suspend-gap]
+            uint64_t pollNow = mach_continuous_time();
+            if (lastPollTicks != 0 && pollNow > lastPollTicks) {
+                double gapMs = ticksToMs(pollNow - lastPollTicks);
+                if (gapMs > kSuspendGapMs) {
+                    uint64_t beat = atomic_load_explicit(&g_lastBeat, memory_order_relaxed);
+                    if (beat != suspendedBeat) { suspendedBeat = beat; suspendedTicks = 0; }
+                    suspendedTicks += (pollNow - lastPollTicks);
+                    NSLog(@"[HangDetector] monitor gap %.0fms (process suspended / device asleep) — not counted as main-thread hang time", gapMs);
+                }
+            }
+            lastPollTicks = pollNow;
+        }
+
+        hd_reportStalls(); // [T-main-stall-diag]
 
         // ---- [MemMonitor] low-overhead memory footprint sampling ----
         // [T-ios-mem-footprint-delta-logging] Piggyback on this existing
@@ -362,7 +586,12 @@ static void *monitorThreadMain(void *arg) {
 
         uint64_t now = mach_continuous_time();
         if (now <= lastBeat) continue;
-        double busyMs = ticksToMs(now - lastBeat);
+        // [T-hang-suspend-gap] Minus the time the process was frozen since
+        // this beat; a stall that was all suspension is no hang at all.
+        uint64_t span = now - lastBeat;
+        uint64_t frozen = (lastBeat == suspendedBeat) ? suspendedTicks : 0;
+        if (frozen >= span) continue;
+        double busyMs = ticksToMs(span - frozen);
         if (busyMs < thresholdMs) continue;
 
         // ---- HANG DETECTED ----
@@ -491,7 +720,12 @@ static void *monitorThreadMain(void *arg) {
                 if (info.dli_fbase) {
                     f.imageOffset = frames[i] - (uintptr_t)info.dli_fbase;
                 }
-                if (info.dli_sname) {
+                // [T-hang-symbol-section] A PC in __stubs / __ish_aot gets its
+                // section name, not the nearest exported symbol before it.
+                char sect[17];
+                if (hd_nonCodeTextSection(&info, frames[i], sect)) {
+                    f.symbol = [NSString stringWithFormat:@"<%s>", sect];
+                } else if (info.dli_sname) {
                     f.symbol = [NSString stringWithUTF8String:info.dli_sname];
                 }
             }
@@ -627,6 +861,11 @@ static void *monitorThreadMain(void *arg) {
         runLoopObserverCallback,
         &ctx);
     CFRunLoopAddObserver(CFRunLoopGetMain(), g_observer, kCFRunLoopCommonModes);
+    // [T-main-stall-diag] Ordered last, after Core Animation's commit
+    // observer, so the commit's layout / SwiftUI work falls inside the span.
+    g_lateObserver = CFRunLoopObserverCreate(
+        NULL, kCFRunLoopBeforeWaiting, true, LONG_MAX, lateBeforeWaitingCallback, &ctx);
+    CFRunLoopAddObserver(CFRunLoopGetMain(), g_lateObserver, kCFRunLoopCommonModes);
 
     // Spin the monitor thread.
     pthread_attr_t attr;
@@ -640,6 +879,11 @@ static void *monitorThreadMain(void *arg) {
             CFRunLoopRemoveObserver(CFRunLoopGetMain(), g_observer, kCFRunLoopCommonModes);
             CFRelease(g_observer);
             g_observer = NULL;
+        }
+        if (g_lateObserver) {
+            CFRunLoopRemoveObserver(CFRunLoopGetMain(), g_lateObserver, kCFRunLoopCommonModes);
+            CFRelease(g_lateObserver);
+            g_lateObserver = NULL;
         }
         return NO;
     }
@@ -682,6 +926,11 @@ static void *monitorThreadMain(void *arg) {
         CFRelease(g_observer);
         g_observer = NULL;
     }
+    if (g_lateObserver) {
+        CFRunLoopRemoveObserver(CFRunLoopGetMain(), g_lateObserver, kCFRunLoopCommonModes);
+        CFRelease(g_lateObserver);
+        g_lateObserver = NULL;
+    }
     // [T-ios-mem-footprint-delta-logging] Tear down the memory-pressure source.
     if (g_memPressureSource) {
         dispatch_source_cancel(g_memPressureSource);
@@ -706,6 +955,14 @@ static void *monitorThreadMain(void *arg) {
     }
     os_unfair_lock_unlock(&g_eventsLock);
     return snapshot;
+}
+
++ (void)mark:(NSString *)label {
+    if (!pthread_main_np()) return;
+    uint32_t i = g_markHead % MARK_RING;
+    g_marks[i].ts = mach_continuous_time();
+    strlcpy(g_marks[i].label, label.UTF8String ?: "?", MARK_LABEL);
+    g_markHead++;
 }
 
 + (void)clearEvents {

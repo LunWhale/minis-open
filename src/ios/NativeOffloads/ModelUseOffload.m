@@ -467,6 +467,7 @@ static int cmd_run(int argc, char **argv, int stdin_fd, int stdout_fd, int stder
                                        temperature:temperature
                                     outputHostPath:outputHostPath
                                           streamFd:stdout_fd
+                                         fsContext:noff_current_fs_context()
                                         completion:^(NSDictionary *data, NSString *error) {
             result = data;
             errorMsg = error;
@@ -481,6 +482,7 @@ static int cmd_run(int argc, char **argv, int stdin_fd, int stdout_fd, int stder
                                        temperature:temperature
                                     outputHostPath:outputHostPath
                                           streamFd:-1
+                                         fsContext:noff_current_fs_context()
                                         completion:^(NSDictionary *data, NSString *error) {
             result = data;
             errorMsg = error;

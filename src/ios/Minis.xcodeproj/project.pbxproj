@@ -21,8 +21,13 @@
 		5EF8347C1EAA0066EFF631F8 /* GroupVoiceModelsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0ED149397BEA7E0408C92688 /* GroupVoiceModelsView.swift */; };
 		77BB9741AB0EFC449FDBDFED /* VoiceWaveformView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16FF3462D09402F14B610CD6 /* VoiceWaveformView.swift */; };
 		7A49962E84F115865D41B933 /* AudioSessionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE154CF628D8699BD99CF9CB /* AudioSessionCoordinator.swift */; };
+		7A822436233F3227678277FC /* AIChatViewModel+UserAsk.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5340160943C17EA292203242 /* AIChatViewModel+UserAsk.swift */; };
+		7F0DF01D0A /* ToolFoldPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F0DF01D0B /* ToolFoldPlanner.swift */; };
+		87764AE3691086C907B97519 /* UserAskCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF08A43E8045BF444E5F2DF1 /* UserAskCore.swift */; };
 		891443CAA4679D09A6D32AE4 /* RealTimeCutVADLibrary in Frameworks */ = {isa = PBXBuildFile; productRef = C42120806C66A2C804F89620 /* RealTimeCutVADLibrary */; };
 		8B886DA8A270E8FB58A9A1FA /* SpeechPlayerControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A302B074A0BE0AFED8EC7E9 /* SpeechPlayerControl.swift */; };
+		90EF21EB8AAB5C9B849883A4 /* UserAskSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7F4078E062F701034D36265 /* UserAskSettings.swift */; };
+		9214E78B060BCD8BA7E118D4 /* NotificationCategoryCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D7227A3A4F8E20ED979981C /* NotificationCategoryCenter.swift */; };
 		A11Y0001 /* ChatAccessibilityAnnouncer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11Y0002 /* ChatAccessibilityAnnouncer.swift */; };
 		A1B2C3D4E5F60718293A4B5C /* SystemVoiceCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B5D /* SystemVoiceCatalog.swift */; };
 		AA0838A02F3B941A00049557 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0838A12F3B941A00049557 /* AboutView.swift */; };
@@ -60,7 +65,6 @@
 		AC0000202 /* ProviderCustomizationGenerated.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC0000201 /* ProviderCustomizationGenerated.swift */; };
 		B02B7ADBAB47BDB33F664A21 /* VoiceProvider+Vendors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BB45FC87D39AE9AB4495BE9 /* VoiceProvider+Vendors.swift */; };
 		BB1000100F700000000000AA /* ContextPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB1000110F700000000000AA /* ContextPolicy.swift */; };
-		BB1000120F700000000000AA /* ContextPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB1000110F700000000000AA /* ContextPolicy.swift */; };
 		BKP000101 /* BackupFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = BKP000201 /* BackupFormat.swift */; };
 		BKP000102 /* BackupBlobStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BKP000202 /* BackupBlobStore.swift */; };
 		BKP000103 /* BackupJSONLWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = BKP000203 /* BackupJSONLWriter.swift */; };
@@ -90,8 +94,8 @@
 		BKP000143 /* BackupTransferStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = BKP000243 /* BackupTransferStatus.swift */; };
 		BKP000144 /* BackupSkippedFilesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BKP000244 /* BackupSkippedFilesView.swift */; };
 		C0B1AF9A75C90C3C178A8804 /* VoiceTextSanitizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7656F4130247E4002A3AC0C /* VoiceTextSanitizer.swift */; };
+		C39F1823882535F6FCC47D18 /* UserAskCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A85BF57B9450AF0807ACDDE /* UserAskCenter.swift */; };
 		E51000001 /* MinisApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = E51000011 /* MinisApp.swift */; };
-		E51000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E51000012 /* ContentView.swift */; };
 		E51000003 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E51000013 /* Assets.xcassets */; };
 		E51000004 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E51000014 /* Preview Assets.xcassets */; };
 		E52000001 /* LLMTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = E52000011 /* LLMTypes.swift */; };
@@ -103,7 +107,6 @@
 		E52000007 /* ClaudeOAuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E52000016 /* ClaudeOAuthManager.swift */; };
 		E52000009 /* AnthropicModelsAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = E52000018 /* AnthropicModelsAPI.swift */; };
 		E53000001 /* AIChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E53000011 /* AIChatViewModel.swift */; };
-		E53000002 /* AIChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E53000012 /* AIChatView.swift */; };
 		E53000004 /* ChatStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E53000014 /* ChatStore.swift */; };
 		E53000005 /* UsageStatsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E53000015 /* UsageStatsView.swift */; };
 		E53000006 /* CacheKeepAliveManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E53000016 /* CacheKeepAliveManager.swift */; };
@@ -145,13 +148,18 @@
 		E59000002 /* AnthropicAgentProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = E59000012 /* AnthropicAgentProvider.swift */; };
 		E59000003 /* GeminiAgentProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = E59000013 /* GeminiAgentProvider.swift */; };
 		E5A000001 /* default_mount in Resources */ = {isa = PBXBuildFile; fileRef = E5A000011 /* default_mount */; };
+		E5A000A01 /* AOJITRestore in Resources */ = {isa = PBXBuildFile; fileRef = E5A000A11 /* AOJITRestore */; };
+		E5A0J1T0B1F0000000000001 /* AOJITSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5A0J1T0F1E0000000000001 /* AOJITSettingsView.swift */; };
 		E5ACB0001 /* AgentCallback.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5ACB0011 /* AgentCallback.swift */; };
 		E5ACB0002 /* AgentCallbackCellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5ACB0012 /* AgentCallbackCellView.swift */; };
 		E5AJR0001 /* AgentJobRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5AJR0011 /* AgentJobRegistry.swift */; };
 		E5AJR0002 /* HelperRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5AJR0012 /* HelperRunner.swift */; };
 		E5AJR0003 /* ModelTierResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5AJR0013 /* ModelTierResolver.swift */; };
 		E5AJR0004 /* HelperSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5AJR0014 /* HelperSheet.swift */; };
+		E5AJS0001 /* AOJITShellStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5AJS0011 /* AOJITShellStats.swift */; };
 		E5AMI0001 /* HelperModelIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5AMI0011 /* HelperModelIdentity.swift */; };
+		E5AON0001 /* AlwaysOnController.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5AON0011 /* AlwaysOnController.swift */; };
+		E5AOV0001 /* AlwaysOnOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5AOV0011 /* AlwaysOnOverlay.swift */; };
 		E5AS00001 /* AppShortcuts.strings in Resources */ = {isa = PBXBuildFile; fileRef = E5AS00010 /* AppShortcuts.strings */; };
 		E5AT00003 /* AudioTogglePlaybackIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5AT00011 /* AudioTogglePlaybackIntent.swift */; };
 		E5AT00004 /* AudioTogglePlaybackIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5AT00011 /* AudioTogglePlaybackIntent.swift */; };
@@ -168,10 +176,12 @@
 		E5C000004 /* CodexOAuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5C000014 /* CodexOAuthManager.swift */; };
 		E5C0DE9A1 /* OpenCodeChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5C0DE9B1 /* OpenCodeChannel.swift */; };
 		E5CADM01 /* CorrectionAdmission.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CADM03 /* CorrectionAdmission.swift */; };
-		E5CADM02 /* CorrectionAdmission.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CADM03 /* CorrectionAdmission.swift */; };
 		E5CAL0001 /* CookieAuditLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CAL0002 /* CookieAuditLogger.swift */; };
+		E5CBR0001 /* CrashBreadcrumbs.m in Sources */ = {isa = PBXBuildFile; fileRef = E5CBR0011 /* CrashBreadcrumbs.m */; };
+		E5CBR0002 /* ResourceSampler.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CBR0012 /* ResourceSampler.swift */; };
 		E5CCB0001 /* CorrectionContextBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CCB0011 /* CorrectionContextBuilder.swift */; };
-		E5CCB1001 /* CorrectionContextBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CCB0011 /* CorrectionContextBuilder.swift */; };
+		E5CDX0001 /* CrashDiagnosticsExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CDX0011 /* CrashDiagnosticsExport.swift */; };
+		E5CDX0002 /* CrashDiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CDX0012 /* CrashDiagnosticsView.swift */; };
 		E5CFG0001 /* ConfigAuditEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CFG0011 /* ConfigAuditEntry.swift */; };
 		E5CFG0002 /* ConfigAuditLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CFG0012 /* ConfigAuditLog.swift */; };
 		E5CFG0003 /* MinisConfigPermissionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CFG0013 /* MinisConfigPermissionStore.swift */; };
@@ -193,6 +203,37 @@
 		E5CR00001 /* ShellCommandRingBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CR00011 /* ShellCommandRingBuffer.swift */; };
 		E5CR00002 /* CrashReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CR00012 /* CrashReporter.swift */; };
 		E5CR00003 /* CrashSignalHandler.m in Sources */ = {isa = PBXBuildFile; fileRef = E5CR00013 /* CrashSignalHandler.m */; };
+		E5CRDBL01 /* ConfigReadable.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CRDBL11 /* ConfigReadable.swift */; };
+		E5CRDBL02 /* ConfigReadableRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CRDBL12 /* ConfigReadableRenderer.swift */; };
+		E5CRDBL03 /* ConfigAuditDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CRDBL13 /* ConfigAuditDetailView.swift */; };
+		E5CSH0001 /* ChatShareModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CSH0011 /* ChatShareModel.swift */; };
+		E5CSH0002 /* ChatShareSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CSH0012 /* ChatShareSelectionView.swift */; };
+		E5CSH0003 /* ChatExportRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CSH0013 /* ChatExportRenderer.swift */; };
+		E5CSSPL001B /* ChatStore+Schema.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CSSPL001R /* ChatStore+Schema.swift */; };
+		E5CSSPL002B /* ChatStore+SessionCRUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CSSPL002R /* ChatStore+SessionCRUD.swift */; };
+		E5CSSPL003B /* ChatStore+SessionList.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CSSPL003R /* ChatStore+SessionList.swift */; };
+		E5CSSPL004B /* ChatStore+Search.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CSSPL004R /* ChatStore+Search.swift */; };
+		E5CSSPL005B /* ChatStore+SessionQueries.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CSSPL005R /* ChatStore+SessionQueries.swift */; };
+		E5CSSPL006B /* ChatStore+Folders.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CSSPL006R /* ChatStore+Folders.swift */; };
+		E5CSSPL007B /* ChatStore+SessionDeletion.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CSSPL007R /* ChatStore+SessionDeletion.swift */; };
+		E5CSSPL008B /* ChatStore+StoredPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CSSPL008R /* ChatStore+StoredPreview.swift */; };
+		E5CSSPL009B /* ChatStore+Messages.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CSSPL009R /* ChatStore+Messages.swift */; };
+		E5CSSPL010B /* ChatStore+Media.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CSSPL010R /* ChatStore+Media.swift */; };
+		E5CSSPL011B /* ChatStore+CompactMarkers.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CSSPL011R /* ChatStore+CompactMarkers.swift */; };
+		E5CSSPL012B /* ChatStore+Tombstones.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CSSPL012R /* ChatStore+Tombstones.swift */; };
+		E5CSSPL013B /* ChatStore+WebAppShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CSSPL013R /* ChatStore+WebAppShortcuts.swift */; };
+		E5CSSPL014B /* ChatStore+Maintenance.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CSSPL014R /* ChatStore+Maintenance.swift */; };
+		E5CSSPL015B /* ChatStore+Helpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CSSPL015R /* ChatStore+Helpers.swift */; };
+		E5CSSPL016B /* ChatStore+UsageStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CSSPL016R /* ChatStore+UsageStats.swift */; };
+		E5CSSPL017B /* ChatStoreModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CSSPL017R /* ChatStoreModels.swift */; };
+		E5CSSPL018B /* ContentPart+ProviderConversion.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CSSPL018R /* ContentPart+ProviderConversion.swift */; };
+		E5CSSPL019B /* RawMessage+Conversion.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CSSPL019R /* RawMessage+Conversion.swift */; };
+		E5CSSPL020B /* ChatStore+SyncDirty.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CSSPL020R /* ChatStore+SyncDirty.swift */; };
+		E5CSSPL021B /* ChatStore+SyncRemoteSessions.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CSSPL021R /* ChatStore+SyncRemoteSessions.swift */; };
+		E5CSSPL022B /* ChatStore+SyncRemoteRecords.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CSSPL022R /* ChatStore+SyncRemoteRecords.swift */; };
+		E5CSSPL023B /* ChatStore+BackupRestore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CSSPL023R /* ChatStore+BackupRestore.swift */; };
+		E5CVSET0000000000000A001 /* SettingsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CVSET0000000000000A011 /* SettingsSheet.swift */; };
+		E5CVSET0000000000000A002 /* AppearanceSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CVSET0000000000000A012 /* AppearanceSettingsView.swift */; };
 		E5D00001 /* ProviderTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5D00011 /* ProviderTypes.swift */; };
 		E5D00002 /* ProviderInstance.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5D00012 /* ProviderInstance.swift */; };
 		E5D00003 /* ModelEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5D00013 /* ModelEntry.swift */; };
@@ -242,6 +283,7 @@
 		E5F2000FA /* TextFadeAnimator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5F2000FB /* TextFadeAnimator.swift */; };
 		E5F2009A1 /* EquatableContextMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5F2009B1 /* EquatableContextMenu.swift */; };
 		E5F200AA1 /* MemoryWriteRevoker.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5F200AB1 /* MemoryWriteRevoker.swift */; };
+		E5FIO0001 /* FileToolIO.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5FIO0011 /* FileToolIO.swift */; };
 		E5FMI0001 /* FileMentionIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5FMI0011 /* FileMentionIndex.swift */; };
 		E5FP00001 /* FileProviderExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5FP00011 /* FileProviderExtension.swift */; };
 		E5FP00002 /* FileProviderEnumerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5FP00012 /* FileProviderEnumerator.swift */; };
@@ -256,7 +298,6 @@
 		E5G000003 /* EnhancedBackgroundSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5G000013 /* EnhancedBackgroundSettingsView.swift */; };
 		E5G000004 /* AgentActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5G000014 /* AgentActivityAttributes.swift */; };
 		E5GWF0003 /* GeminiWireFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5GWF0013 /* GeminiWireFormat.swift */; };
-		E5GWF0004 /* GeminiWireFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5GWF0013 /* GeminiWireFormat.swift */; };
 		E5H000001 /* AgentWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5H000011 /* AgentWidgetBundle.swift */; };
 		E5H000002 /* AgentLiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5H000012 /* AgentLiveActivityWidget.swift */; };
 		E5H000003 /* AgentActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5G000014 /* AgentActivityAttributes.swift */; };
@@ -265,6 +306,7 @@
 		E5I000001 /* SpeechRecognitionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5I000011 /* SpeechRecognitionManager.swift */; };
 		E5I000002 /* AudioWaveformView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5I000012 /* AudioWaveformView.swift */; };
 		E5IP00001 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = E5IP00010 /* InfoPlist.strings */; };
+		E5ITL0001 /* IdleTimerLease.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5ITL0011 /* IdleTimerLease.swift */; };
 		E5J000001 /* LoggingManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5J000011 /* LoggingManager.swift */; };
 		E5J000002 /* LogManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5J000012 /* LogManagementView.swift */; };
 		E5J000003 /* ConfigAuditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5J000013 /* ConfigAuditView.swift */; };
@@ -275,16 +317,11 @@
 		E5JB00002 /* TextSegmenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5JB00013 /* TextSegmenter.swift */; };
 		E5JB00003 /* jieba.dict.utf8 in Resources */ = {isa = PBXBuildFile; fileRef = E5JB00014 /* jieba.dict.utf8 */; };
 		E5JB00004 /* hmm_model.utf8 in Resources */ = {isa = PBXBuildFile; fileRef = E5JB00015 /* hmm_model.utf8 */; };
-		E5JB10001 /* JiebaWrapper.mm in Sources */ = {isa = PBXBuildFile; fileRef = E5JB00012 /* JiebaWrapper.mm */; };
-		E5JB10002 /* TextSegmenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5JB00013 /* TextSegmenter.swift */; };
 		E5JB10003 /* jieba.dict.utf8 in Resources */ = {isa = PBXBuildFile; fileRef = E5JB00014 /* jieba.dict.utf8 */; };
 		E5JB10004 /* hmm_model.utf8 in Resources */ = {isa = PBXBuildFile; fileRef = E5JB00015 /* hmm_model.utf8 */; };
-		E5K000001 /* SelectableMarkdownView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5K000011 /* SelectableMarkdownView.swift */; };
 		E5K000002 /* ChatTurnScreenshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5K000012 /* ChatTurnScreenshot.swift */; };
 		E5KIMI0A1 /* KimiOAuthRefreshCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5KIMIR01 /* KimiOAuthRefreshCoordinator.swift */; };
-		E5KIMI0A2 /* KimiOAuthRefreshCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5KIMIR01 /* KimiOAuthRefreshCoordinator.swift */; };
 		E5KIMI0B1 /* KimiDeviceFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5KIMIR02 /* KimiDeviceFlow.swift */; };
-		E5KIMI0B2 /* KimiDeviceFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5KIMIR02 /* KimiDeviceFlow.swift */; };
 		E5KIMI0C1 /* KimiOAuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5KIMIR03 /* KimiOAuthManager.swift */; };
 		E5KIMI0D1 /* KimiModelsAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5KIMIR04 /* KimiModelsAPI.swift */; };
 		E5KIMIUI1 /* KimiDeviceLoginSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5KIMIUI2 /* KimiDeviceLoginSheet.swift */; };
@@ -327,10 +364,10 @@
 		E5LC00001 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = E5LC00002 /* Localizable.xcstrings */; };
 		E5LC00003 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = E5LC00002 /* Localizable.xcstrings */; };
 		E5LD00001 /* ToolLoopDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5LD00003 /* ToolLoopDetector.swift */; };
-		E5LD00002 /* ToolLoopDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5LD00003 /* ToolLoopDetector.swift */; };
 		E5LOCK001 /* SessionLockStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5LOCK101 /* SessionLockStore.swift */; };
 		E5LOCK002 /* FaceIDProtectionSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5LOCK102 /* FaceIDProtectionSettingsView.swift */; };
 		E5LOCK003 /* AppLockOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5LOCK103 /* AppLockOverlay.swift */; };
+		E5LRD0001 /* LogRedaction.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5LRD0002 /* LogRedaction.swift */; };
 		E5M000001 /* cmark-gfm in Frameworks */ = {isa = PBXBuildFile; productRef = E5M000021 /* cmark-gfm */; };
 		E5M000002 /* cmark-gfm-extensions in Frameworks */ = {isa = PBXBuildFile; productRef = E5M000022 /* cmark-gfm-extensions */; };
 		E5M000003 /* MinisMarkdownParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5M000013 /* MinisMarkdownParser.swift */; };
@@ -350,12 +387,8 @@
 		E5TODOV2 /* TodoPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5TODOV1 /* TodoPanelView.swift */; };
 		E5N0000062F3B941A00049557 /* AlarmListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5N0000162F3B941A00049557 /* AlarmListView.swift */; };
 		E5OARC001 /* ClaudeOAuthRefreshCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5OARC010 /* ClaudeOAuthRefreshCoordinator.swift */; };
-		E5OARC002 /* ClaudeOAuthRefreshCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5OARC010 /* ClaudeOAuthRefreshCoordinator.swift */; };
-		E5OARC003 /* LLMError.swift in Sources */ = {isa = PBXBuildFile; fileRef = E52000012 /* LLMError.swift */; };
 		E5OARC021 /* OAuthRefreshCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5OARC030 /* OAuthRefreshCoordinator.swift */; };
-		E5OARC022 /* OAuthRefreshCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5OARC030 /* OAuthRefreshCoordinator.swift */; };
 		E5OARC023 /* OAuthRefreshSingleFlight.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5OARC031 /* OAuthRefreshSingleFlight.swift */; };
-		E5OARC024 /* OAuthRefreshSingleFlight.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5OARC031 /* OAuthRefreshSingleFlight.swift */; };
 		E5P000001 /* EnvVarStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5P000011 /* EnvVarStore.swift */; };
 		E5P000002 /* EnvironmentVariablesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5P000012 /* EnvironmentVariablesView.swift */; };
 		E5P000003 /* DeepLinkCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5P000013 /* DeepLinkCoordinator.swift */; };
@@ -373,6 +406,14 @@
 		E5QA0002 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5QA0102 /* AppDelegate.swift */; };
 		E5QA0003 /* QuickActionWorkflow.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5QA0103 /* QuickActionWorkflow.swift */; };
 		E5QT00001 /* ModelQuickTestSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5QT00011 /* ModelQuickTestSheet.swift */; };
+		E5QTA01B /* QuotaModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5QTA01F /* QuotaModels.swift */; };
+		E5QTA02B /* QuotaRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5QTA02F /* QuotaRules.swift */; };
+		E5QTA03B /* QuotaAdapters.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5QTA03F /* QuotaAdapters.swift */; };
+		E5QTA04B /* QuotaPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5QTA04F /* QuotaPersistence.swift */; };
+		E5QTA05B /* QuotaStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5QTA05F /* QuotaStore.swift */; };
+		E5QTA06B /* ProviderQuotaSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5QTA06F /* ProviderQuotaSection.swift */; };
+		E5QTA07B /* QuotaPickerHints.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5QTA07F /* QuotaPickerHints.swift */; };
+		E5QTA08B /* QuotaDetailSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5QTA08F /* QuotaDetailSheet.swift */; };
 		E5R000001 /* ICloudBackupManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5R000011 /* ICloudBackupManager.swift */; };
 		E5R000002 /* ICloudBackupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5R000012 /* ICloudBackupView.swift */; };
 		E5RSD0001 /* ResourceDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5RSD0011 /* ResourceDiagnostics.swift */; };
@@ -383,12 +424,14 @@
 		E5S000005 /* CloudKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E5S000015 /* CloudKit.framework */; };
 		E5S000006 /* SyncDirtyScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5S000016 /* SyncDirtyScanner.swift */; };
 		E5SAC0010 /* SubAgentsCollection.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SAC0020 /* SubAgentsCollection.swift */; };
+		E5SAT0001 /* SubAgentTermination.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SAT0011 /* SubAgentTermination.swift */; };
 		E5SCH0001 /* ScheduledJobRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SCH0011 /* ScheduledJobRunner.swift */; };
 		E5SCH0002 /* ScheduledOffload.m in Sources */ = {isa = PBXBuildFile; fileRef = E5SCH0012 /* ScheduledOffload.m */; };
 		E5SCH0003 /* ScheduledOffloadBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SCH0013 /* ScheduledOffloadBridge.swift */; };
 		E5SCH0004 /* HelperSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SCH0014 /* HelperSettingsView.swift */; };
 		E5SD00009 /* ShortcutRunTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SD00019 /* ShortcutRunTracker.swift */; };
 		E5SDS0001 /* SessionDeletionSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SDS0011 /* SessionDeletionSupport.swift */; };
+		E5SEV0001 /* SaveEnvVarIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SEV0011 /* SaveEnvVarIntent.swift */; };
 		E5SHV0001 /* SharedFolderVisibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SHV0101 /* SharedFolderVisibility.swift */; };
 		E5SHV0002 /* SharedFolderVisibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SHV0101 /* SharedFolderVisibility.swift */; };
 		E5SHV0003 /* SharedFoldersSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SHV0103 /* SharedFoldersSettingsView.swift */; };
@@ -396,7 +439,11 @@
 		E5SOUL001 /* SoulStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SOUL101 /* SoulStore.swift */; };
 		E5SOUL002 /* SoulSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SOUL102 /* SoulSettingsView.swift */; };
 		E5EXTMV2 /* ExtensionManagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5EXTMV1 /* ExtensionManagerView.swift */; };
+		E5SPDT0001 /* SpeedTier.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SPDT0011 /* SpeedTier.swift */; };
+		E5SPT0001 /* ScheduledPresetToolCall.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SPT0011 /* ScheduledPresetToolCall.swift */; };
 		E5SRS0001 /* SessionRefreshScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SRS0011 /* SessionRefreshScheduler.swift */; };
+		E5STD0001 /* ScheduledTargetDelivery.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5STD0011 /* ScheduledTargetDelivery.swift */; };
+		E5STD0002 /* ScheduledTaskDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5STD0012 /* ScheduledTaskDetailView.swift */; };
 		E5SUB0002 /* SubAgentDefinition.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SUB0001 /* SubAgentDefinition.swift */; };
 		E5SUB0011 /* SubAgentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SUB0010 /* SubAgentStore.swift */; };
 		E5SVP0021 /* ShadowVoiceProviderDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SVP0031 /* ShadowVoiceProviderDetailView.swift */; };
@@ -412,6 +459,17 @@
 		E5T00000A /* RetryRunIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5T00001A /* RetryRunIntent.swift */; };
 		E5T00000B /* UserMessageEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5T00001B /* UserMessageEntity.swift */; };
 		E5T0000A1 /* AskMinisIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5T0000A2 /* AskMinisIntent.swift */; };
+		E5TH0F000 /* Minis.debug.dylib in Embed Minis.debug.dylib */ = {isa = PBXBuildFile; fileRef = E5TH0E000 /* Minis.debug.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		E5TH0F001 /* FFmpeg.framework in Embed Minis.debug.dylib */ = {isa = PBXBuildFile; fileRef = E5TH0E001 /* FFmpeg.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		E5TH0F002 /* libavcodec.framework in Embed Minis.debug.dylib */ = {isa = PBXBuildFile; fileRef = E5TH0E002 /* libavcodec.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		E5TH0F003 /* libavformat.framework in Embed Minis.debug.dylib */ = {isa = PBXBuildFile; fileRef = E5TH0E003 /* libavformat.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		E5TH0F004 /* libavutil.framework in Embed Minis.debug.dylib */ = {isa = PBXBuildFile; fileRef = E5TH0E004 /* libavutil.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		E5TH0F005 /* libavfilter.framework in Embed Minis.debug.dylib */ = {isa = PBXBuildFile; fileRef = E5TH0E005 /* libavfilter.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		E5TH0F006 /* libswresample.framework in Embed Minis.debug.dylib */ = {isa = PBXBuildFile; fileRef = E5TH0E006 /* libswresample.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		E5TH0F007 /* libswscale.framework in Embed Minis.debug.dylib */ = {isa = PBXBuildFile; fileRef = E5TH0E007 /* libswscale.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		E5TH0F008 /* RealTimeCutVADCXXLibrary.framework in Embed Minis.debug.dylib */ = {isa = PBXBuildFile; fileRef = E5TH0E008 /* RealTimeCutVADCXXLibrary.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		E5TH0R001 /* jieba.dict.utf8 in Resources */ = {isa = PBXBuildFile; fileRef = E5JB00014 /* jieba.dict.utf8 */; };
+		E5TH0R002 /* hmm_model.utf8 in Resources */ = {isa = PBXBuildFile; fileRef = E5JB00015 /* hmm_model.utf8 */; };
 		E5TLC0001 /* ThinkingLevelCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5TLC0002 /* ThinkingLevelCatalog.swift */; };
 		E5TLS0001 /* ToolsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5TLS0011 /* ToolsSettingsView.swift */; };
 		E5TRC001 /* ThinkingRuleCoding.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5TRC002 /* ThinkingRuleCoding.swift */; };
@@ -419,14 +477,15 @@
 		E5TRE001 /* ThinkingRuleEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5TRE002 /* ThinkingRuleEditorView.swift */; };
 		E5TRS001 /* ThinkingRulesSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5TRS002 /* ThinkingRulesSection.swift */; };
 		E5TWF001 /* ThinkingWireFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5TWF002 /* ThinkingWireFormat.swift */; };
+		E5TWG0001 /* InjectedTweakSelectorGuard.m in Sources */ = {isa = PBXBuildFile; fileRef = E5TWG0002 /* InjectedTweakSelectorGuard.m */; };
 		E5TWR001 /* ThinkingRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5TWR002 /* ThinkingRule.swift */; };
 		E5TWS001 /* ThinkingRuleResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5TWS002 /* ThinkingRuleResolver.swift */; };
 		E5U000001 /* KaTeXRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5U000011 /* KaTeXRenderer.swift */; };
 		E5U000002 /* KaTeX in Resources */ = {isa = PBXBuildFile; fileRef = E5U000012 /* KaTeX */; };
+		E5UAM0001 /* UserActivityMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5UAM0011 /* UserActivityMonitor.swift */; };
 		E5UMP0001 /* UnifiedModelPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5UMP0011 /* UnifiedModelPicker.swift */; };
 		E5V000002 /* AlternateIcons in Resources */ = {isa = PBXBuildFile; fileRef = E5V000012 /* AlternateIcons */; };
 		E5V100001 /* MessageListLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5V100011 /* MessageListLayout.swift */; };
-		E5V300001 /* CollectionViewMessageListV3.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5V300011 /* CollectionViewMessageListV3.swift */; };
 		E5VC00001 /* VoiceCorrectionDB.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VC00011 /* VoiceCorrectionDB.swift */; };
 		E5VC00002 /* PhoneticNormalizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VC00012 /* PhoneticNormalizer.swift */; };
 		E5VC00003 /* SentenceSplitter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VC00013 /* SentenceSplitter.swift */; };
@@ -441,16 +500,8 @@
 		E5VC0000C /* zh_background_wordfreq.txt in Resources */ = {isa = PBXBuildFile; fileRef = E5VC0001B /* zh_background_wordfreq.txt */; };
 		E5VC0000D /* VoiceCorrectionDiff.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VC0001D /* VoiceCorrectionDiff.swift */; };
 		E5VC0000E /* VocabularyFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VC0001E /* VocabularyFilter.swift */; };
-		E5VC1000A /* SentenceSplitter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VC00013 /* SentenceSplitter.swift */; };
-		E5VC1000B /* PhoneticNormalizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VC00012 /* PhoneticNormalizer.swift */; };
-		E5VC1000C /* VoiceCorrectionDB.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VC00011 /* VoiceCorrectionDB.swift */; };
-		E5VC1000D /* CorrectionSignalSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VC00015 /* CorrectionSignalSource.swift */; };
-		E5VC1001A /* ConversationContextTruncator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VC00018 /* ConversationContextTruncator.swift */; };
-		E5VC1001D /* VoiceCorrectionDiff.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VC0001D /* VoiceCorrectionDiff.swift */; };
-		E5VC1001E /* VocabularyFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VC0001E /* VocabularyFilter.swift */; };
 		E5VCTR001 /* VoiceCorrectionTrace.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VCTR002 /* VoiceCorrectionTrace.swift */; };
 		E5VIC0001 /* VoiceInputCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VIC0011 /* VoiceInputCapture.swift */; };
-		E5VIC1001 /* VoiceInputCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VIC0011 /* VoiceInputCapture.swift */; };
 		E5VMA0001 /* AIChatViewModel+Attachments.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMA0011 /* AIChatViewModel+Attachments.swift */; };
 		E5VMA0002 /* AIChatViewModel+SlashCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMA0012 /* AIChatViewModel+SlashCommands.swift */; };
 		E5VMA0003 /* AIChatViewModel+MentionMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMA0013 /* AIChatViewModel+MentionMenu.swift */; };
@@ -477,7 +528,22 @@
 		E5VMC0006 /* AIChatViewModel+BackgroundTask.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMC0016 /* AIChatViewModel+BackgroundTask.swift */; };
 		E5VMC0007 /* AIChatViewModel+ConcurrentTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMC0017 /* AIChatViewModel+ConcurrentTools.swift */; };
 		E5VMD0001 /* MinisURLPathDecoding.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMD0011 /* MinisURLPathDecoding.swift */; };
-		E5VTS1001 /* VoiceTextSanitizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7656F4130247E4002A3AC0C /* VoiceTextSanitizer.swift */; };
+		E5VMSPL001B /* AIChatViewModel+Lifecycle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMSPL001R /* AIChatViewModel+Lifecycle.swift */; };
+		E5VMSPL002B /* AIChatViewModel+ContextUsage.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMSPL002R /* AIChatViewModel+ContextUsage.swift */; };
+		E5VMSPL003B /* AIChatViewModel+StreamingUI.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMSPL003R /* AIChatViewModel+StreamingUI.swift */; };
+		E5VMSPL004B /* AIChatViewModel+Speech.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMSPL004R /* AIChatViewModel+Speech.swift */; };
+		E5VMSPL005B /* AIChatViewModel+AutoPlayAudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMSPL005R /* AIChatViewModel+AutoPlayAudio.swift */; };
+		E5VMSPL006B /* AIChatViewModel+SystemPrompt.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMSPL006R /* AIChatViewModel+SystemPrompt.swift */; };
+		E5VMSPL007B /* AIChatViewModel+Send.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMSPL007R /* AIChatViewModel+Send.swift */; };
+		E5VMSPL008B /* AIChatViewModel+Rerun.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMSPL008R /* AIChatViewModel+Rerun.swift */; };
+		E5VMSPL009B /* AIChatViewModel+EditMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMSPL009R /* AIChatViewModel+EditMessage.swift */; };
+		E5VMSPL010B /* AIChatViewModel+Cancel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMSPL010R /* AIChatViewModel+Cancel.swift */; };
+		E5VMSPL011B /* AIChatViewModel+PromptQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMSPL011R /* AIChatViewModel+PromptQueue.swift */; };
+		E5VMSPL012B /* AIChatViewModel+DebugDumps.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMSPL012R /* AIChatViewModel+DebugDumps.swift */; };
+		E5VMSPL013B /* AIChatViewModel+TurnCompletion.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMSPL013R /* AIChatViewModel+TurnCompletion.swift */; };
+		E5VMSPL014B /* AIChatViewModel+AgentLoop.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMSPL014R /* AIChatViewModel+AgentLoop.swift */; };
+		E5VMSPL015B /* AIChatViewModel+ThinkingLevel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMSPL015R /* AIChatViewModel+ThinkingLevel.swift */; };
+		E5VMSPL016B /* LLMProviderError.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMSPL016R /* LLMProviderError.swift */; };
 		E5W000001 /* PortableRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5W000011 /* PortableRecord.swift */; };
 		E5W000002 /* Syncable.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5W000012 /* Syncable.swift */; };
 		E5W000003 /* SyncableTypeRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5W000013 /* SyncableTypeRegistry.swift */; };
@@ -543,6 +609,7 @@
 		F1W00901 /* LazyLongTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1W00900 /* LazyLongTextView.swift */; };
 		F1W0E101 /* WebLoadError.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1W0E100 /* WebLoadError.swift */; };
 		FDD896F80E0A14A7B60B12EF /* VoiceLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28E23EA0E199D6D50EBC76F2 /* VoiceLog.swift */; };
+		FE115F74BE2709CEB6B7837F /* UserAskCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 791847408A92CF0D2161F33A /* UserAskCardView.swift */; };
 		LOC00001 /* AppLocalization.swift in Sources */ = {isa = PBXBuildFile; fileRef = LOC00002 /* AppLocalization.swift */; };
 		RCL000010 /* Rclone.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = RCL000020 /* Rclone.xcframework */; };
 		RCL000110 /* RcloneBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = RCL000210 /* RcloneBridge.swift */; };
@@ -561,13 +628,6 @@
 
 /* Begin PBXContainerItemProxy section */
 		AA8A56912F6FBB7A00A3E54E /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = E51000060 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = E51000040;
-			remoteInfo = Minis;
-		};
-		BB1000B10F700000000000AA /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = E51000060 /* Project object */;
 			proxyType = 1;
@@ -594,6 +654,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = E5H000040;
 			remoteInfo = AgentWidgetExtension;
+		};
+		E5TH000B1 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E51000060 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E5TH00070;
+			remoteInfo = MinisTestHost;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -638,6 +705,25 @@
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E5TH0H000 /* Embed Minis.debug.dylib */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				E5TH0F000 /* Minis.debug.dylib in Embed Minis.debug.dylib */,
+				E5TH0F001 /* FFmpeg.framework in Embed Minis.debug.dylib */,
+				E5TH0F002 /* libavcodec.framework in Embed Minis.debug.dylib */,
+				E5TH0F003 /* libavformat.framework in Embed Minis.debug.dylib */,
+				E5TH0F004 /* libavutil.framework in Embed Minis.debug.dylib */,
+				E5TH0F005 /* libavfilter.framework in Embed Minis.debug.dylib */,
+				E5TH0F006 /* libswresample.framework in Embed Minis.debug.dylib */,
+				E5TH0F007 /* libswscale.framework in Embed Minis.debug.dylib */,
+				E5TH0F008 /* RealTimeCutVADCXXLibrary.framework in Embed Minis.debug.dylib */,
+			);
+			name = "Embed Minis.debug.dylib";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
@@ -648,12 +734,17 @@
 		2BB45FC87D39AE9AB4495BE9 /* VoiceProvider+Vendors.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "VoiceProvider+Vendors.swift"; sourceTree = "<group>"; };
 		424510790AF3FB2452D3CCE3 /* VoiceOutputPlayer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VoiceOutputPlayer.swift; sourceTree = "<group>"; };
 		4D1A2B7331C508B0D3E77D28 /* InlineVoiceInputView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = InlineVoiceInputView.swift; sourceTree = "<group>"; };
+		4D7227A3A4F8E20ED979981C /* NotificationCategoryCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationCategoryCenter.swift; sourceTree = "<group>"; };
+		5340160943C17EA292203242 /* AIChatViewModel+UserAsk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+UserAsk.swift"; sourceTree = "<group>"; };
 		535D58AA5C4B7B563E4C8821 /* VoiceInputModels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VoiceInputModels.swift; sourceTree = "<group>"; };
 		5F3D1138DBE516F31D76ABF4 /* VoiceProviderTemplate.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VoiceProviderTemplate.swift; sourceTree = "<group>"; };
+		791847408A92CF0D2161F33A /* UserAskCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserAskCardView.swift; sourceTree = "<group>"; };
 		7A302B074A0BE0AFED8EC7E9 /* SpeechPlayerControl.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SpeechPlayerControl.swift; sourceTree = "<group>"; };
+		7F0DF01D0B /* ToolFoldPlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolFoldPlanner.swift; sourceTree = "<group>"; };
 		84758F712C9B9178FA9D0EF2 /* VoiceProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VoiceProvider.swift; sourceTree = "<group>"; };
 		86DD7E40E65177AB39C55882 /* VoiceProviderResolver.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VoiceProviderResolver.swift; sourceTree = "<group>"; };
 		88993FC8E3F0199C6638F664 /* VoiceProvider+System.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "VoiceProvider+System.swift"; sourceTree = "<group>"; };
+		8A85BF57B9450AF0807ACDDE /* UserAskCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserAskCenter.swift; sourceTree = "<group>"; };
 		A11Y0002 /* ChatAccessibilityAnnouncer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatAccessibilityAnnouncer.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B5D /* SystemVoiceCatalog.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SystemVoiceCatalog.swift; sourceTree = "<group>"; };
 		AA0838A12F3B941A00049557 /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
@@ -735,13 +826,13 @@
 		AA71B0212F44BEB200A28A5E /* Launch Screen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = "Launch Screen.storyboard"; sourceTree = "<group>"; };
 		AA8A568B2F6FBB7A00A3E54E /* MinisUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MinisUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		AADDA9E02F6ECCF400B66649 /* ThumbnailCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailCache.swift; sourceTree = "<group>"; };
-		AAF00F002F50A00000049557 /* FFmpeg.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = FFmpeg.framework; path = ../../deps/frameworks/FFmpeg.framework; sourceTree = "<group>"; };
-		AAF10F002F50A00000049557 /* libavcodec.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = libavcodec.framework; path = ../../deps/frameworks/libavcodec.framework; sourceTree = "<group>"; };
-		AAF10F042F50A00000049557 /* libavformat.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = libavformat.framework; path = ../../deps/frameworks/libavformat.framework; sourceTree = "<group>"; };
-		AAF10F072F50A00000049557 /* libavutil.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = libavutil.framework; path = ../../deps/frameworks/libavutil.framework; sourceTree = "<group>"; };
-		AAF10F0A2F50A00000049557 /* libavfilter.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = libavfilter.framework; path = ../../deps/frameworks/libavfilter.framework; sourceTree = "<group>"; };
-		AAF10F0D2F50A00000049557 /* libswresample.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = libswresample.framework; path = ../../deps/frameworks/libswresample.framework; sourceTree = "<group>"; };
-		AAF10F102F50A00000049557 /* libswscale.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = libswscale.framework; path = ../../deps/frameworks/libswscale.framework; sourceTree = "<group>"; };
+		AAF00F002F50A00000049557 /* FFmpeg.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = FFmpeg.xcframework; path = ../../deps/frameworks/FFmpeg.xcframework; sourceTree = "<group>"; };
+		AAF10F002F50A00000049557 /* libavcodec.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = libavcodec.xcframework; path = ../../deps/frameworks/libavcodec.xcframework; sourceTree = "<group>"; };
+		AAF10F042F50A00000049557 /* libavformat.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = libavformat.xcframework; path = ../../deps/frameworks/libavformat.xcframework; sourceTree = "<group>"; };
+		AAF10F072F50A00000049557 /* libavutil.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = libavutil.xcframework; path = ../../deps/frameworks/libavutil.xcframework; sourceTree = "<group>"; };
+		AAF10F0A2F50A00000049557 /* libavfilter.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = libavfilter.xcframework; path = ../../deps/frameworks/libavfilter.xcframework; sourceTree = "<group>"; };
+		AAF10F0D2F50A00000049557 /* libswresample.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = libswresample.xcframework; path = ../../deps/frameworks/libswresample.xcframework; sourceTree = "<group>"; };
+		AAF10F102F50A00000049557 /* libswscale.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = libswscale.xcframework; path = ../../deps/frameworks/libswscale.xcframework; sourceTree = "<group>"; };
 		AC0000001 /* ProviderCustomization.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = ProviderCustomization.xcconfig; path = Configs/ProviderCustomization.xcconfig; sourceTree = "<group>"; };
 		AC0000201 /* ProviderCustomizationGenerated.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ProviderCustomizationGenerated.swift; path = Generated/ProviderCustomizationGenerated.swift; sourceTree = "<group>"; };
 		B7E2CB0D0D63E6D6FDB45568 /* VoiceActivityDetector.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VoiceActivityDetector.swift; sourceTree = "<group>"; };
@@ -776,10 +867,10 @@
 		BKP000243 /* BackupTransferStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupTransferStatus.swift; sourceTree = "<group>"; };
 		BKP000244 /* BackupSkippedFilesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupSkippedFilesView.swift; sourceTree = "<group>"; };
 		D7656F4130247E4002A3AC0C /* VoiceTextSanitizer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VoiceTextSanitizer.swift; sourceTree = "<group>"; };
+		D7F4078E062F701034D36265 /* UserAskSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserAskSettings.swift; sourceTree = "<group>"; };
 		DE154CF628D8699BD99CF9CB /* AudioSessionCoordinator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AudioSessionCoordinator.swift; sourceTree = "<group>"; };
 		E51000010 /* Minis.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Minis.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E51000011 /* MinisApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinisApp.swift; sourceTree = "<group>"; };
-		E51000012 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		E51000013 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		E51000014 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
 		E52000011 /* LLMTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMTypes.swift; sourceTree = "<group>"; };
@@ -790,7 +881,6 @@
 		E52000016 /* ClaudeOAuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeOAuthManager.swift; sourceTree = "<group>"; };
 		E52000018 /* AnthropicModelsAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnthropicModelsAPI.swift; sourceTree = "<group>"; };
 		E53000011 /* AIChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIChatViewModel.swift; sourceTree = "<group>"; };
-		E53000012 /* AIChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIChatView.swift; sourceTree = "<group>"; };
 		E53000014 /* ChatStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatStore.swift; sourceTree = "<group>"; };
 		E53000015 /* UsageStatsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageStatsView.swift; sourceTree = "<group>"; };
 		E53000016 /* CacheKeepAliveManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheKeepAliveManager.swift; sourceTree = "<group>"; };
@@ -835,13 +925,18 @@
 		E59000012 /* AnthropicAgentProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnthropicAgentProvider.swift; sourceTree = "<group>"; };
 		E59000013 /* GeminiAgentProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeminiAgentProvider.swift; sourceTree = "<group>"; };
 		E5A000011 /* default_mount */ = {isa = PBXFileReference; lastKnownFileType = folder; path = default_mount; sourceTree = "<group>"; };
+		E5A000A11 /* AOJITRestore */ = {isa = PBXFileReference; lastKnownFileType = folder; path = AOJITRestore; sourceTree = "<group>"; };
+		E5A0J1T0F1E0000000000001 /* AOJITSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AOJITSettingsView.swift; sourceTree = "<group>"; };
 		E5ACB0011 /* AgentCallback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCallback.swift; sourceTree = "<group>"; };
 		E5ACB0012 /* AgentCallbackCellView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCallbackCellView.swift; sourceTree = "<group>"; };
 		E5AJR0011 /* AgentJobRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentJobRegistry.swift; sourceTree = "<group>"; };
 		E5AJR0012 /* HelperRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperRunner.swift; sourceTree = "<group>"; };
 		E5AJR0013 /* ModelTierResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelTierResolver.swift; sourceTree = "<group>"; };
 		E5AJR0014 /* HelperSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperSheet.swift; sourceTree = "<group>"; };
+		E5AJS0011 /* AOJITShellStats.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AOJITShellStats.swift; sourceTree = "<group>"; };
 		E5AMI0011 /* HelperModelIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperModelIdentity.swift; sourceTree = "<group>"; };
+		E5AON0011 /* AlwaysOnController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlwaysOnController.swift; sourceTree = "<group>"; };
+		E5AOV0011 /* AlwaysOnOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlwaysOnOverlay.swift; sourceTree = "<group>"; };
 		E5AS00011 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/AppShortcuts.strings; sourceTree = "<group>"; };
 		E5AS00012 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/AppShortcuts.strings"; sourceTree = "<group>"; };
 		E5AS00013 /* zh-Hant */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hant"; path = "zh-Hant.lproj/AppShortcuts.strings"; sourceTree = "<group>"; };
@@ -860,7 +955,12 @@
 		E5C0DE9B1 /* OpenCodeChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenCodeChannel.swift; sourceTree = "<group>"; };
 		E5CADM03 /* CorrectionAdmission.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CorrectionAdmission.swift; sourceTree = "<group>"; };
 		E5CAL0002 /* CookieAuditLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CookieAuditLogger.swift; sourceTree = "<group>"; };
+		E5CBR0011 /* CrashBreadcrumbs.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = CrashBreadcrumbs.m; sourceTree = "<group>"; };
+		E5CBR0012 /* ResourceSampler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResourceSampler.swift; sourceTree = "<group>"; };
+		E5CBR0013 /* CrashBreadcrumbs.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = CrashBreadcrumbs.h; sourceTree = "<group>"; };
 		E5CCB0011 /* CorrectionContextBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CorrectionContextBuilder.swift; sourceTree = "<group>"; };
+		E5CDX0011 /* CrashDiagnosticsExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrashDiagnosticsExport.swift; sourceTree = "<group>"; };
+		E5CDX0012 /* CrashDiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrashDiagnosticsView.swift; sourceTree = "<group>"; };
 		E5CFG0011 /* ConfigAuditEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ConfigAuditEntry.swift; path = Config/Audit/ConfigAuditEntry.swift; sourceTree = "<group>"; };
 		E5CFG0012 /* ConfigAuditLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ConfigAuditLog.swift; path = Config/Audit/ConfigAuditLog.swift; sourceTree = "<group>"; };
 		E5CFG0013 /* MinisConfigPermissionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MinisConfigPermissionStore.swift; path = Config/MinisConfigPermissionStore.swift; sourceTree = "<group>"; };
@@ -883,6 +983,37 @@
 		E5CR00012 /* CrashReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrashReporter.swift; sourceTree = "<group>"; };
 		E5CR00013 /* CrashSignalHandler.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = CrashSignalHandler.m; sourceTree = "<group>"; };
 		E5CR00014 /* CrashSignalHandler.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = CrashSignalHandler.h; sourceTree = "<group>"; };
+		E5CRDBL11 /* ConfigReadable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ConfigReadable.swift; path = Config/Readable/ConfigReadable.swift; sourceTree = "<group>"; };
+		E5CRDBL12 /* ConfigReadableRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ConfigReadableRenderer.swift; path = Config/Readable/ConfigReadableRenderer.swift; sourceTree = "<group>"; };
+		E5CRDBL13 /* ConfigAuditDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigAuditDetailView.swift; sourceTree = "<group>"; };
+		E5CSH0011 /* ChatShareModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatShareModel.swift; sourceTree = "<group>"; };
+		E5CSH0012 /* ChatShareSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatShareSelectionView.swift; sourceTree = "<group>"; };
+		E5CSH0013 /* ChatExportRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatExportRenderer.swift; sourceTree = "<group>"; };
+		E5CSSPL001R /* ChatStore+Schema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatStore+Schema.swift"; sourceTree = "<group>"; };
+		E5CSSPL002R /* ChatStore+SessionCRUD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatStore+SessionCRUD.swift"; sourceTree = "<group>"; };
+		E5CSSPL003R /* ChatStore+SessionList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatStore+SessionList.swift"; sourceTree = "<group>"; };
+		E5CSSPL004R /* ChatStore+Search.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatStore+Search.swift"; sourceTree = "<group>"; };
+		E5CSSPL005R /* ChatStore+SessionQueries.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatStore+SessionQueries.swift"; sourceTree = "<group>"; };
+		E5CSSPL006R /* ChatStore+Folders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatStore+Folders.swift"; sourceTree = "<group>"; };
+		E5CSSPL007R /* ChatStore+SessionDeletion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatStore+SessionDeletion.swift"; sourceTree = "<group>"; };
+		E5CSSPL008R /* ChatStore+StoredPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatStore+StoredPreview.swift"; sourceTree = "<group>"; };
+		E5CSSPL009R /* ChatStore+Messages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatStore+Messages.swift"; sourceTree = "<group>"; };
+		E5CSSPL010R /* ChatStore+Media.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatStore+Media.swift"; sourceTree = "<group>"; };
+		E5CSSPL011R /* ChatStore+CompactMarkers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatStore+CompactMarkers.swift"; sourceTree = "<group>"; };
+		E5CSSPL012R /* ChatStore+Tombstones.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatStore+Tombstones.swift"; sourceTree = "<group>"; };
+		E5CSSPL013R /* ChatStore+WebAppShortcuts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatStore+WebAppShortcuts.swift"; sourceTree = "<group>"; };
+		E5CSSPL014R /* ChatStore+Maintenance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatStore+Maintenance.swift"; sourceTree = "<group>"; };
+		E5CSSPL015R /* ChatStore+Helpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatStore+Helpers.swift"; sourceTree = "<group>"; };
+		E5CSSPL016R /* ChatStore+UsageStats.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatStore+UsageStats.swift"; sourceTree = "<group>"; };
+		E5CSSPL017R /* ChatStoreModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatStoreModels.swift; sourceTree = "<group>"; };
+		E5CSSPL018R /* ContentPart+ProviderConversion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ContentPart+ProviderConversion.swift"; sourceTree = "<group>"; };
+		E5CSSPL019R /* RawMessage+Conversion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawMessage+Conversion.swift"; sourceTree = "<group>"; };
+		E5CSSPL020R /* ChatStore+SyncDirty.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatStore+SyncDirty.swift"; sourceTree = "<group>"; };
+		E5CSSPL021R /* ChatStore+SyncRemoteSessions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatStore+SyncRemoteSessions.swift"; sourceTree = "<group>"; };
+		E5CSSPL022R /* ChatStore+SyncRemoteRecords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatStore+SyncRemoteRecords.swift"; sourceTree = "<group>"; };
+		E5CSSPL023R /* ChatStore+BackupRestore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatStore+BackupRestore.swift"; sourceTree = "<group>"; };
+		E5CVSET0000000000000A011 /* SettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsSheet.swift; sourceTree = "<group>"; };
+		E5CVSET0000000000000A012 /* AppearanceSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceSettingsView.swift; sourceTree = "<group>"; };
 		E5D00011 /* ProviderTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderTypes.swift; sourceTree = "<group>"; };
 		E5D00012 /* ProviderInstance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderInstance.swift; sourceTree = "<group>"; };
 		E5D00013 /* ModelEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelEntry.swift; sourceTree = "<group>"; };
@@ -933,6 +1064,7 @@
 		E5F2000FB /* TextFadeAnimator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextFadeAnimator.swift; sourceTree = "<group>"; };
 		E5F2009B1 /* EquatableContextMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EquatableContextMenu.swift; sourceTree = "<group>"; };
 		E5F200AB1 /* MemoryWriteRevoker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryWriteRevoker.swift; sourceTree = "<group>"; };
+		E5FIO0011 /* FileToolIO.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileToolIO.swift; sourceTree = "<group>"; };
 		E5FMI0011 /* FileMentionIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileMentionIndex.swift; sourceTree = "<group>"; };
 		E5FP00010 /* MinisFileProvider.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = MinisFileProvider.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		E5FP00011 /* FileProviderExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileProviderExtension.swift; sourceTree = "<group>"; };
@@ -974,6 +1106,7 @@
 		E5IP00026 /* ro */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ro; path = ro.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		E5IP00027 /* pt-BR */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "pt-BR"; path = "pt-BR.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 		E5IP00028 /* hr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = hr; path = hr.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		E5ITL0011 /* IdleTimerLease.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdleTimerLease.swift; sourceTree = "<group>"; };
 		E5J000011 /* LoggingManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoggingManager.swift; sourceTree = "<group>"; };
 		E5J000012 /* LogManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogManagementView.swift; sourceTree = "<group>"; };
 		E5J000013 /* ConfigAuditView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigAuditView.swift; sourceTree = "<group>"; };
@@ -988,7 +1121,6 @@
 		E5JB00013 /* TextSegmenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextSegmenter.swift; sourceTree = "<group>"; };
 		E5JB00014 /* jieba.dict.utf8 */ = {isa = PBXFileReference; lastKnownFileType = text; name = jieba.dict.utf8; path = Resources/jieba.dict.utf8; sourceTree = "<group>"; };
 		E5JB00015 /* hmm_model.utf8 */ = {isa = PBXFileReference; lastKnownFileType = text; name = hmm_model.utf8; path = Resources/hmm_model.utf8; sourceTree = "<group>"; };
-		E5K000011 /* SelectableMarkdownView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectableMarkdownView.swift; sourceTree = "<group>"; };
 		E5K000012 /* ChatTurnScreenshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTurnScreenshot.swift; sourceTree = "<group>"; };
 		E5KIMIR01 /* KimiOAuthRefreshCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = KimiOAuthRefreshCoordinator.swift; path = Providers/Kimi/OAuth/KimiOAuthRefreshCoordinator.swift; sourceTree = SOURCE_ROOT; };
 		E5KIMIR02 /* KimiDeviceFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = KimiDeviceFlow.swift; path = Providers/Kimi/OAuth/KimiDeviceFlow.swift; sourceTree = SOURCE_ROOT; };
@@ -1065,6 +1197,7 @@
 		E5LOCK101 /* SessionLockStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionLockStore.swift; sourceTree = "<group>"; };
 		E5LOCK102 /* FaceIDProtectionSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceIDProtectionSettingsView.swift; sourceTree = "<group>"; };
 		E5LOCK103 /* AppLockOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLockOverlay.swift; sourceTree = "<group>"; };
+		E5LRD0002 /* LogRedaction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogRedaction.swift; sourceTree = "<group>"; };
 		E5M000013 /* MinisMarkdownParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinisMarkdownParser.swift; sourceTree = "<group>"; };
 		E5M000017 /* MarkdownRenderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownRenderView.swift; sourceTree = "<group>"; };
 		E5MDS0013 /* MarkdownStripper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownStripper.swift; sourceTree = "<group>"; };
@@ -1109,6 +1242,14 @@
 		E5QA0102 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		E5QA0103 /* QuickActionWorkflow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickActionWorkflow.swift; sourceTree = "<group>"; };
 		E5QT00011 /* ModelQuickTestSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelQuickTestSheet.swift; sourceTree = "<group>"; };
+		E5QTA01F /* QuotaModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaModels.swift; sourceTree = "<group>"; };
+		E5QTA02F /* QuotaRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaRules.swift; sourceTree = "<group>"; };
+		E5QTA03F /* QuotaAdapters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaAdapters.swift; sourceTree = "<group>"; };
+		E5QTA04F /* QuotaPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaPersistence.swift; sourceTree = "<group>"; };
+		E5QTA05F /* QuotaStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaStore.swift; sourceTree = "<group>"; };
+		E5QTA06F /* ProviderQuotaSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaSection.swift; sourceTree = "<group>"; };
+		E5QTA07F /* QuotaPickerHints.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaPickerHints.swift; sourceTree = "<group>"; };
+		E5QTA08F /* QuotaDetailSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaDetailSheet.swift; sourceTree = "<group>"; };
 		E5R000011 /* ICloudBackupManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ICloudBackupManager.swift; sourceTree = "<group>"; };
 		E5R000012 /* ICloudBackupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ICloudBackupView.swift; sourceTree = "<group>"; };
 		E5RSD0011 /* ResourceDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResourceDiagnostics.swift; sourceTree = "<group>"; };
@@ -1119,6 +1260,7 @@
 		E5S000015 /* CloudKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CloudKit.framework; path = System/Library/Frameworks/CloudKit.framework; sourceTree = SDKROOT; };
 		E5S000016 /* SyncDirtyScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncDirtyScanner.swift; sourceTree = "<group>"; };
 		E5SAC0020 /* SubAgentsCollection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SubAgentsCollection.swift; path = Config/Collections/SubAgentsCollection.swift; sourceTree = "<group>"; };
+		E5SAT0011 /* SubAgentTermination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubAgentTermination.swift; sourceTree = "<group>"; };
 		E5SCH0010 /* ScheduledOffload.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ScheduledOffload.h; sourceTree = "<group>"; };
 		E5SCH0011 /* ScheduledJobRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduledJobRunner.swift; sourceTree = "<group>"; };
 		E5SCH0012 /* ScheduledOffload.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ScheduledOffload.m; sourceTree = "<group>"; };
@@ -1126,13 +1268,18 @@
 		E5SCH0014 /* HelperSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperSettingsView.swift; sourceTree = "<group>"; };
 		E5SD00019 /* ShortcutRunTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutRunTracker.swift; sourceTree = "<group>"; };
 		E5SDS0011 /* SessionDeletionSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionDeletionSupport.swift; sourceTree = "<group>"; };
+		E5SEV0011 /* SaveEnvVarIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SaveEnvVarIntent.swift; sourceTree = "<group>"; };
 		E5SHV0101 /* SharedFolderVisibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedFolderVisibility.swift; sourceTree = "<group>"; };
 		E5SHV0103 /* SharedFoldersSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedFoldersSettingsView.swift; sourceTree = "<group>"; };
 		E5SHV0104 /* MountDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MountDetailView.swift; sourceTree = "<group>"; };
 		E5SOUL101 /* SoulStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoulStore.swift; sourceTree = "<group>"; };
 		E5SOUL102 /* SoulSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoulSettingsView.swift; sourceTree = "<group>"; };
 		E5EXTMV1 /* ExtensionManagerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionManagerView.swift; sourceTree = "<group>"; };
+		E5SPDT0011 /* SpeedTier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeedTier.swift; sourceTree = "<group>"; };
+		E5SPT0011 /* ScheduledPresetToolCall.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduledPresetToolCall.swift; sourceTree = "<group>"; };
 		E5SRS0011 /* SessionRefreshScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRefreshScheduler.swift; sourceTree = "<group>"; };
+		E5STD0011 /* ScheduledTargetDelivery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduledTargetDelivery.swift; sourceTree = "<group>"; };
+		E5STD0012 /* ScheduledTaskDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduledTaskDetailView.swift; sourceTree = "<group>"; };
 		E5SUB0001 /* SubAgentDefinition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubAgentDefinition.swift; sourceTree = "<group>"; };
 		E5SUB0010 /* SubAgentStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubAgentStore.swift; sourceTree = "<group>"; };
 		E5SVP0031 /* ShadowVoiceProviderDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShadowVoiceProviderDetailView.swift; sourceTree = "<group>"; };
@@ -1148,6 +1295,16 @@
 		E5T00001A /* RetryRunIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RetryRunIntent.swift; sourceTree = "<group>"; };
 		E5T00001B /* UserMessageEntity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserMessageEntity.swift; sourceTree = "<group>"; };
 		E5T0000A2 /* AskMinisIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AskMinisIntent.swift; sourceTree = "<group>"; };
+		E5TH00010 /* MinisTestHost.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MinisTestHost.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E5TH0E000 /* Minis.debug.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = Minis.debug.dylib; path = Minis.app/Minis.debug.dylib; sourceTree = BUILT_PRODUCTS_DIR; };
+		E5TH0E001 /* FFmpeg.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = FFmpeg.framework; path = Minis.app/Frameworks/FFmpeg.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		E5TH0E002 /* libavcodec.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = libavcodec.framework; path = Minis.app/Frameworks/libavcodec.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		E5TH0E003 /* libavformat.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = libavformat.framework; path = Minis.app/Frameworks/libavformat.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		E5TH0E004 /* libavutil.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = libavutil.framework; path = Minis.app/Frameworks/libavutil.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		E5TH0E005 /* libavfilter.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = libavfilter.framework; path = Minis.app/Frameworks/libavfilter.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		E5TH0E006 /* libswresample.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = libswresample.framework; path = Minis.app/Frameworks/libswresample.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		E5TH0E007 /* libswscale.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = libswscale.framework; path = Minis.app/Frameworks/libswscale.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		E5TH0E008 /* RealTimeCutVADCXXLibrary.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = RealTimeCutVADCXXLibrary.framework; path = Minis.app/Frameworks/RealTimeCutVADCXXLibrary.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		E5TLC0002 /* ThinkingLevelCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThinkingLevelCatalog.swift; sourceTree = "<group>"; };
 		E5TLS0011 /* ToolsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolsSettingsView.swift; sourceTree = "<group>"; };
 		E5TRC002 /* ThinkingRuleCoding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ThinkingRuleCoding.swift; path = Thinking/ThinkingRuleCoding.swift; sourceTree = "<group>"; };
@@ -1155,14 +1312,15 @@
 		E5TRE002 /* ThinkingRuleEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThinkingRuleEditorView.swift; sourceTree = "<group>"; };
 		E5TRS002 /* ThinkingRulesSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThinkingRulesSection.swift; sourceTree = "<group>"; };
 		E5TWF002 /* ThinkingWireFormat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ThinkingWireFormat.swift; path = Thinking/ThinkingWireFormat.swift; sourceTree = "<group>"; };
+		E5TWG0002 /* InjectedTweakSelectorGuard.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = InjectedTweakSelectorGuard.m; sourceTree = "<group>"; };
 		E5TWR002 /* ThinkingRule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ThinkingRule.swift; path = Thinking/ThinkingRule.swift; sourceTree = "<group>"; };
 		E5TWS002 /* ThinkingRuleResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ThinkingRuleResolver.swift; path = Thinking/ThinkingRuleResolver.swift; sourceTree = "<group>"; };
 		E5U000011 /* KaTeXRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KaTeXRenderer.swift; sourceTree = "<group>"; };
 		E5U000012 /* KaTeX */ = {isa = PBXFileReference; lastKnownFileType = folder; name = KaTeX; path = Resources/KaTeX; sourceTree = "<group>"; };
+		E5UAM0011 /* UserActivityMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserActivityMonitor.swift; sourceTree = "<group>"; };
 		E5UMP0011 /* UnifiedModelPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnifiedModelPicker.swift; sourceTree = "<group>"; };
 		E5V000012 /* AlternateIcons */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AlternateIcons; path = Resources/AlternateIcons; sourceTree = "<group>"; };
 		E5V100011 /* MessageListLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageListLayout.swift; sourceTree = "<group>"; };
-		E5V300011 /* CollectionViewMessageListV3.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionViewMessageListV3.swift; sourceTree = "<group>"; };
 		E5VC00011 /* VoiceCorrectionDB.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceCorrectionDB.swift; sourceTree = "<group>"; };
 		E5VC00012 /* PhoneticNormalizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneticNormalizer.swift; sourceTree = "<group>"; };
 		E5VC00013 /* SentenceSplitter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SentenceSplitter.swift; sourceTree = "<group>"; };
@@ -1324,6 +1482,22 @@
 		E5VMC0016 /* AIChatViewModel+BackgroundTask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+BackgroundTask.swift"; sourceTree = "<group>"; };
 		E5VMC0017 /* AIChatViewModel+ConcurrentTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+ConcurrentTools.swift"; sourceTree = "<group>"; };
 		E5VMD0011 /* MinisURLPathDecoding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinisURLPathDecoding.swift; sourceTree = "<group>"; };
+		E5VMSPL001R /* AIChatViewModel+Lifecycle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+Lifecycle.swift"; sourceTree = "<group>"; };
+		E5VMSPL002R /* AIChatViewModel+ContextUsage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+ContextUsage.swift"; sourceTree = "<group>"; };
+		E5VMSPL003R /* AIChatViewModel+StreamingUI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+StreamingUI.swift"; sourceTree = "<group>"; };
+		E5VMSPL004R /* AIChatViewModel+Speech.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+Speech.swift"; sourceTree = "<group>"; };
+		E5VMSPL005R /* AIChatViewModel+AutoPlayAudio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+AutoPlayAudio.swift"; sourceTree = "<group>"; };
+		E5VMSPL006R /* AIChatViewModel+SystemPrompt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+SystemPrompt.swift"; sourceTree = "<group>"; };
+		E5VMSPL007R /* AIChatViewModel+Send.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+Send.swift"; sourceTree = "<group>"; };
+		E5VMSPL008R /* AIChatViewModel+Rerun.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+Rerun.swift"; sourceTree = "<group>"; };
+		E5VMSPL009R /* AIChatViewModel+EditMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+EditMessage.swift"; sourceTree = "<group>"; };
+		E5VMSPL010R /* AIChatViewModel+Cancel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+Cancel.swift"; sourceTree = "<group>"; };
+		E5VMSPL011R /* AIChatViewModel+PromptQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+PromptQueue.swift"; sourceTree = "<group>"; };
+		E5VMSPL012R /* AIChatViewModel+DebugDumps.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+DebugDumps.swift"; sourceTree = "<group>"; };
+		E5VMSPL013R /* AIChatViewModel+TurnCompletion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+TurnCompletion.swift"; sourceTree = "<group>"; };
+		E5VMSPL014R /* AIChatViewModel+AgentLoop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+AgentLoop.swift"; sourceTree = "<group>"; };
+		E5VMSPL015R /* AIChatViewModel+ThinkingLevel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+ThinkingLevel.swift"; sourceTree = "<group>"; };
+		E5VMSPL016R /* LLMProviderError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMProviderError.swift; sourceTree = "<group>"; };
 		E5W000011 /* PortableRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortableRecord.swift; sourceTree = "<group>"; };
 		E5W000012 /* Syncable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Syncable.swift; sourceTree = "<group>"; };
 		E5W000013 /* SyncableTypeRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncableTypeRegistry.swift; sourceTree = "<group>"; };
@@ -1361,6 +1535,7 @@
 		EAB000050 /* SyncMigrationDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncMigrationDetailView.swift; sourceTree = "<group>"; };
 		EAB000070 /* UploadPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadPolicy.swift; sourceTree = "<group>"; };
 		EAB000080 /* CloudSyncSettingsV2View.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudSyncSettingsV2View.swift; sourceTree = "<group>"; };
+		EF08A43E8045BF444E5F2DF1 /* UserAskCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserAskCore.swift; sourceTree = "<group>"; };
 		EXA000011 /* xAIModelsAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = xAIModelsAPI.swift; sourceTree = "<group>"; };
 		EXA000012 /* XAITokenStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAITokenStorage.swift; sourceTree = "<group>"; };
 		EXA000013 /* XAIOAuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAIOAuthManager.swift; sourceTree = "<group>"; };
@@ -1410,17 +1585,7 @@
 		E5EXC0001 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				Standalone/BackupPackageNameTests.swift,
-				Standalone/BackupZipContainmentTests.swift,
-				Standalone/BackupZipStoredOnlyTests.swift,
-				Standalone/BrowserUseDOMRectCloneTests.swift,
-				Standalone/CJKPaginationThresholdTests.swift,
-				Standalone/InLoopCompactOrderTests.swift,
-				Standalone/RestoreSymlinkContainmentTests.swift,
-				Standalone/SkillDescriptionStaleTests.swift,
-				Standalone/SoulIconSourceTests.swift,
-				Standalone/UsageAttributionClobberTests.swift,
-				Standalone/VADStartRollbackTests.swift,
+				Standalone,
 				ThinkingLevelTests.swift,
 			);
 			target = BB1000070F700000000000AA /* MinisTests */;
@@ -1430,7 +1595,12 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		AA0838CB2F3CA8A900049557 /* Terminal */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Terminal; sourceTree = "<group>"; };
 		AA8A568C2F6FBB7A00A3E54E /* MinisUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = MinisUITests; sourceTree = "<group>"; };
-		BB1000012F700000000000AA /* MinisTests */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (E5EXC0001 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = MinisTests; sourceTree = "<group>"; };
+		BB1000012F700000000000AA /* MinisTests */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (E5EXC0001 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (Standalone, ); path = MinisTests; sourceTree = "<group>"; };
+		E5ACVSYNC0000000000000A1 /* AIChatView */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = AIChatView; sourceTree = "<group>"; };
+		E5CVSYNC00000000000000A1 /* ContentView */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = ContentView; sourceTree = "<group>"; };
+		E5MDSYNC00000000000000A1 /* Markdown */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Markdown; sourceTree = "<group>"; };
+		E5TH00012 /* MinisTestHost */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = MinisTestHost; sourceTree = "<group>"; };
+		E5V3SYNC00000000000000A1 /* CollectionViewMessageListV3 */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = CollectionViewMessageListV3; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1469,6 +1639,13 @@
 				E5M000002 /* cmark-gfm-extensions in Frameworks */,
 				E5S000005 /* CloudKit.framework in Frameworks */,
 				891443CAA4679D09A6D32AE4 /* RealTimeCutVADLibrary in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E5TH00020 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1644,6 +1821,8 @@
 				E5FP00030 /* FileProvider */,
 				AA8A568C2F6FBB7A00A3E54E /* MinisUITests */,
 				BB1000012F700000000000AA /* MinisTests */,
+				E5TH00012 /* MinisTestHost */,
+				E5TH0G000 /* MinisTests Embedded */,
 				AA26BD0E2F2E5FA500AECF2D /* Frameworks */,
 				E51000032 /* Products */,
 				AACCC6B4300B9D590053F20D /* Recovered References */,
@@ -1661,6 +1840,7 @@
 				E5IP00010 /* InfoPlist.strings */,
 				E5AS00010 /* AppShortcuts.strings */,
 				E5A000011 /* default_mount */,
+				E5A000A11 /* AOJITRestore */,
 				E5U000012 /* KaTeX */,
 				E5V000012 /* AlternateIcons */,
 				E5D00060 /* models-dev-api.json */,
@@ -1692,6 +1872,7 @@
 				E5FP00010 /* MinisFileProvider.appex */,
 				AA8A568B2F6FBB7A00A3E54E /* MinisUITests.xctest */,
 				BB1000010F700000000000AA /* MinisTests.xctest */,
+				E5TH00010 /* MinisTestHost.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -1707,6 +1888,7 @@
 		E52000030 /* Providers */ = {
 			isa = PBXGroup;
 			children = (
+				E5QTAGRP /* Quota */,
 				E52000011 /* LLMTypes.swift */,
 				E52000012 /* LLMError.swift */,
 				E5OARC030 /* OAuthRefreshCoordinator.swift */,
@@ -1975,10 +2157,13 @@
 			children = (
 				E5AJR0011 /* AgentJobRegistry.swift */,
 				E5AJR0012 /* HelperRunner.swift */,
+				E5SAT0011 /* SubAgentTermination.swift */,
 				E5ACB0011 /* AgentCallback.swift */,
 				E5AMI0011 /* HelperModelIdentity.swift */,
 				E5AJR0013 /* ModelTierResolver.swift */,
 				E5SCH0011 /* ScheduledJobRunner.swift */,
+				E5SPT0011 /* ScheduledPresetToolCall.swift */,
+				E5STD0011 /* ScheduledTargetDelivery.swift */,
 			);
 			path = Jobs;
 			sourceTree = "<group>";
@@ -2016,6 +2201,7 @@
 			children = (
 				E5C000011 /* OpenAIProvider.swift */,
 				E5C0DE9B1 /* OpenCodeChannel.swift */,
+				E5SPDT0011 /* SpeedTier.swift */,
 				E5C000012 /* OpenAIAgentProvider.swift */,
 				E5C000013 /* OpenAIModelsAPI.swift */,
 				E5C000031 /* OAuth */,
@@ -2040,6 +2226,10 @@
 				E5CR00012 /* CrashReporter.swift */,
 				E5CR00014 /* CrashSignalHandler.h */,
 				E5CR00013 /* CrashSignalHandler.m */,
+				E5CBR0013 /* CrashBreadcrumbs.h */,
+				E5CBR0011 /* CrashBreadcrumbs.m */,
+				E5CBR0012 /* ResourceSampler.swift */,
+				E5CDX0011 /* CrashDiagnosticsExport.swift */,
 			);
 			path = Diagnostics;
 			sourceTree = "<group>";
@@ -2047,7 +2237,7 @@
 		E5D000030 /* Views */ = {
 			isa = PBXGroup;
 			children = (
-				E51000012 /* ContentView.swift */,
+				E5CVSYNC00000000000000A1 /* ContentView */,
 				E5SRS0011 /* SessionRefreshScheduler.swift */,
 				F1V00014 /* Alarms */,
 				F1V00015 /* Backup */,
@@ -2093,6 +2283,8 @@
 				E5G000014 /* AgentActivityAttributes.swift */,
 				E5AT00011 /* AudioTogglePlaybackIntent.swift */,
 				E5Q000013 /* AppLogger.swift */,
+				E5LRD0002 /* LogRedaction.swift */,
+				4D7227A3A4F8E20ED979981C /* NotificationCategoryCenter.swift */,
 				LOC00002 /* AppLocalization.swift */,
 				E5Q000011 /* BPETokenizer.swift */,
 				E5MDS0013 /* MarkdownStripper.swift */,
@@ -2114,6 +2306,8 @@
 				E5CFG001B /* PendingConfigChange.swift */,
 				E5CFG001C /* ConfigConfirmationGate.swift */,
 				E5CFG001D /* ConfigConfirmSheet.swift */,
+				E5CRDBL11 /* ConfigReadable.swift */,
+				E5CRDBL12 /* ConfigReadableRenderer.swift */,
 				E5CFG001E /* ProvidersCollection.swift */,
 				E5CFG001F /* ModelsCollection.swift */,
 				E5CFG0030 /* GroupsCollection.swift */,
@@ -2138,6 +2332,7 @@
 				E5KVC0013 /* SafeKVCSetTrue.m */,
 				E5J000032 /* NSTextContainerSetSizeGuard.h */,
 				E5J000031 /* NSTextContainerSetSizeGuard.m */,
+				E5TWG0002 /* InjectedTweakSelectorGuard.m */,
 				E5J000011 /* LoggingManager.swift */,
 				E5BADGE011 /* SessionBadgeStore.swift */,
 				E5F100011 /* NetworkMonitor.swift */,
@@ -2251,11 +2446,24 @@
 			path = NativeOffloads;
 			sourceTree = "<group>";
 		};
+		E5QTAGRP /* Quota */ = {
+			isa = PBXGroup;
+			children = (
+				E5QTA01F /* QuotaModels.swift */,
+				E5QTA02F /* QuotaRules.swift */,
+				E5QTA03F /* QuotaAdapters.swift */,
+				E5QTA04F /* QuotaPersistence.swift */,
+				E5QTA05F /* QuotaStore.swift */,
+			);
+			path = Quota;
+			sourceTree = "<group>";
+		};
 		E5T000030 /* Intents */ = {
 			isa = PBXGroup;
 			children = (
 				E5T000011 /* SessionEntity.swift */,
 				E5T000012 /* ListSessionsIntent.swift */,
+				E5SEV0011 /* SaveEnvVarIntent.swift */,
 				E5T000013 /* SendPromptIntent.swift */,
 				E5T0000A2 /* AskMinisIntent.swift */,
 				E5F200016 /* ModelSelectionEntity.swift */,
@@ -2270,6 +2478,22 @@
 				E5T00001B /* UserMessageEntity.swift */,
 			);
 			path = Intents;
+			sourceTree = "<group>";
+		};
+		E5TH0G000 /* MinisTests Embedded */ = {
+			isa = PBXGroup;
+			children = (
+				E5TH0E000 /* Minis.debug.dylib */,
+				E5TH0E001 /* FFmpeg.framework */,
+				E5TH0E002 /* libavcodec.framework */,
+				E5TH0E003 /* libavformat.framework */,
+				E5TH0E004 /* libavutil.framework */,
+				E5TH0E005 /* libavfilter.framework */,
+				E5TH0E006 /* libswresample.framework */,
+				E5TH0E007 /* libswscale.framework */,
+				E5TH0E008 /* RealTimeCutVADCXXLibrary.framework */,
+			);
+			name = "MinisTests Embedded";
 			sourceTree = "<group>";
 		};
 		E5W000010 /* WebApp */ = {
@@ -2362,17 +2586,42 @@
 				E5TODO001 /* AIChatViewModel+TodoTools.swift */,
 				E5VMA0016 /* AIChatViewModel+ProviderFactory.swift */,
 				E5VMA0017 /* AIChatViewModel+ToolDefinitions.swift */,
+				5340160943C17EA292203242 /* AIChatViewModel+UserAsk.swift */,
+				8A85BF57B9450AF0807ACDDE /* UserAskCenter.swift */,
+				D7F4078E062F701034D36265 /* UserAskSettings.swift */,
+				EF08A43E8045BF444E5F2DF1 /* UserAskCore.swift */,
 				E5VMA0018 /* AIChatViewModel+ToolPreflight.swift */,
 				E5VMB0011 /* AIChatViewModel+Compaction.swift */,
+				E5VMSPL001R /* AIChatViewModel+Lifecycle.swift */,
+				E5VMSPL002R /* AIChatViewModel+ContextUsage.swift */,
+				E5VMSPL003R /* AIChatViewModel+StreamingUI.swift */,
+				E5VMSPL004R /* AIChatViewModel+Speech.swift */,
+				E5VMSPL005R /* AIChatViewModel+AutoPlayAudio.swift */,
+				E5VMSPL006R /* AIChatViewModel+SystemPrompt.swift */,
+				E5VMSPL007R /* AIChatViewModel+Send.swift */,
+				E5VMSPL008R /* AIChatViewModel+Rerun.swift */,
+				E5VMSPL009R /* AIChatViewModel+EditMessage.swift */,
+				E5VMSPL010R /* AIChatViewModel+Cancel.swift */,
+				E5VMSPL011R /* AIChatViewModel+PromptQueue.swift */,
+				E5VMSPL012R /* AIChatViewModel+DebugDumps.swift */,
+				E5VMSPL013R /* AIChatViewModel+TurnCompletion.swift */,
+				E5VMSPL014R /* AIChatViewModel+AgentLoop.swift */,
+				E5VMSPL015R /* AIChatViewModel+ThinkingLevel.swift */,
+				E5VMSPL016R /* LLMProviderError.swift */,
 				E5PPR0011 /* AIChatViewModel+ProgrammaticPrompt.swift */,
 				E5VMB0012 /* AIChatViewModel+Fallback.swift */,
 				E5VMB0013 /* AIChatViewModel+Misc.swift */,
 				E5VMB0014 /* AIChatViewModel+RequestBudget.swift */,
 				E5VMB0015 /* ChatModels.swift */,
 				E5VMB0016 /* ChatLifecycleSupport.swift */,
+				E5ITL0011 /* IdleTimerLease.swift */,
+				E5AJS0011 /* AOJITShellStats.swift */,
+				E5UAM0011 /* UserActivityMonitor.swift */,
+				E5AON0011 /* AlwaysOnController.swift */,
 				E5VMB0017 /* ChatURLBrokerage.swift */,
 				E5VMC0011 /* AIChatViewModel+ISHCommand.swift */,
 				E5VMC0012 /* AIChatViewModel+FileTools.swift */,
+				E5FIO0011 /* FileToolIO.swift */,
 				E5VMD0011 /* MinisURLPathDecoding.swift */,
 				E5VMC0013 /* AIChatViewModel+Offloading.swift */,
 				E5VMC0014 /* AIChatViewModel+SSEStream.swift */,
@@ -2380,6 +2629,29 @@
 				E5VMC0016 /* AIChatViewModel+BackgroundTask.swift */,
 				E5VMC0017 /* AIChatViewModel+ConcurrentTools.swift */,
 				E53000014 /* ChatStore.swift */,
+				E5CSSPL001R /* ChatStore+Schema.swift */,
+				E5CSSPL002R /* ChatStore+SessionCRUD.swift */,
+				E5CSSPL003R /* ChatStore+SessionList.swift */,
+				E5CSSPL004R /* ChatStore+Search.swift */,
+				E5CSSPL005R /* ChatStore+SessionQueries.swift */,
+				E5CSSPL006R /* ChatStore+Folders.swift */,
+				E5CSSPL007R /* ChatStore+SessionDeletion.swift */,
+				E5CSSPL008R /* ChatStore+StoredPreview.swift */,
+				E5CSSPL009R /* ChatStore+Messages.swift */,
+				E5CSSPL010R /* ChatStore+Media.swift */,
+				E5CSSPL011R /* ChatStore+CompactMarkers.swift */,
+				E5CSSPL012R /* ChatStore+Tombstones.swift */,
+				E5CSSPL013R /* ChatStore+WebAppShortcuts.swift */,
+				E5CSSPL014R /* ChatStore+Maintenance.swift */,
+				E5CSSPL015R /* ChatStore+Helpers.swift */,
+				E5CSSPL016R /* ChatStore+UsageStats.swift */,
+				E5CSSPL017R /* ChatStoreModels.swift */,
+				E5CSSPL018R /* ContentPart+ProviderConversion.swift */,
+				E5CSSPL019R /* RawMessage+Conversion.swift */,
+				E5CSSPL020R /* ChatStore+SyncDirty.swift */,
+				E5CSSPL021R /* ChatStore+SyncRemoteSessions.swift */,
+				E5CSSPL022R /* ChatStore+SyncRemoteRecords.swift */,
+				E5CSSPL023R /* ChatStore+BackupRestore.swift */,
 				E5SDS0011 /* SessionDeletionSupport.swift */,
 				BB1000110F700000000000AA /* ContextPolicy.swift */,
 				E5FMI0011 /* FileMentionIndex.swift */,
@@ -2390,9 +2662,10 @@
 		F1A00011 /* MessageList */ = {
 			isa = PBXGroup;
 			children = (
-				E5V300011 /* CollectionViewMessageListV3.swift */,
+				E5V3SYNC00000000000000A1 /* CollectionViewMessageListV3 */,
 				F1A00021 /* MessageListInfrastructure.swift */,
 				E5V100011 /* MessageListLayout.swift */,
+				7F0DF01D0B /* ToolFoldPlanner.swift */,
 			);
 			path = MessageList;
 			sourceTree = "<group>";
@@ -2527,10 +2800,11 @@
 		F1V00010 /* Chat */ = {
 			isa = PBXGroup;
 			children = (
-				E53000012 /* AIChatView.swift */,
+				E5ACVSYNC0000000000000A1 /* AIChatView */,
 				E5F200011 /* MarkdownPrepRegex.swift */,
 				E5F200012 /* MinisMediaViews.swift */,
 				E5F200013 /* AssistantBlockView.swift */,
+				791847408A92CF0D2161F33A /* UserAskCardView.swift */,
 				E5F200014 /* ChatMessageViews.swift */,
 				E5F2009B1 /* EquatableContextMenu.swift */,
 				E5F200AB1 /* MemoryWriteRevoker.swift */,
@@ -2544,15 +2818,20 @@
 				F1W00100 /* PrintHelper.swift */,
 				F1W00060 /* PaginatedMarkdownView.swift */,
 				E8A000012 /* OffloadPermissionDialog.swift */,
-				E5K000011 /* SelectableMarkdownView.swift */,
+				E5MDSYNC00000000000000A1 /* Markdown */,
 				E5K000012 /* ChatTurnScreenshot.swift */,
 				E5N0000152F3B941A00049557 /* SessionMemoryView.swift */,
 				E5TODOV1 /* TodoPanelView.swift */,
 				E5N0000122F3B941A00049557 /* SessionSkillsView.swift */,
 				F1T00010 /* ToolLiveSheet.swift */,
+				E5AOV0011 /* AlwaysOnOverlay.swift */,
 				E5AJR0014 /* HelperSheet.swift */,
 				E5HBV0011 /* HelperBlockView.swift */,
 				E5ACB0012 /* AgentCallbackCellView.swift */,
+				E5STD0012 /* ScheduledTaskDetailView.swift */,
+				E5CSH0011 /* ChatShareModel.swift */,
+				E5CSH0012 /* ChatShareSelectionView.swift */,
+				E5CSH0013 /* ChatExportRenderer.swift */,
 				E53000015 /* UsageStatsView.swift */,
 				F1W00012 /* WebPreviewSheet.swift */,
 				A11Y0002 /* ChatAccessibilityAnnouncer.swift */,
@@ -2570,7 +2849,9 @@
 				E5G000013 /* EnhancedBackgroundSettingsView.swift */,
 				E5P000012 /* EnvironmentVariablesView.swift */,
 				E5J000012 /* LogManagementView.swift */,
+				E5CDX0012 /* CrashDiagnosticsView.swift */,
 				E5J000013 /* ConfigAuditView.swift */,
+				E5CRDBL13 /* ConfigAuditDetailView.swift */,
 				E5N0000142F3B941A00049557 /* MemoryManagementView.swift */,
 				E8A000013 /* OffloadPermissionSettingsView.swift */,
 				AA0838CD2F3B941A00049557 /* StorageManagementView.swift */,
@@ -2592,6 +2873,8 @@
 				E5SHV0104 /* MountDetailView.swift */,
 				E5SOUL102 /* SoulSettingsView.swift */,
 				E5EXTMV1 /* ExtensionManagerView.swift */,
+				E5CVSET0000000000000A011 /* SettingsSheet.swift */,
+				E5CVSET0000000000000A012 /* AppearanceSettingsView.swift */,
 				E5SCH0014 /* HelperSettingsView.swift */,
 				E5TLS0011 /* ToolsSettingsView.swift */,
 				E5LOCK102 /* FaceIDProtectionSettingsView.swift */,
@@ -2612,6 +2895,9 @@
 				E5QT00011 /* ModelQuickTestSheet.swift */,
 				E5D00036 /* OnboardingModelSelectionView.swift */,
 				E5D00031 /* ProviderInstanceDetailView.swift */,
+				E5QTA06F /* ProviderQuotaSection.swift */,
+				E5QTA07F /* QuotaPickerHints.swift */,
+				E5QTA08F /* QuotaDetailSheet.swift */,
 				E5TRS002 /* ThinkingRulesSection.swift */,
 				E5TRE002 /* ThinkingRuleEditorView.swift */,
 				E5D00030 /* ProviderInstancesView.swift */,
@@ -2633,6 +2919,7 @@
 				AA26CCBD2F31080100AECF2D /* ISHTerminalView.swift */,
 				AA0838FE2F3B941A00049557 /* MirrorSpeedTestView.swift */,
 				AA0838BE2F3B941A00049557 /* RootfsManagementView.swift */,
+				E5A0J1T0F1E0000000000001 /* AOJITSettingsView.swift */,
 				AA0838BF2F3B941A00049557 /* RootfsResetButton.swift */,
 			);
 			path = Rootfs;
@@ -2704,11 +2991,12 @@
 				BB1000030F700000000000AA /* Sources */,
 				BB1000020F700000000000AA /* Frameworks */,
 				BB1000040F700000000000AA /* Resources */,
+				E5TH0H000 /* Embed Minis.debug.dylib */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				BB1000B00F700000000000AA /* PBXTargetDependency */,
+				E5TH000B0 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				BB1000012F700000000000AA /* MinisTests */,
@@ -2741,6 +3029,10 @@
 			);
 			fileSystemSynchronizedGroups = (
 				AA0838CB2F3CA8A900049557 /* Terminal */,
+				E5ACVSYNC0000000000000A1 /* AIChatView */,
+				E5CVSYNC00000000000000A1 /* ContentView */,
+				E5MDSYNC00000000000000A1 /* Markdown */,
+				E5V3SYNC00000000000000A1 /* CollectionViewMessageListV3 */,
 			);
 			name = Minis;
 			packageProductDependencies = (
@@ -2801,6 +3093,26 @@
 			productName = AgentWidgetExtension;
 			productReference = E5H000010 /* AgentWidgetExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
+		};
+		E5TH00070 /* MinisTestHost */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E5TH000A0 /* Build configuration list for PBXNativeTarget "MinisTestHost" */;
+			buildPhases = (
+				E5TH00030 /* Sources */,
+				E5TH00020 /* Frameworks */,
+				E5TH00040 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				E5TH00012 /* MinisTestHost */,
+			);
+			name = MinisTestHost;
+			productName = MinisTestHost;
+			productReference = E5TH00010 /* MinisTestHost.app */;
+			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
 
@@ -2872,6 +3184,7 @@
 				E5FP00040 /* MinisFileProvider */,
 				AA8A568A2F6FBB7A00A3E54E /* MinisUITests */,
 				BB1000070F700000000000AA /* MinisTests */,
+				E5TH00070 /* MinisTestHost */,
 			);
 		};
 /* End PBXProject section */
@@ -2904,6 +3217,7 @@
 				E5BSH0005 /* bashism_test_vectors.json in Resources */,
 				AA0838D22F3B941A00049557 /* RootfsPatch.bundle in Resources */,
 				E5A000001 /* default_mount in Resources */,
+				E5A000A01 /* AOJITRestore in Resources */,
 				E5U000002 /* KaTeX in Resources */,
 				E5V000002 /* AlternateIcons in Resources */,
 				AA71B0222F44BEB200A28A5E /* Launch Screen.storyboard in Resources */,
@@ -2942,6 +3256,15 @@
 			buildActionMask = 2147483647;
 			files = (
 				E5LC00003 /* Localizable.xcstrings in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E5TH00040 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E5TH0R001 /* jieba.dict.utf8 in Resources */,
+				E5TH0R002 /* hmm_model.utf8 in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3009,28 +3332,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				BB1000120F700000000000AA /* ContextPolicy.swift in Sources */,
-				E5LD00002 /* ToolLoopDetector.swift in Sources */,
-				E5GWF0004 /* GeminiWireFormat.swift in Sources */,
-				E5JB10001 /* JiebaWrapper.mm in Sources */,
-				E5JB10002 /* TextSegmenter.swift in Sources */,
-				E5VC1000A /* SentenceSplitter.swift in Sources */,
-				E5VTS1001 /* VoiceTextSanitizer.swift in Sources */,
-				E5VC1000B /* PhoneticNormalizer.swift in Sources */,
-				E5VC1000C /* VoiceCorrectionDB.swift in Sources */,
-				E5VC1001D /* VoiceCorrectionDiff.swift in Sources */,
-				E5CADM02 /* CorrectionAdmission.swift in Sources */,
-				E5VC1001E /* VocabularyFilter.swift in Sources */,
-				E5VIC1001 /* VoiceInputCapture.swift in Sources */,
-				E5CCB1001 /* CorrectionContextBuilder.swift in Sources */,
-				E5VC1000D /* CorrectionSignalSource.swift in Sources */,
-				E5VC1001A /* ConversationContextTruncator.swift in Sources */,
-				E5OARC002 /* ClaudeOAuthRefreshCoordinator.swift in Sources */,
-				E5OARC022 /* OAuthRefreshCoordinator.swift in Sources */,
-				E5OARC024 /* OAuthRefreshSingleFlight.swift in Sources */,
-				E5KIMI0A2 /* KimiOAuthRefreshCoordinator.swift in Sources */,
-				E5KIMI0B2 /* KimiDeviceFlow.swift in Sources */,
-				E5OARC003 /* LLMError.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3044,7 +3345,6 @@
 				AA0838A02F3B941A00049557 /* AboutView.swift in Sources */,
 				BB1000100F700000000000AA /* ContextPolicy.swift in Sources */,
 				AADDA9E12F6ECCF400B66649 /* ThumbnailCache.swift in Sources */,
-				E51000002 /* ContentView.swift in Sources */,
 				E5SRS0001 /* SessionRefreshScheduler.swift in Sources */,
 				AA26CCBA2F31080100AECF2D /* ISHKernel.m in Sources */,
 				E5JB00001 /* JiebaWrapper.mm in Sources */,
@@ -3078,6 +3378,7 @@
 				E5QA0002 /* AppDelegate.swift in Sources */,
 				AA0838C02F3B941A00049557 /* RootfsResetButton.swift in Sources */,
 				AA0838C32F3B941A00049557 /* RootfsManagementView.swift in Sources */,
+				E5A0J1T0B1F0000000000001 /* AOJITSettingsView.swift in Sources */,
 				AA0838FF2F3B941A00049557 /* MirrorSpeedTestView.swift in Sources */,
 				AA0838CC2F3B941A00049557 /* StorageManagementView.swift in Sources */,
 				E5MNT0001 /* MountedFoldersManager.swift in Sources */,
@@ -3159,11 +3460,32 @@
 
 				E5VMA0006 /* AIChatViewModel+ProviderFactory.swift in Sources */,
 				E5VMA0007 /* AIChatViewModel+ToolDefinitions.swift in Sources */,
+				7A822436233F3227678277FC /* AIChatViewModel+UserAsk.swift in Sources */,
+				C39F1823882535F6FCC47D18 /* UserAskCenter.swift in Sources */,
+				90EF21EB8AAB5C9B849883A4 /* UserAskSettings.swift in Sources */,
+				87764AE3691086C907B97519 /* UserAskCore.swift in Sources */,
 				E5VMA0008 /* AIChatViewModel+ToolPreflight.swift in Sources */,
 				E5VMB0001 /* AIChatViewModel+Compaction.swift in Sources */,
+				E5VMSPL001B /* AIChatViewModel+Lifecycle.swift in Sources */,
+				E5VMSPL002B /* AIChatViewModel+ContextUsage.swift in Sources */,
+				E5VMSPL003B /* AIChatViewModel+StreamingUI.swift in Sources */,
+				E5VMSPL004B /* AIChatViewModel+Speech.swift in Sources */,
+				E5VMSPL005B /* AIChatViewModel+AutoPlayAudio.swift in Sources */,
+				E5VMSPL006B /* AIChatViewModel+SystemPrompt.swift in Sources */,
+				E5VMSPL007B /* AIChatViewModel+Send.swift in Sources */,
+				E5VMSPL008B /* AIChatViewModel+Rerun.swift in Sources */,
+				E5VMSPL009B /* AIChatViewModel+EditMessage.swift in Sources */,
+				E5VMSPL010B /* AIChatViewModel+Cancel.swift in Sources */,
+				E5VMSPL011B /* AIChatViewModel+PromptQueue.swift in Sources */,
+				E5VMSPL012B /* AIChatViewModel+DebugDumps.swift in Sources */,
+				E5VMSPL013B /* AIChatViewModel+TurnCompletion.swift in Sources */,
+				E5VMSPL014B /* AIChatViewModel+AgentLoop.swift in Sources */,
+				E5VMSPL015B /* AIChatViewModel+ThinkingLevel.swift in Sources */,
+				E5VMSPL016B /* LLMProviderError.swift in Sources */,
 				E5PPR0001 /* AIChatViewModel+ProgrammaticPrompt.swift in Sources */,
 				E5AJR0001 /* AgentJobRegistry.swift in Sources */,
 				E5AJR0002 /* HelperRunner.swift in Sources */,
+				E5SAT0001 /* SubAgentTermination.swift in Sources */,
 				E5AJR0003 /* ModelTierResolver.swift in Sources */,
 				E5SUB0002 /* SubAgentDefinition.swift in Sources */,
 				E5SUB0011 /* SubAgentStore.swift in Sources */,
@@ -3172,7 +3494,13 @@
 				E5ACB0001 /* AgentCallback.swift in Sources */,
 				E5AMI0001 /* HelperModelIdentity.swift in Sources */,
 				E5ACB0002 /* AgentCallbackCellView.swift in Sources */,
+				E5STD0002 /* ScheduledTaskDetailView.swift in Sources */,
+				E5CSH0001 /* ChatShareModel.swift in Sources */,
+				E5CSH0002 /* ChatShareSelectionView.swift in Sources */,
+				E5CSH0003 /* ChatExportRenderer.swift in Sources */,
 				E5SCH0001 /* ScheduledJobRunner.swift in Sources */,
+				E5SPT0001 /* ScheduledPresetToolCall.swift in Sources */,
+				E5STD0001 /* ScheduledTargetDelivery.swift in Sources */,
 				E5SCH0002 /* ScheduledOffload.m in Sources */,
 				E5SCH0003 /* ScheduledOffloadBridge.swift in Sources */,
 				E5SCH0004 /* HelperSettingsView.swift in Sources */,
@@ -3182,9 +3510,14 @@
 				E5VMB0004 /* AIChatViewModel+RequestBudget.swift in Sources */,
 				E5VMB0005 /* ChatModels.swift in Sources */,
 				E5VMB0006 /* ChatLifecycleSupport.swift in Sources */,
+				E5ITL0001 /* IdleTimerLease.swift in Sources */,
+				E5AJS0001 /* AOJITShellStats.swift in Sources */,
+				E5UAM0001 /* UserActivityMonitor.swift in Sources */,
+				E5AON0001 /* AlwaysOnController.swift in Sources */,
 				E5VMB0007 /* ChatURLBrokerage.swift in Sources */,
 				E5VMC0001 /* AIChatViewModel+ISHCommand.swift in Sources */,
 				E5VMC0002 /* AIChatViewModel+FileTools.swift in Sources */,
+				E5FIO0001 /* FileToolIO.swift in Sources */,
 				E5VMD0001 /* MinisURLPathDecoding.swift in Sources */,
 				E5VMC0003 /* AIChatViewModel+Offloading.swift in Sources */,
 				E5VMC0004 /* AIChatViewModel+SSEStream.swift in Sources */,
@@ -3192,11 +3525,11 @@
 				E5VMC0006 /* AIChatViewModel+BackgroundTask.swift in Sources */,
 				E5VMC0007 /* AIChatViewModel+ConcurrentTools.swift in Sources */,
 				E5LD00001 /* ToolLoopDetector.swift in Sources */,
-				E53000002 /* AIChatView.swift in Sources */,
 				E5CAL0001 /* CookieAuditLogger.swift in Sources */,
 				E5F200001 /* MarkdownPrepRegex.swift in Sources */,
 				E5F200002 /* MinisMediaViews.swift in Sources */,
 				E5F200003 /* AssistantBlockView.swift in Sources */,
+				FE115F74BE2709CEB6B7837F /* UserAskCardView.swift in Sources */,
 				E5F200004 /* ChatMessageViews.swift in Sources */,
 				E5F2009A1 /* EquatableContextMenu.swift in Sources */,
 				E5F200AA1 /* MemoryWriteRevoker.swift in Sources */,
@@ -3215,13 +3548,15 @@
 				A11Y0001 /* ChatAccessibilityAnnouncer.swift in Sources */,
 				F1W0E101 /* WebLoadError.swift in Sources */,
 				F1T00011 /* ToolLiveSheet.swift in Sources */,
-				E5V300001 /* CollectionViewMessageListV3.swift in Sources */,
+				E5AOV0001 /* AlwaysOnOverlay.swift in Sources */,
 				F1A00020 /* MessageListInfrastructure.swift in Sources */,
+				7F0DF01D0A /* ToolFoldPlanner.swift in Sources */,
 				E54100001 /* SessionDataSimulator.swift in Sources */,
 				E54200001 /* MessageListTestView.swift in Sources */,
 				E5V100001 /* MessageListLayout.swift in Sources */,
 				E5T000001 /* SessionEntity.swift in Sources */,
 				E5T000002 /* ListSessionsIntent.swift in Sources */,
+				E5SEV0001 /* SaveEnvVarIntent.swift in Sources */,
 				E5T000003 /* SendPromptIntent.swift in Sources */,
 				E5T0000A1 /* AskMinisIntent.swift in Sources */,
 				E5F200006 /* ModelSelectionEntity.swift in Sources */,
@@ -3252,11 +3587,37 @@
 				E5PPB0001 /* PerfProbe.swift in Sources */,
 				E5CR00002 /* CrashReporter.swift in Sources */,
 				E5CR00003 /* CrashSignalHandler.m in Sources */,
+				E5CBR0001 /* CrashBreadcrumbs.m in Sources */,
+				E5CBR0002 /* ResourceSampler.swift in Sources */,
+				E5CDX0001 /* CrashDiagnosticsExport.swift in Sources */,
 				E5KVC0003 /* SafeKVCSetTrue.m in Sources */,
 				E5F100001 /* NetworkMonitor.swift in Sources */,
 				E5F100002 /* LLMSessionRegistry.swift in Sources */,
 				E5F100003 /* MinisUserAgent.swift in Sources */,
 				E53000004 /* ChatStore.swift in Sources */,
+				E5CSSPL001B /* ChatStore+Schema.swift in Sources */,
+				E5CSSPL002B /* ChatStore+SessionCRUD.swift in Sources */,
+				E5CSSPL003B /* ChatStore+SessionList.swift in Sources */,
+				E5CSSPL004B /* ChatStore+Search.swift in Sources */,
+				E5CSSPL005B /* ChatStore+SessionQueries.swift in Sources */,
+				E5CSSPL006B /* ChatStore+Folders.swift in Sources */,
+				E5CSSPL007B /* ChatStore+SessionDeletion.swift in Sources */,
+				E5CSSPL008B /* ChatStore+StoredPreview.swift in Sources */,
+				E5CSSPL009B /* ChatStore+Messages.swift in Sources */,
+				E5CSSPL010B /* ChatStore+Media.swift in Sources */,
+				E5CSSPL011B /* ChatStore+CompactMarkers.swift in Sources */,
+				E5CSSPL012B /* ChatStore+Tombstones.swift in Sources */,
+				E5CSSPL013B /* ChatStore+WebAppShortcuts.swift in Sources */,
+				E5CSSPL014B /* ChatStore+Maintenance.swift in Sources */,
+				E5CSSPL015B /* ChatStore+Helpers.swift in Sources */,
+				E5CSSPL016B /* ChatStore+UsageStats.swift in Sources */,
+				E5CSSPL017B /* ChatStoreModels.swift in Sources */,
+				E5CSSPL018B /* ContentPart+ProviderConversion.swift in Sources */,
+				E5CSSPL019B /* RawMessage+Conversion.swift in Sources */,
+				E5CSSPL020B /* ChatStore+SyncDirty.swift in Sources */,
+				E5CSSPL021B /* ChatStore+SyncRemoteSessions.swift in Sources */,
+				E5CSSPL022B /* ChatStore+SyncRemoteRecords.swift in Sources */,
+				E5CSSPL023B /* ChatStore+BackupRestore.swift in Sources */,
 				E5SDS0001 /* SessionDeletionSupport.swift in Sources */,
 				E5FMI0001 /* FileMentionIndex.swift in Sources */,
 				E53000005 /* UsageStatsView.swift in Sources */,
@@ -3341,6 +3702,7 @@
 				E5GWF0003 /* GeminiWireFormat.swift in Sources */,
 				E5C000001 /* OpenAIProvider.swift in Sources */,
 				E5C0DE9A1 /* OpenCodeChannel.swift in Sources */,
+				E5SPDT0001 /* SpeedTier.swift in Sources */,
 				E5C000002 /* OpenAIAgentProvider.swift in Sources */,
 				E5C000003 /* OpenAIModelsAPI.swift in Sources */,
 				E5C000004 /* CodexOAuthManager.swift in Sources */,
@@ -3368,6 +3730,14 @@
 				E5D00009 /* URLBuilding.swift in Sources */,
 				E5D00020 /* ProviderInstancesView.swift in Sources */,
 				E5D00021 /* ProviderInstanceDetailView.swift in Sources */,
+				E5QTA01B /* QuotaModels.swift in Sources */,
+				E5QTA02B /* QuotaRules.swift in Sources */,
+				E5QTA03B /* QuotaAdapters.swift in Sources */,
+				E5QTA04B /* QuotaPersistence.swift in Sources */,
+				E5QTA05B /* QuotaStore.swift in Sources */,
+				E5QTA06B /* ProviderQuotaSection.swift in Sources */,
+				E5QTA07B /* QuotaPickerHints.swift in Sources */,
+				E5QTA08B /* QuotaDetailSheet.swift in Sources */,
 				E5TRS001 /* ThinkingRulesSection.swift in Sources */,
 				E5TRE001 /* ThinkingRuleEditorView.swift in Sources */,
 				E5SVP0021 /* ShadowVoiceProviderDetailView.swift in Sources */,
@@ -3396,11 +3766,13 @@
 				E5J000001 /* LoggingManager.swift in Sources */,
 				E5BADGE001 /* SessionBadgeStore.swift in Sources */,
 				E5J000002 /* LogManagementView.swift in Sources */,
+				E5CDX0002 /* CrashDiagnosticsView.swift in Sources */,
 				E5J000003 /* ConfigAuditView.swift in Sources */,
+				E5CRDBL03 /* ConfigAuditDetailView.swift in Sources */,
 				E5J000020 /* FileHandleSafeWrite.m in Sources */,
 				E5J000050 /* ObjCExceptionCatcher.m in Sources */,
 				E5J000030 /* NSTextContainerSetSizeGuard.m in Sources */,
-				E5K000001 /* SelectableMarkdownView.swift in Sources */,
+				E5TWG0001 /* InjectedTweakSelectorGuard.m in Sources */,
 				E5K000002 /* ChatTurnScreenshot.swift in Sources */,
 				E5M000007 /* MarkdownRenderView.swift in Sources */,
 				E5M000003 /* MinisMarkdownParser.swift in Sources */,
@@ -3425,6 +3797,8 @@
 				E5SOUL001 /* SoulStore.swift in Sources */,
 				E5SOUL002 /* SoulSettingsView.swift in Sources */,
 				E5EXTMV2 /* ExtensionManagerView.swift in Sources */,
+				E5CVSET0000000000000A001 /* SettingsSheet.swift in Sources */,
+				E5CVSET0000000000000A002 /* AppearanceSettingsView.swift in Sources */,
 				E5LOCK002 /* FaceIDProtectionSettingsView.swift in Sources */,
 				E5LOCK003 /* AppLockOverlay.swift in Sources */,
 				E5N0000042F3B941A00049557 /* MemoryManagementView.swift in Sources */,
@@ -3443,6 +3817,8 @@
 				E5P000004 /* DeepLinkRouter.swift in Sources */,
 				E5CFG0001 /* ConfigAuditEntry.swift in Sources */,
 				E5CFG0002 /* ConfigAuditLog.swift in Sources */,
+				E5CRDBL01 /* ConfigReadable.swift in Sources */,
+				E5CRDBL02 /* ConfigReadableRenderer.swift in Sources */,
 				E5CFG0003 /* MinisConfigPermissionStore.swift in Sources */,
 				E5CFG0004 /* ConfigError.swift in Sources */,
 				E5CFG0005 /* ConfigField.swift in Sources */,
@@ -3463,6 +3839,8 @@
 				E5Q000001 /* BPETokenizer.swift in Sources */,
 				E5MDS0003 /* MarkdownStripper.swift in Sources */,
 				E5Q000003 /* AppLogger.swift in Sources */,
+				E5LRD0001 /* LogRedaction.swift in Sources */,
+				9214E78B060BCD8BA7E118D4 /* NotificationCategoryCenter.swift in Sources */,
 				LOC00001 /* AppLocalization.swift in Sources */,
 				F1S00012 /* ChatSessionIdEnvironment.swift in Sources */,
 				E5Q000004 /* FontSettings.swift in Sources */,
@@ -3588,6 +3966,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E5TH00030 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -3595,11 +3980,6 @@
 			isa = PBXTargetDependency;
 			target = E51000040 /* Minis */;
 			targetProxy = AA8A56912F6FBB7A00A3E54E /* PBXContainerItemProxy */;
-		};
-		BB1000B00F700000000000AA /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = E51000040 /* Minis */;
-			targetProxy = BB1000B10F700000000000AA /* PBXContainerItemProxy */;
 		};
 		E5E000080 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -3615,6 +3995,11 @@
 			isa = PBXTargetDependency;
 			target = E5H000040 /* AgentWidgetExtension */;
 			targetProxy = E5H000081 /* PBXContainerItemProxy */;
+		};
+		E5TH000B0 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = E5TH00070 /* MinisTestHost */;
+			targetProxy = E5TH000B1 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -3704,7 +4089,6 @@
 		BB1000080F700000000000AA /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = "";
@@ -3720,24 +4104,39 @@
 					"$(SRCROOT)/NativeOffloads",
 					"$(SRCROOT)/../../deps/frameworks/FFmpeg.framework/Headers",
 					"$(SRCROOT)/Vendor/cppjieba/include",
+					"$(SRCROOT)/../../deps/frameworks/Rclone.xcframework/ios-arm64/Headers",
+					"$(BUILD_DIR)/../../SourcePackages/checkouts/swift-cmark/src/include",
+					"$(BUILD_DIR)/../../SourcePackages/checkouts/swift-cmark/extensions/include",
+					"$(BUILD_DIR)/../../SourcePackages/checkouts/RealTimeCutVADLibrary/RealTimeCutVADLibrary/src/include",
 				);
 				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+					"$(BUILT_PRODUCTS_DIR)/Minis.app",
+					"$(BUILT_PRODUCTS_DIR)/Minis.app/Frameworks",
+					"$(BUILT_PRODUCTS_DIR)/PackageFrameworks",
+				);
 				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"$(BUILT_PRODUCTS_DIR)/Minis.app/Minis.debug.dylib",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.openminis.MinisTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_OBJC_BRIDGING_HEADER = "MinisApp-Bridging-Header.h";
-				SWIFT_VERSION = 6.0;
+				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Minis.app/Minis";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MinisTestHost.app/MinisTestHost";
 			};
 			name = Debug;
 		};
 		BB1000090F700000000000AA /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = "";
@@ -3749,17 +4148,33 @@
 					"$(SRCROOT)/NativeOffloads",
 					"$(SRCROOT)/../../deps/frameworks/FFmpeg.framework/Headers",
 					"$(SRCROOT)/Vendor/cppjieba/include",
+					"$(SRCROOT)/../../deps/frameworks/Rclone.xcframework/ios-arm64/Headers",
+					"$(BUILD_DIR)/../../SourcePackages/checkouts/swift-cmark/src/include",
+					"$(BUILD_DIR)/../../SourcePackages/checkouts/swift-cmark/extensions/include",
+					"$(BUILD_DIR)/../../SourcePackages/checkouts/RealTimeCutVADLibrary/RealTimeCutVADLibrary/src/include",
 				);
 				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+					"$(BUILT_PRODUCTS_DIR)/Minis.app",
+					"$(BUILT_PRODUCTS_DIR)/Minis.app/Frameworks",
+					"$(BUILT_PRODUCTS_DIR)/PackageFrameworks",
+				);
 				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"$(BUILT_PRODUCTS_DIR)/Minis.app/Minis.debug.dylib",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.openminis.MinisTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_OBJC_BRIDGING_HEADER = "MinisApp-Bridging-Header.h";
-				SWIFT_VERSION = 6.0;
+				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Minis.app/Minis";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MinisTestHost.app/MinisTestHost";
 			};
 			name = Release;
 		};
@@ -3929,12 +4344,17 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/../../deps/libs";
-				MARKETING_VERSION = 1.14;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
+				ISH_LIBS_DIR = "$(SRCROOT)/../../deps/libs";
+				"ISH_LIBS_DIR[sdk=iphonesimulator*]" = "$(SRCROOT)/../../deps/libs/iphonesimulator";
+				LIBRARY_SEARCH_PATHS = "$(ISH_LIBS_DIR)";
+				MARKETING_VERSION = 1.15;
 				OTHER_LDFLAGS = (
 					"-lish_emu",
 					"-lish",
 					"-lfakefs",
+					"-force_load",
+					"$(ISH_LIBS_DIR)/libish_aot.a",
 				);
 				OTHER_SWIFT_FLAGS = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.openminis.app;
@@ -3984,12 +4404,17 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/../../deps/libs";
-				MARKETING_VERSION = 1.14;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
+				ISH_LIBS_DIR = "$(SRCROOT)/../../deps/libs";
+				"ISH_LIBS_DIR[sdk=iphonesimulator*]" = "$(SRCROOT)/../../deps/libs/iphonesimulator";
+				LIBRARY_SEARCH_PATHS = "$(ISH_LIBS_DIR)";
+				MARKETING_VERSION = 1.15;
 				OTHER_LDFLAGS = (
 					"-lish_emu",
 					"-lish",
 					"-lfakefs",
+					"-force_load",
+					"$(ISH_LIBS_DIR)/libish_aot.a",
 				);
 				OTHER_SWIFT_FLAGS = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.openminis.app;
@@ -4018,7 +4443,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.14;
+				MARKETING_VERSION = 1.15;
 				PRODUCT_BUNDLE_IDENTIFIER = com.openminis.app.ShareExtension;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -4045,7 +4470,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.14;
+				MARKETING_VERSION = 1.15;
 				PRODUCT_BUNDLE_IDENTIFIER = com.openminis.app.ShareExtension;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -4072,7 +4497,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.14;
+				MARKETING_VERSION = 1.15;
 				PRODUCT_BUNDLE_IDENTIFIER = com.openminis.app.FileProvider;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -4099,7 +4524,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.14;
+				MARKETING_VERSION = 1.15;
 				PRODUCT_BUNDLE_IDENTIFIER = com.openminis.app.FileProvider;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -4126,7 +4551,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.14;
+				MARKETING_VERSION = 1.15;
 				PRODUCT_BUNDLE_IDENTIFIER = com.openminis.app.AgentWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -4153,11 +4578,61 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.14;
+				MARKETING_VERSION = 1.15;
 				PRODUCT_BUNDLE_IDENTIFIER = com.openminis.app.AgentWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		E5TH00080 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_DEBUG_DYLIB = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.openminis.MinisTestHost;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		E5TH00090 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_DEBUG_DYLIB = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.openminis.MinisTestHost;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -4225,6 +4700,15 @@
 			buildConfigurations = (
 				E5H000070 /* Debug */,
 				E5H000071 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E5TH000A0 /* Build configuration list for PBXNativeTarget "MinisTestHost" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E5TH00080 /* Debug */,
+				E5TH00090 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

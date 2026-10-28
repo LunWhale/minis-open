@@ -643,6 +643,27 @@ class RootfsManager {
         logger.info("[DefaultMount] Done. \(fileCount) file(s) overlaid in \(String(format: "%.1f", totalMs))ms — copy: \(String(format: "%.1f", copyTotalMs))ms (avg \(String(format: "%.2f", avgCopyMs))ms/file), metaDB: \(String(format: "%.1f", metaDbTotalMs))ms (avg \(String(format: "%.2f", avgMetaMs))ms/file), marker: \(String(format: "%.1f", markerMs))ms")
     }
 
+    /// [T-aojit-restore] Copy the regular files of a bundle directory into the
+    /// rootfs at `linuxDir` and register them in meta.db, the way
+    /// applyDefaultMountOverlay does, so the guest can read them. Unlike the
+    /// overlay this runs on demand, and the caller removes the files again
+    /// from inside the guest (rm keeps meta.db in step).
+    func stageFiles(from dir: URL, toLinuxDir linuxDir: String) throws {
+        let fm = FileManager.default
+        for name in try fm.contentsOfDirectory(atPath: dir.path) {
+            let src = dir.appendingPathComponent(name)
+            var isDir: ObjCBool = false
+            guard fm.fileExists(atPath: src.path, isDirectory: &isDir), !isDir.boolValue else { continue }
+            let relativePath = "\(linuxDir)/\(name)"
+            let dest = dataPath.appendingPathComponent(String(relativePath.dropFirst()))
+            try fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
+            try fm.copyItem(at: src, to: dest)
+            ensureParentDirsInMetaDB(for: relativePath)
+            ensureFakefsMetadata(for: relativePath, isDirectory: false, mode: 0o100644)
+        }
+    }
+
     /// Remove the PEP 668 EXTERNALLY-MANAGED marker file from all Python versions.
     private func removeExternallyManagedMarker() {
         let fm = FileManager.default

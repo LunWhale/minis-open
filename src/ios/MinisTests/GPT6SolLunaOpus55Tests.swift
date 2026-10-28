@@ -87,6 +87,45 @@ final class GPT6SolLunaOpus55Tests: XCTestCase {
                       "gpt-6-astra must keep clearing its own floor")
     }
 
+    // MARK: - GPT-6.1 Sol [T-gpt61-sol]
+
+    /// CLIProxyAPI PR #6207: 272000 context, 128000 output, levels low…max.
+    func testGPT61SolStaticEntry() {
+        XCTAssertEqual(LLMModel.gpt61Sol.id, "gpt-6.1-sol")
+        XCTAssertEqual(LLMModel.gpt61Sol.displayName, "GPT-6.1 Sol")
+        XCTAssertEqual(LLMModel.gpt61Sol.provider, "OpenAI")
+        XCTAssertEqual(LLMModel.gpt61Sol.supportsReasoning, true)
+        XCTAssertEqual(LLMModel.gpt61Sol.contextWindow, 272_000)
+        XCTAssertEqual(LLMModel.gpt61Sol.maxOutputTokens, 128_000)
+        XCTAssertEqual(LLMModel.gpt61Sol.contextWindowTokens, 272_000,
+                       "without the explicit value the id heuristic would say 128K")
+    }
+
+    func testGPT61SolIsOfferedOverCodexOAuth() {
+        let ids = LLMModel.allOpenAICodexOAuth.map(\.id)
+        XCTAssertTrue(ids.contains("gpt-6.1-sol"))
+        XCTAssertFalse(LLMModel.allOpenAI.map(\.id).contains("gpt-6.1-sol"))
+    }
+
+    /// "gpt-6-sol" is not a prefix of "gpt-6.1-sol": without its own catalog
+    /// rule the model had no declared ceiling.
+    func testGPT61SolCeilingIsMax() {
+        XCTAssertEqual(ThinkingLevelCatalog.declaredMaxLevel(for: "gpt-6.1-sol"), .max)
+        XCTAssertEqual(ThinkingLevelCatalog.declaredMaxLevel(for: "gpt-6-1-sol"), .max)
+        XCTAssertNotEqual(ThinkingLevelCatalog.declaredMaxLevel(for: "gpt-6.1-sol"), .ultra)
+    }
+
+    func testGPT61SolEveryLevelReachesTheWire() {
+        let m = LLMModel.gpt61Sol
+        XCTAssertNil(OpenAIAgentProvider.reasoningEffort(for: m, level: .off))
+        XCTAssertEqual(OpenAIAgentProvider.reasoningEffort(for: m, level: .low), "low")
+        XCTAssertEqual(OpenAIAgentProvider.reasoningEffort(for: m, level: .medium), "medium")
+        XCTAssertEqual(OpenAIAgentProvider.reasoningEffort(for: m, level: .high), "high")
+        XCTAssertEqual(OpenAIAgentProvider.reasoningEffort(for: m, level: .xhigh), "xhigh")
+        XCTAssertEqual(OpenAIAgentProvider.reasoningEffort(for: m, level: .max), "max")
+        XCTAssertEqual(OpenAIAgentProvider.reasoningEffort(for: m, level: .ultra), "max")
+    }
+
     // MARK: - Claude Opus 5.5
 
     func testOpus55StaticEntry() {
@@ -99,31 +138,31 @@ final class GPT6SolLunaOpus55Tests: XCTestCase {
     }
 
     /// THE regression this file exists for. Opus 5.5 rejects
-    /// `thinking.type: "disabled"` with 400 "not supported for this model", so
-    /// the request must send adaptive thinking or omit the field entirely.
-    ///
-    /// It is already correct by accident: the gate is `major == 4 && minor >= 6`
-    /// and Opus 5.5 is major 5. That accident is exactly what needs pinning —
-    /// a future refactor widening the predicate (say, to `major >= 4`) would
-    /// silently start sending a payload this model 400s on.
+    /// `thinking.type: "disabled"` with 400 "not supported for this model"
+    /// (thinking is always on), so "off" must be adaptive at the lowest effort.
     func testOpus55NeverSendsThinkingDisabled() {
-        XCTAssertFalse(AnthropicProvider.modelAcceptsExplicitThinkingDisabled("claude-opus-5-5"))
-        // The version really does parse — a nil parse would also return false,
-        // passing the assertion above for the wrong reason.
+        XCTAssertEqual(AnthropicProvider.offThinking(for: "claude-opus-5-5"), .lowEffort)
+        // The version really does parse — a nil parse would answer `.omit`,
+        // which is wrong for a different reason (it would think at the default).
         let v = AnthropicProvider.parseClaudeVersion("claude-opus-5-5")
         XCTAssertEqual(v?.major, 5)
         XCTAssertEqual(v?.minor, 5)
     }
 
-    /// The 4.6+ models that DO accept it must keep accepting it, so the guard
-    /// above cannot be satisfied by simply disabling the feature everywhere.
-    func testThinkingDisabledStillSentWhereSupported() {
-        XCTAssertTrue(AnthropicProvider.modelAcceptsExplicitThinkingDisabled("claude-opus-4-8"))
-        XCTAssertTrue(AnthropicProvider.modelAcceptsExplicitThinkingDisabled("claude-opus-4-6"))
-        // …and stays off for the other majors, including its 5.x siblings.
-        XCTAssertFalse(AnthropicProvider.modelAcceptsExplicitThinkingDisabled("claude-opus-5"))
-        XCTAssertFalse(AnthropicProvider.modelAcceptsExplicitThinkingDisabled("claude-fable-5-1"))
-        XCTAssertFalse(AnthropicProvider.modelAcceptsExplicitThinkingDisabled("claude-sonnet-4-5"))
+    /// [T-claude5-thinking-off] The per-model table from Anthropic's
+    /// "Troubleshooting thinking" doc: each model gets the lowest setting it
+    /// accepts, never a literal it 400s on and never an absent field that
+    /// leaves Claude 5 thinking at its default effort.
+    func testOffThinkingFollowsThePerModelTable() {
+        XCTAssertEqual(AnthropicProvider.offThinking(for: "claude-opus-4-8"), .disabled)
+        XCTAssertEqual(AnthropicProvider.offThinking(for: "claude-opus-4-6"), .disabled)
+        XCTAssertEqual(AnthropicProvider.offThinking(for: "claude-sonnet-5"), .disabled)
+        XCTAssertEqual(AnthropicProvider.offThinking(for: "claude-sonnet-5-5"), .betweenTools)
+        XCTAssertEqual(AnthropicProvider.offThinking(for: "claude-opus-5"), .lowEffort)
+        XCTAssertEqual(AnthropicProvider.offThinking(for: "claude-fable-5-1"), .lowEffort)
+        XCTAssertEqual(AnthropicProvider.offThinking(for: "claude-mythos-5"), .lowEffort)
+        XCTAssertEqual(AnthropicProvider.offThinking(for: "claude-sonnet-4-5"), .omit)
+        XCTAssertEqual(AnthropicProvider.offThinking(for: "gpt-5"), .omit)
     }
 
     /// Anthropic gates `claude-opus-5-5` on `claude-cli >= 2.1.280`; an older

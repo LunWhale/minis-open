@@ -62,6 +62,10 @@ struct BrowserActionInput {
     /// keys: name, value (required), and optional domain, path, secure,
     /// http_only, expires (Unix seconds).
     var cookies: [[String: Any]]? = nil
+    /// The `user_agent` argument exactly as the caller sent it, kept so a
+    /// `set_user_agent` with a value `userAgent` could not be parsed from can
+    /// name that value in its error instead of silently picking a profile.
+    var userAgentRaw: String? = nil
 
     enum ScrollDirection: String {
         case up, down
@@ -85,7 +89,7 @@ struct BrowserActionInput {
             direction: (dict["direction"] as? String).flatMap(ScrollDirection.init),
             amount: dict["amount"] as? Int,
             script: dict["script"] as? String,
-            userAgent: (dict["user_agent"] as? String).flatMap(UserAgentProfile.init),
+            userAgent: UserAgentProfile.parse(dict["user_agent"] as? String),
             maxDepth: dict["max_depth"] as? Int,
             tabId: dict["tab_id"] as? Int,
             scrollCount: dict["scroll_count"] as? Int,
@@ -106,7 +110,8 @@ struct BrowserActionInput {
             viewportHeight: dict["viewport_height"] as? Int,
             viewportReset: dict["reset"] as? Bool,
             fullPage: dict["full_page"] as? Bool,
-            cookies: Self.parseCookies(dict["cookies"])
+            cookies: Self.parseCookies(dict["cookies"]),
+            userAgentRaw: dict["user_agent"] as? String
         )
     }
 
@@ -172,6 +177,42 @@ enum UserAgentProfile: String {
         case .desktopSafari: return (1280, 800)
         case .mobileSafari, .custom: return (390, 844)
         }
+    }
+}
+
+// MARK: - User Agent Profile: arguments and the panel icon
+
+extension UserAgentProfile {
+    /// Parse a `user_agent` argument. Accepts the raw values plus the short
+    /// aliases models reach for (`desktop`, `mobile`), ignoring case, outer
+    /// whitespace and `-` vs `_`. Returns nil for a missing or unknown value:
+    /// the caller reports an error, it does not fall back to a profile.
+    /// (An unknown value used to become mobile Safari without a word, so
+    /// `user_agent: "desktop"` switched the browser to MOBILE.)
+    static func parse(_ raw: String?) -> UserAgentProfile? {
+        guard let raw else { return nil }
+        let key = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "-", with: "_")
+        switch key {
+        case "desktop": return .desktopSafari
+        case "mobile": return .mobileSafari
+        default: return UserAgentProfile(rawValue: key)
+        }
+    }
+
+    /// Error text for a `set_user_agent` whose `user_agent` is missing or not
+    /// one of the accepted values.
+    static func invalidArgumentMessage(raw: String?) -> String {
+        let got = raw.map { "\"\($0)\" is not a user agent profile" } ?? "user_agent is missing"
+        return "set_user_agent: \(got). Use desktop_safari or mobile_safari (aliases: desktop, mobile). Nothing was changed."
+    }
+
+    /// Which profile the browser panel's title icon stands for: the selected
+    /// tab's own profile, because that is what the page on screen was loaded
+    /// with; the global default only when no tab is open yet.
+    static func panelProfile(activeTab: UserAgentProfile?, globalDefault: UserAgentProfile) -> UserAgentProfile {
+        activeTab ?? globalDefault
     }
 }
 

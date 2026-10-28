@@ -1,4 +1,5 @@
 import XCTest
+@testable import Minis
 
 /// [T-oauth-refresh-race] Regression coverage for the shared refresh-race guard
 /// applied to xAI, Codex, Gemini, and Antigravity (mirroring the Claude fix).

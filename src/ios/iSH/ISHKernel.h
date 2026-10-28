@@ -35,6 +35,17 @@ typedef void (^ISHCommandCompletionCallback)(NSString *output, NSError * _Nullab
 /// @return 0 on success, negative error code on failure
 - (int)bootWithRootPath:(NSString *)rootPath;
 
+/// [T-ios-aojit] AOJIT: run the AOT images linked into the app (libish_aot.a)
+/// instead of the gadget engine for the guest modules they cover. On by
+/// default (an unset key reads YES; a stored value wins). Persisted under `AOJITEnabledDefaultsKey`; applied before the
+/// first guest process at boot, and at once when changed. Only blocks
+/// compiled afterwards are affected, i.e. commands started from then on.
++ (BOOL)isAOJITEnabled;
++ (void)setAOJITEnabled:(BOOL)enabled;
+/// The runtime's own report (same text as /proc/ish/jit in the guest): mode,
+/// abi, each image (ok / rejected) and blocks / AOT hits per module.
++ (NSString *)aojitStatusReport;
+
 /// Execute a command (starts interactive shell)
 /// @param command Command and arguments array, e.g. @[@"/bin/sh", @"-l"]
 /// @return 0 on success, negative error code on failure
@@ -181,6 +192,17 @@ typedef NSString * _Nullable (^ISHPathReverseHandler)(NSString *hostPath);
 /// Stop the governor and clear any applied throttle. Call on foreground
 /// return. Idempotent.
 - (void)endBackgroundCPUGovernor;
+
+/// [T-crash-heartbeat] The governor's latest reading, for the crash
+/// heartbeat: `running` (BOOL), `zone` (GREEN/YELLOW/RED), `windowCPU`
+/// (CPU-s billed in the last 60 s), `rate` (CPU-s per s over ~1 s) and
+/// `secondsInBackground`. Lock-free; values are the last 100 ms tick's.
+- (NSDictionary<NSString *, id> *)backgroundCPUGovernorStatus;
+
+/// [T-crash-breadcrumbs] Guest load for the periodic resource sample: live
+/// guest processes (-1 when the process table was busy - never waits for it)
+/// and guest anonymous memory in bytes. Cheap enough for every 15 s.
+- (void)getGuestProcessCount:(int *)processCount anonBytes:(int64_t *)anonBytes;
 
 @end
 

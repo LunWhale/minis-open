@@ -374,7 +374,8 @@ enum ShortcutRunTracker {
             actions: [],
             intentIdentifiers: []
         )
-        center.setNotificationCategories([action])
+        // [T-user-ask] Through the shared registry: a bare set() wipes other features' categories.
+        NotificationCategoryCenter.shared.register([action])
 
         let content = UNMutableNotificationContent()
         content.title = title

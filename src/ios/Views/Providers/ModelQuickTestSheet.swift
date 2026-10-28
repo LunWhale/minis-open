@@ -194,10 +194,25 @@ final class TestSession: ObservableObject {
     static func performTestStatic(_ kind: ModelQuickTestSheet.Kind, entry: ModelEntry) async throws -> TestRun.State {
         try await performTest(kind, entry: entry)
     }
+    /// [T-quicktest-opencode-session] A Quick Test belongs to no chat, so it
+    /// used to build its provider with no session id. OpenCode Go routes by
+    /// `x-opencode-session` and rejects a request without one
+    /// ("400 Request is missing x-opencode-session and cannot be routed"), so
+    /// every Quick Test of an OpenCode Go model failed. A Quick Test is a
+    /// one-off conversation of its own: it gets a fresh id per run. Only an
+    /// instance on the OpenCode channel turns the id into a header
+    /// (LLMProviderFactory gates on `isOpenCodeChannel`); nothing changes for
+    /// any other provider.
+    static func quickTestSessionId() -> String { UUID().uuidString }
+
+    static func quickTestProvider(for entry: ModelEntry) async throws -> any LLMProvider {
+        try await LLMProviderFactory.makeProvider(for: entry, sessionId: quickTestSessionId())
+    }
+
     private static func performTest(_ kind: ModelQuickTestSheet.Kind, entry: ModelEntry) async throws -> TestRun.State {
         switch kind {
         case .text:
-            let provider = try await LLMProviderFactory.makeProvider(for: entry)
+            let provider = try await quickTestProvider(for: entry)
             let messages = [LLMMessage(
                 role: .user,
                 content: "Hi! I'm setting you up in Minis. Say hello back in one short, friendly sentence.")]
@@ -207,7 +222,7 @@ final class TestSession: ObservableObject {
             return .text(text.isEmpty ? AppLocalized("(empty reply)") : text)
 
         case .imageGen:
-            let provider = try await LLMProviderFactory.makeProvider(for: entry)
+            let provider = try await quickTestProvider(for: entry)
             guard let openAI = provider as? OpenAIProvider else {
                 throw QuickTestError.unsupported(AppLocalized("This model's provider doesn't support image generation via Quick Test."))
             }

@@ -38,6 +38,7 @@ extension AIChatViewModel {
         // safe here (the builder is not guaranteed to be on main), so the value
         // is mirrored into a lock-guarded box that the VM keeps current.
         let box = openCodeSessionBox
+        noteProviderIdentity(for: entry)  // [T-provider-live-check]
         let provider = await Self.makeAgentProvider(
             for: entry,
             resolveSessionId: { box.value }
@@ -73,7 +74,12 @@ extension AIChatViewModel {
     ///   conversation should use the `resolveSessionId:` form instead, so a
     ///   draft's promotion to a real session is picked up — see
     ///   [T-opencode-dedicated-channel].
-    static func makeAgentProvider(for entry: ModelEntry, sessionId: String? = nil) async -> AgentProvider {
+    ///
+    ///   [T-opencode-every-entry] No default: a call that belongs to no
+    ///   conversation passes `OpenCodeChannel.oneOffSessionId()` explicitly. The
+    ///   old `= nil` default let voice correction, folder suggestion and Vision
+    ///   send no id at all — a hard 400 on an OpenCode Go instance.
+    static func makeAgentProvider(for entry: ModelEntry, sessionId: String?) async -> AgentProvider {
         await makeAgentProvider(for: entry, resolveSessionId: { sessionId })
     }
 
@@ -148,204 +154,6 @@ extension AIChatViewModel {
         return AnthropicAgentProvider(provider: LLMProviderFactory.makeAnthropicProvider(instance: instance, model: entry.model))
     }
 
-
-    /// Construct a lightweight LLMProvider from a ModelEntry (for sub-tasks like title generation).
-    static func makeLLMProvider(for entry: ModelEntry) async throws -> any LLMProvider {
-        let store = ProviderConfigStore.shared
-        guard let instance = store.instance(for: entry.providerInstanceId) else {
-            throw LLMProviderError.noCredentials
-        }
-        let customBase = instance.effectiveCustomBaseURL
-        let appendV1 = instance.appendV1Suffix
-        // Custom UA only for custom-base OpenAI/Anthropic-compat (proxy/relay) instances;
-        // OAuth-login paths keep their required client UA (nil here). Mirrors LLMProviderFactory.
-        let ua = instance.supportsCustomUserAgent ? instance.effectiveCustomUserAgent : nil
-        switch instance.providerType {
-        case .anthropic:
-            switch instance.credentialType {
-            case .apiKey:
-                guard let key = ProviderKeychainHelper.loadAPIKey(instanceId: instance.id) else {
-                    throw LLMProviderError.noCredentials
-                }
-                return AnthropicProvider(apiKey: key, model: entry.model, basePath: customBase, appendV1Suffix: appendV1, customUserAgent: ua)
-            case .oauth:
-                if let manualToken = ProviderKeychainHelper.loadOAuthString(instanceId: instance.id, account: "manual-oauth-token") {
-                    return AnthropicProvider(manualToken: manualToken, model: entry.model, basePath: customBase, appendV1Suffix: appendV1, customUserAgent: ua)
-                }
-                let iid = instance.id
-                return AnthropicProvider(
-                    oauthTokenProvider: { try await ClaudeOAuthManager.shared.validAccessToken(instanceId: iid) },
-                    model: entry.model,
-                    basePath: customBase,
-                    appendV1Suffix: appendV1
-                )
-            }
-        case .gemini:
-            switch instance.credentialType {
-            case .apiKey:
-                guard let key = ProviderKeychainHelper.loadAPIKey(instanceId: instance.id) else {
-                    throw LLMProviderError.noCredentials
-                }
-                return GeminiProvider(apiKey: key, model: entry.model, customBasePath: customBase)
-            case .oauth:
-                if let manualToken = ProviderKeychainHelper.loadOAuthString(instanceId: instance.id, account: "manual-oauth-token") {
-                    return GeminiProvider(apiKey: manualToken, model: entry.model, customBasePath: customBase)
-                }
-                let iid = instance.id
-                let provider = GeminiProvider(
-                    oauthTokenProvider: { try await GeminiOAuthManager.shared.validAccessToken(instanceId: iid) },
-                    model: entry.model,
-                    customBasePath: customBase
-                )
-                provider.gcpProjectID = GeminiOAuthManager.shared.gcpProjectID(instanceId: iid)
-                return provider
-            }
-        case .openAI:
-            // Mistral compat: use legacy max_tokens + skip stream_options +
-            // suppress reasoning auto-inject. Mirrors LLMProviderFactory.makeOpenAIProvider.
-            let isMistral = (customBase ?? "").lowercased().contains("mistral.ai")
-            switch instance.credentialType {
-            case .apiKey:
-                guard let key = ProviderKeychainHelper.loadAPIKey(instanceId: instance.id) else {
-                    throw LLMProviderError.noCredentials
-                }
-                let provider = OpenAIProvider(apiKey: key, model: entry.model, customBaseURL: customBase, appendV1Suffix: appendV1)
-                if isMistral { provider.useOpenRouterCompat = true; provider.isMistral = true }
-                return LLMProviderFactory.applyCustomUserAgent(provider, instance: instance)
-            case .oauth:
-                if let manualToken = ProviderKeychainHelper.loadOAuthString(instanceId: instance.id, account: "manual-oauth-token") {
-                    let provider = OpenAIProvider(apiKey: manualToken, model: entry.model, customBaseURL: customBase, appendV1Suffix: appendV1)
-                    if isMistral { provider.useOpenRouterCompat = true; provider.isMistral = true }
-                    return LLMProviderFactory.applyCustomUserAgent(provider, instance: instance)
-                }
-                let iid = instance.id
-                let provider = OpenAIProvider(
-                    oauthTokenProvider: { try await CodexOAuthManager.shared.validAccessToken(instanceId: iid) },
-                    model: entry.model
-                )
-                provider.codexAccountId = CodexOAuthManager.shared.accountId(instanceId: iid)
-                return provider
-            }
-        case .antigravity:
-            let iid = instance.id
-            let provider = AntigravityProvider(
-                oauthTokenProvider: { try await AntigravityOAuthManager.shared.validAccessToken(instanceId: iid) },
-                model: entry.model
-            )
-            provider.projectID = AntigravityOAuthManager.shared.projectID(instanceId: iid)
-            if let baseURL = AntigravityOAuthManager.shared.resolvedBaseURL(instanceId: iid) {
-                provider.activeBaseURL = baseURL
-            }
-            return provider
-        case .openRouter:
-            let key: String
-            if instance.credentialType == .oauth,
-               let manualToken = ProviderKeychainHelper.loadOAuthString(instanceId: instance.id, account: "manual-oauth-token") {
-                key = manualToken
-            } else {
-                guard let storedKey = ProviderKeychainHelper.loadAPIKey(instanceId: instance.id) else {
-                    throw LLMProviderError.noCredentials
-                }
-                key = storedKey
-            }
-            let orProvider = OpenAIProvider(apiKey: key, model: entry.model, customBaseURL: customBase ?? "https://openrouter.ai/api", appendV1Suffix: customBase == nil)
-            orProvider.extraHeaders = [
-                "HTTP-Referer": "https://github.com/LunWhale/minis-open",
-                "X-Title": "Minis App",
-            ]
-            orProvider.useOpenRouterCompat = true
-            return LLMProviderFactory.applyCustomUserAgent(orProvider, instance: instance)
-        case .openAIResponses:
-            // Mirror the apiKey + OAuth branch logic in
-            // LLMProviderFactory.makeOpenAIResponsesProvider so an OpenAI2
-            // instance configured with Codex OAuth (not an API key) reaches
-            // /v1/responses with a real bearer token instead of the
-            // empty-auth header the apiKey-only path produced
-            // (T-model-use-codex-responses-api-34889).
-            switch instance.credentialType {
-            case .apiKey:
-                guard let key = ProviderKeychainHelper.loadAPIKey(instanceId: instance.id) else {
-                    throw LLMProviderError.noCredentials
-                }
-                let respProvider = OpenAIProvider(apiKey: key, model: entry.model, customBaseURL: customBase, appendV1Suffix: appendV1)
-                respProvider.forceResponsesAPI = true
-                return LLMProviderFactory.applyCustomUserAgent(respProvider, instance: instance)
-            case .oauth:
-                if let manualToken = ProviderKeychainHelper.loadOAuthString(instanceId: instance.id, account: "manual-oauth-token") {
-                    let respProvider = OpenAIProvider(apiKey: manualToken, model: entry.model, customBaseURL: customBase, appendV1Suffix: appendV1)
-                    respProvider.forceResponsesAPI = true
-                    return LLMProviderFactory.applyCustomUserAgent(respProvider, instance: instance)
-                }
-                let iid = instance.id
-                let respProvider = OpenAIProvider(
-                    oauthTokenProvider: { try await CodexOAuthManager.shared.validAccessToken(instanceId: iid) },
-                    model: entry.model
-                )
-                respProvider.customBaseURL = customBase
-                respProvider.appendV1Suffix = appendV1
-                respProvider.forceResponsesAPI = true
-                respProvider.codexAccountId = CodexOAuthManager.shared.accountId(instanceId: iid)
-                return respProvider
-            }
-        case .xAI:
-            let xaiBase = customBase ?? "https://api.x.ai/v1"
-            let xaiAppendV1 = customBase == nil ? false : appendV1
-            switch instance.credentialType {
-            case .apiKey:
-                guard let key = ProviderKeychainHelper.loadAPIKey(instanceId: instance.id) else {
-                    throw LLMProviderError.noCredentials
-                }
-                return LLMProviderFactory.applyCustomUserAgent(OpenAIProvider(apiKey: key, model: entry.model, customBaseURL: xaiBase, appendV1Suffix: xaiAppendV1), instance: instance)
-            case .oauth:
-                if let manualToken = ProviderKeychainHelper.loadOAuthString(instanceId: instance.id, account: "manual-oauth-token") {
-                    return LLMProviderFactory.applyCustomUserAgent(OpenAIProvider(apiKey: manualToken, model: entry.model, customBaseURL: xaiBase, appendV1Suffix: xaiAppendV1), instance: instance)
-                }
-                let iid = instance.id
-                let provider = OpenAIProvider(
-                    oauthTokenProvider: { try await XAIOAuthManager.shared.validAccessToken(instanceId: iid) },
-                    model: entry.model
-                )
-                provider.customBaseURL = xaiBase
-                provider.appendV1Suffix = xaiAppendV1
-                return provider
-            }
-        case .githubCopilot:
-            // OAuth only; the builder owns the base URL and headers.
-            return LLMProviderFactory.makeCopilotProvider(instance: instance, model: entry.model)
-        case .kimiCode:
-            let kimiBase = customBase ?? "https://api.kimi.com/coding"
-            let kimiAppendV1 = customBase == nil ? true : appendV1  // default base …/coding needs /v1 appended
-            switch instance.credentialType {
-            case .apiKey:
-                guard let key = ProviderKeychainHelper.loadAPIKey(instanceId: instance.id) else {
-                    throw LLMProviderError.noCredentials
-                }
-                return LLMProviderFactory.applyCustomUserAgent(OpenAIProvider(apiKey: key, model: entry.model, customBaseURL: kimiBase, appendV1Suffix: kimiAppendV1), instance: instance)
-            case .oauth:
-                // [T-kimi-manual-token-ignored] Honour a manually-pasted bearer
-                // token, as the anthropic / gemini / openAI branches in this
-                // same switch already do. Third copy of this decision (factory,
-                // model fetch, here) — all three had to be corrected.
-                if let manualToken = ProviderKeychainHelper.loadOAuthString(
-                    instanceId: instance.id, account: "manual-oauth-token") {
-                    return LLMProviderFactory.applyCustomUserAgent(
-                        OpenAIProvider(apiKey: manualToken, model: entry.model,
-                                       customBaseURL: kimiBase, appendV1Suffix: kimiAppendV1),
-                        instance: instance)
-                }
-                let iid = instance.id
-                let provider = OpenAIProvider(
-                    oauthTokenProvider: { try await KimiOAuthManager.shared.validAccessToken(instanceId: iid) },
-                    model: entry.model
-                )
-                provider.customBaseURL = kimiBase
-                provider.appendV1Suffix = kimiAppendV1
-                return provider
-            }
-        case .unsupported:
-            throw LLMProviderError.noCredentials
-        }
-    }
 
     /// Resolve the current session's primary model entry from its binding, or fall back to defaults.
     /// L1 cache (T-new-session-hang-credential-cache): SwiftUI body re-eval

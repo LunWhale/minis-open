@@ -69,6 +69,9 @@ struct BrowserManagementView: View {
             let vp = pool.userAgentProfile.viewportSize
             Text("Viewport: \(vp.width)×\(vp.height)")
         }
+        // minis-config writes these settings straight to UserDefaults; show
+        // what is stored now, not what this pool read when it was created.
+        .onAppear { pool.syncGlobalDefaultsFromStore() }
     }
 
     private func displayUA(for profile: UserAgentProfile) -> String {
@@ -171,6 +174,7 @@ struct BrowserManagementView: View {
             }
         }
         .onAppear {
+            pool.syncGlobalDefaultsFromStore()
             if pool.customViewportWidth > 0 {
                 viewportWidthText = String(pool.customViewportWidth)
             }

@@ -10,7 +10,10 @@ struct AssistantBlockView: View {
     var commandStartTime: Date?
     var onStop: (() -> Void)?
     var onTapBlank: ((CGPoint) -> Void)?
-    var onCopyScreenshot: (() -> Void)?
+    /// [#414] Asked at tap time whether this block is the text block the usage
+    /// capsule sits under; when set, blank taps only count in its last lines.
+    var blankTapEligible: (() -> Bool)? = nil
+    var onShareMessages: (() -> Void)?
     /// [T-selection-menu-minis-tts] Selection-menu read-aloud hooks, plumbed
     /// down to SelectableMarkdownView (nil for non-text or streaming contexts).
     var onReadAloud: (() -> Void)?
@@ -66,6 +69,9 @@ struct AssistantBlockView: View {
             ToolCapsuleView(block: block, icon: "brain.head.profile", accentColor: .pink,
                             commandStartTime: commandStartTime, onStop: onStop,
                             toolSnapshots: toolSnapshots, detailBlock: $detailBlock)
+        case .userAskTool:
+            // [T-user-ask] The interactive question card.
+            UserAskCardView(block: block)
         case .delegateTool:
             if HelperBlockInfo.controlSummary(block) != nil {
                 // [T-subagent-control-capsule] A status / steer / cancel /
@@ -90,18 +96,15 @@ struct AssistantBlockView: View {
                 HelperBlockView(block: block, detailBlock: $detailBlock)
             }
         case .info:
-            let allLines = block.content.components(separatedBy: "\n").filter { !$0.isEmpty }
-            // Separate reason lines (⚠️) from the final switched line (✅)
-            let reasonLines = allLines.filter { $0.hasPrefix("⚠️") }
-            let switchedLine = allLines.first { !$0.hasPrefix("⚠️") && !$0.isEmpty }
-            // Truncate middle if more than 9 reason lines
-            let displayReasons: [String] = {
-                if reasonLines.count <= 9 { return reasonLines }
-                return Array(reasonLines.prefix(4)) + [AppLocalized("⋯ \(reasonLines.count - 8) more")] + Array(reasonLines.suffix(4))
-            }()
+            // Reason lines (⚠️, the middle elided past nine) then the final
+            // switched line. [T-in-chat-search] Shared with the search, which
+            // must see exactly these lines.
+            let lines = ChatSearchDisplayText.infoLines(block.content)
+            let displayReasons = lines.reasons
+            let switchedLine = lines.switched
             VStack(alignment: .leading, spacing: 3) {
-                ForEach(Array(displayReasons.enumerated()), id: \.offset) { _, line in
-                    Text(line)
+                ForEach(Array(displayReasons.enumerated()), id: \.offset) { i, line in
+                    SearchHighlightText(line, blockId: block.id, field: .line(i), messageId: message.id)
                         .font(.system(size: 10))
                         .foregroundStyle(ChatColors.primaryText.opacity(0.45))
                         .lineLimit(2)
@@ -111,7 +114,7 @@ struct AssistantBlockView: View {
                         Image(systemName: "arrow.triangle.2.circlepath")
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(.orange.opacity(0.8))
-                        Text(switchedLine)
+                        SearchHighlightText(switchedLine, blockId: block.id, field: .title, messageId: message.id)
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(ChatColors.primaryText.opacity(0.75))
                             .lineLimit(2)
@@ -143,7 +146,8 @@ struct AssistantBlockView: View {
             messageId: message.id,
             blockId: block.id,
             onTapBlank: onTapBlank,
-            onCopyScreenshot: onCopyScreenshot,
+            blankTapEligible: blankTapEligible,
+            onShareMessages: onShareMessages,
             onReadAloud: onReadAloud,
             onSpeakText: onSpeakText
         )
@@ -240,6 +244,11 @@ struct ToolCapsuleView: View {
     private var showBgSuspendedHint: Bool {
         block.wasBackgroundSuspended && !keepAlive.enhancedBackgroundEffective
     }
+    /// [T-bka-continued-hint] The ⓘ is about a slow continued-task period,
+    /// not a suspension (read when the published flag re-renders the view).
+    private var bgHintRanSlowly: Bool {
+        ContinuedRunHintStore.blockIds.contains(block.id)
+    }
     /// [T-ios-retry-hide-when-processing] Used to suppress the "Re-run From
     /// Here" long-press menu item while the agent loop is busy — tapping it
     /// mid-run would corrupt the in-flight processing state.
@@ -267,18 +276,21 @@ struct ToolCapsuleView: View {
     }
 
     /// Display text: prefer LLM-generated toolSummary, fall back to toolDescription.
+    /// [T-subagent-control-capsule] A control call describes itself from the
+    /// action it performed ("Resumed 2 sub agent(s)"), which is the whole
+    /// point of the row. Its `tool_title` names the RUN it acted on, so
+    /// preferring the summary here would label three different operations
+    /// on the same sub agent identically.
+    /// [T-in-chat-search] Defined once in ChatSearchDisplayText, which the
+    /// search reads too.
     private var displayText: String {
-        // [T-subagent-control-capsule] A control call describes itself from the
-        // action it performed ("Resumed 2 sub agent(s)"), which is the whole
-        // point of the row. Its `tool_title` names the RUN it acted on, so
-        // preferring the summary here would label three different operations
-        // on the same sub agent identically.
-        if let control = HelperBlockInfo.controlSummary(block) { return control }
-        if let summary = block.toolSummary, !summary.isEmpty {
-            return summary
-        }
-        return block.toolDescription
+        ChatSearchDisplayText.toolCapsule(block)
     }
+
+    /// [T-in-chat-search] The message this capsule belongs to (set by the
+    /// list cell), so its line can carry search highlights.
+    @Environment(\.chatSearchMessageId) private var searchMessageId
+    @Environment(\.chatSearchHighlights) private var searchHighlights
 
     /// [T-ios-tool-bubble-longpress-menu] Human-readable, paste-back-able
     /// dump of this tool call + its result for the "Copy Tool Details"
@@ -298,6 +310,7 @@ struct ToolCapsuleView: View {
         case .readImageTool: toolName = "read_image"
         case .memoryTool:    toolName = "memory"
         case .delegateTool:  toolName = SubAgentDefinition.toolName
+        case .userAskTool:   toolName = UserAskTool.name
         case .text, .thinking, .info: toolName = "unknown"
         }
 
@@ -374,7 +387,7 @@ struct ToolCapsuleView: View {
 
                 // Description text with bouncing dots during streaming
                 HStack(spacing: 0) {
-                    Text(displayText)
+                    SearchHighlightText(displayText, blockId: block.id, field: .body, messageId: searchMessageId)
                         .font(.system(size: 13, weight: .medium))
                         // [T-subagent-control-capsule] Sub agent control calls
                         // title in the accent, every other tool in the normal
@@ -471,13 +484,22 @@ struct ToolCapsuleView: View {
                 EquatableMenuGate(key: ToolMenuKey(
                     blockId: block.id,
                     isProcessing: vm.isProcessing,
-                    canRevokeMemoryWrite: isRevocableMemoryWrite
+                    canRevokeMemoryWrite: isRevocableMemoryWrite,
+                    canSearchInChat: searchHighlights?.openSearch != nil
                 )) {
                     // [T-ios-tool-bubble-longpress-menu]
                     Button {
                         UIPasteboard.general.string = toolDetailsClipboard
                     } label: {
                         Label(AppLocalized("Copy Tool Details"), systemImage: "doc.on.doc")
+                    }
+                    // [T-in-chat-search] Read at tap time, like the clipboard dump.
+                    if let open = searchHighlights?.openSearch {
+                        Button {
+                            open(nil)
+                        } label: {
+                            Label(AppLocalized("Search in Chat"), systemImage: "magnifyingglass")
+                        }
                     }
                     // [T-ios-retry-hide-when-processing] Only expose the
                     // destructive Re-run action when the agent loop is idle.
@@ -537,22 +559,28 @@ struct ToolCapsuleView: View {
             Spacer(minLength: 0)
         }
         .alert(
-            AppLocalized("Task may have been paused"),
+            bgHintRanSlowly
+                ? AppLocalized("Ran slowly in the background")
+                : AppLocalized("Task may have been paused"),
             isPresented: $showBgHintAlert
         ) {
             Button(AppLocalized("Go Enable")) {
                 // Deep-link to Settings → Permissions → Background, nudging the
                 // recommended rows ON — they highlight only while still OFF
                 // (= minis://settings/background?focus=…:true,…:true). Location
-                // Tracking is included so the background heartbeat that keeps the
-                // task Live Activity refreshing in real time gets enabled too.
+                // Tracking is included too: it is the background heartbeat that
+                // keeps the Live Activity refreshing.
                 DeepLinkCoordinator.shared.setFocus(
-                    rawQueryValue: "enhancedBackgroundExecution:true,backgroundSpeakEnabled:true,locationTrackingEnabled:true")
+                    rawQueryValue: BackgroundInterruptionTracker.enableFocusQuery)
                 DeepLinkCoordinator.shared.pendingSettingsTarget = .background
             }
             Button(AppLocalized("Maybe Later"), role: .cancel) {}
         } message: {
-            Text(AppLocalized("This tool may have been paused by the system while running in the background. Enable enhanced background execution to improve background task reliability."))
+            Text(bgHintRanSlowly
+                 // Deliberately mechanism-free (no audio / continued-task
+                 // wording): App Review reads this text.
+                 ? AppLocalized("This tool ran slowly in the background. Turning on Enhanced Background helps background tasks run faster.")
+                 : AppLocalized("This tool may have been paused by the system while running in the background. Enable enhanced background execution to improve background task reliability."))
         }
         // [T-ios-memory-write-revoke] Mirrors the Revoke Memory confirmation in
         // SessionMemoryView: confirm, then report the outcome in place — the
@@ -640,8 +668,98 @@ struct ToolCapsuleView: View {
 
 
 
+// MARK: - Tool Group Row (folded run of tool calls)
+
+/// [T-fold-consecutive-tools] The one line that stands in for a folded run of
+/// tool calls: "› Ran 5 tools", then a red "1 failed" / grey "1 cancelled"
+/// when any member ended that way. Deliberately light — no fill, border or
+/// icons — so it reads as a quiet summary between two replies rather than
+/// another capsule. Type breakdown and durations live on the member capsules,
+/// visible once the row is expanded.
+///
+/// Tapping posts `.toolGroupToggled` (object: `firstBlockId`) instead of
+/// calling back into the list: the list owns the expanded state and the
+/// height invalidation, the same split the thinking block uses.
+struct ToolGroupRowView: View {
+    let firstBlockId: UUID
+    let toolCount: Int
+    let failedCount: Int
+    let cancelledCount: Int
+    /// [T-fold-tool-duration] Summed execution time of the folded calls.
+    var duration: TimeInterval? = nil
+    let isExpanded: Bool
+
+    /// Fixed so the list can estimate the row exactly (see
+    /// `estimateItemHeight`), with no first-measure correction.
+    static let rowHeight: CGFloat = 28
+
+    private var title: String { AppLocalized("Ran \(toolCount) tools") }
+    private var failedText: String { AppLocalized("\(failedCount) failed") }
+    private var cancelledText: String { AppLocalized("\(cancelledCount) cancelled") }
+    private var durationText: String? { duration.map(Self.durationText) }
+
+    /// The tool capsule's own duration format ("0.4s", "45s", "2m 10s"), so
+    /// the total reads like the per-call times it adds up.
+    static func durationText(_ dur: TimeInterval) -> String {
+        if dur < 1 { return String(format: "%.1fs", dur) }
+        if dur < 60 { return String(format: "%.0fs", dur) }
+        let mins = Int(dur) / 60
+        let secs = Int(dur) % 60
+        return "\(mins)m \(secs)s"
+    }
+
+    private var accessibilityText: String {
+        var parts = [title]
+        if let durationText { parts.append(durationText) }
+        if failedCount > 0 { parts.append(failedText) }
+        if cancelledCount > 0 { parts.append(cancelledText) }
+        return parts.joined(separator: ", ")
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            HStack(spacing: 5) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                Text(title)
+                if let durationText {
+                    Text(verbatim: "·")
+                    Text(verbatim: durationText).monospacedDigit()
+                }
+                if failedCount > 0 {
+                    Text(verbatim: "·")
+                    Text(failedText).foregroundStyle(.red)
+                }
+                if cancelledCount > 0 {
+                    Text(verbatim: "·")
+                    Text(cancelledText)
+                }
+            }
+            .font(.system(size: 13))
+            .foregroundStyle(ChatColors.secondaryText)
+            .lineLimit(1)
+            .padding(.horizontal, 4)
+            .frame(height: Self.rowHeight)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                NotificationCenter.default.post(name: .toolGroupToggled, object: firstBlockId)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(accessibilityText)
+            .accessibilityHint(isExpanded ? AppLocalized("Hides the tool calls") : AppLocalized("Shows each tool call"))
+            .accessibilityAddTraits(.isButton)
+            Spacer(minLength: 0)
+        }
+    }
+}
+
 extension Notification.Name {
     static let thinkingBlockToggled = Notification.Name("thinkingBlockToggled")
+    /// [T-fold-consecutive-tools] Posted by `ToolGroupRowView` on tap.
+    /// `object` is the group's first folded block id (UUID); the message list
+    /// flips that group's expanded state and re-lays it out.
+    static let toolGroupToggled = Notification.Name("toolGroupToggled")
     /// Posted when a long-press selection menu's "Add to Chat Input" action
     /// fires. userInfo["text"] is the selected text to append. The active
     /// chat's AIChatView listens and forwards to `vm.appendToInputText`.
@@ -772,6 +890,35 @@ final class ThinkingHitchMonitor {
     func stop(owner: UUID) {}
 }
 
+/// [T-thinking-autoexpand-toggle-longpress] "Expand Thinking While Streaming"
+/// (Settings > Appearance > Deep Thinking), also offered on a thinking block's
+/// long-press menu. One owner for the key and its default.
+enum ThinkingAutoExpand {
+    static let key = "chat.autoExpandThinking"
+    static var isOn: Bool { (UserDefaults.standard.object(forKey: key) as? Bool) ?? true }
+
+    /// Menu toggle. `get` runs when the menu opens, so the checkmark is never
+    /// stale and no cell has to observe the setting. `liveBlock` is asked at
+    /// tap time for the thinking block streaming right now (nil otherwise).
+    static func binding(liveBlock: @escaping () -> AssistantBlock?) -> Binding<Bool> {
+        Binding(get: { isOn }, set: { set($0, liveBlock: liveBlock()) })
+    }
+
+    /// Saves the setting and applies it to the block streaming right now, so
+    /// the change is visible at once — unless the user already opened or
+    /// closed that block by hand, which always wins (same rule as the
+    /// auto-expand and auto-collapse in ThinkingBlockView).
+    static func set(_ on: Bool, liveBlock: AssistantBlock?) {
+        UserDefaults.standard.set(on, forKey: key)
+        guard let b = liveBlock, !b.thinkingUserToggled, b.isThinkingExpanded != on else { return }
+        if on { b.flushThinkingBuffer() }
+        b.isThinkingExpanded = on
+        // The cell caches its height by width; re-measure for the new state
+        // (the post the auto-collapse path needs too — see below).
+        NotificationCenter.default.post(name: .thinkingBlockToggled, object: b.id)
+    }
+}
+
 struct ThinkingBlockView: View {
     @ObservedObject var block: AssistantBlock
     let isStreaming: Bool
@@ -781,6 +928,15 @@ struct ThinkingBlockView: View {
     @State private var thinkingUserScrolledAway = false
     @State private var lastThinkingDragAt: Date = .distantPast
     @State private var frozenThinkingContent: String? = nil
+    /// [T-thinking-expand-stuck-height] Body height (capped like the
+    /// ScrollView) last reported to the list, so a streaming expanded block
+    /// asks for a re-measure once per line of growth, not per flush.
+    @State private var lastReportedBodyHeight: CGFloat = 0
+
+    /// The expanded body's height cap (the ScrollView's maxHeight).
+    static let bodyMaxHeight: CGFloat = 300
+    /// Growth that triggers a re-measure: about one 13pt line with spacing.
+    static let bodyRemeasureStep: CGFloat = 20
 
     /// Bind to block.isThinkingExpanded so state survives cell reuse and triggers cell re-sizing.
     private var isExpanded: Binding<Bool> {
@@ -917,8 +1073,16 @@ struct ThinkingBlockView: View {
                                 .padding(.bottom, 10)
                                 .id("thinkingBottom")
                         }
+                        // [T-thinking-expand-stuck-height] Report the body's
+                        // natural height so the list can grow the cell with it.
+                        .background(GeometryReader { g in
+                            Color.clear.preference(key: ThinkingBodyHeightKey.self, value: g.size.height)
+                        })
                     }
-                    .frame(maxHeight: 300)
+                    .frame(maxHeight: Self.bodyMaxHeight)
+                    .onPreferenceChange(ThinkingBodyHeightKey.self) { height in
+                        remeasureIfGrown(height)
+                    }
                     // [T-thinking-scroll-followback GH#125] User-intent gate,
                     // Android parity (ChatAssistantMessageUI.kt): mark
                     // scrolled-away ONLY when a real finger drag moved the view
@@ -1015,8 +1179,7 @@ struct ThinkingBlockView: View {
             // new streaming thinking blocks stay collapsed; a manual tap still
             // expands them (and sets thinkingUserToggled, so nothing here
             // fights the user either way).
-            let autoExpand = (UserDefaults.standard.object(forKey: "chat.autoExpandThinking") as? Bool) ?? true
-            if autoExpand, isStreaming, !block.thinkingUserToggled, !block.isThinkingExpanded {
+            if ThinkingAutoExpand.isOn, isStreaming, !block.thinkingUserToggled, !block.isThinkingExpanded {
                 block.isThinkingExpanded = true
             }
         }
@@ -1056,6 +1219,9 @@ struct ThinkingBlockView: View {
             }
         }
         .onChange(of: block.isThinkingExpanded) { newValue in
+            // [T-thinking-expand-stuck-height] A fresh expansion re-arms the
+            // growth reporting below.
+            if !newValue { lastReportedBodyHeight = 0 }
             // Single source of truth for cell-height invalidation: fires
             // for BOTH manual taps and the stream-end auto-collapse path
             // above. Previously only the tap gesture posted this, so when
@@ -1068,6 +1234,59 @@ struct ThinkingBlockView: View {
                                             object: block.id)
         }
     }
+}
+
+extension ThinkingBlockView {
+    /// [T-thinking-expand-stuck-height] Grow the list cell with a STREAMING,
+    /// expanded thinking body.
+    ///
+    /// Field report: with "Expand Thinking While Streaming" on, a new thinking
+    /// block looked collapsed — chevron up, no text. Reproduced on device
+    /// (log: `post … expanded=true streaming=true`, then `POST … frameH=40.0
+    /// delta=0.0`): the auto-expand fires as the block appears, when its text
+    /// is still empty, so the body is not rendered and the cell measures at
+    /// the 40pt header height. The list then serves that cached height — the
+    /// only re-measure trigger was `.thinkingBlockToggled`, sent on
+    /// expand/collapse — so the body stayed clipped while the text streamed
+    /// in, until the user collapsed and re-expanded it. A block expanded by
+    /// hand while its text was still short froze the same way.
+    ///
+    /// So while streaming, report the body's natural height and request a
+    /// re-measure (the same notification, which clears both height caches and
+    /// reconfigures the cell) whenever it has grown by about a line, and once
+    /// more when it reaches the ScrollView cap. After the cap the cell no
+    /// longer changes, so the requests stop; a long block costs ~15 of them.
+    /// Not while static: a finished block's height only changes on a toggle,
+    /// which already posts.
+    func remeasureIfGrown(_ naturalHeight: CGFloat) {
+        guard isStreaming, isExpanded.wrappedValue,
+              let shown = Self.remeasureHeight(natural: naturalHeight, lastReported: lastReportedBodyHeight)
+        else { return }
+        lastReportedBodyHeight = shown
+        NotificationCenter.default.post(name: .thinkingBlockToggled, object: block.id)
+    }
+
+    // Kept byte-identical with MinisTests/Standalone/ThinkingExpandHeightTests.swift.
+    // BEGIN remeasureHeight
+    /// The capped body height to report, or nil when the cell need not be
+    /// re-measured: the first visible height, each ~line of growth, and the
+    /// moment the cap is reached — never again once capped.
+    static func remeasureHeight(natural: CGFloat, lastReported: CGFloat,
+                                cap: CGFloat = bodyMaxHeight, step: CGFloat = bodyRemeasureStep) -> CGFloat? {
+        let shown = min(natural, cap)
+        let firstReport = lastReported == 0 && shown > 0
+        let grownALine = shown - lastReported >= step
+        let reachedCap = shown >= cap && lastReported < cap
+        return (firstReport || grownALine || reachedCap) ? shown : nil
+    }
+    // END remeasureHeight
+}
+
+/// [T-thinking-expand-stuck-height] Natural height of an expanded thinking
+/// body (inside its ScrollView), read by `ThinkingBlockView`.
+private struct ThinkingBodyHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
 // MARK: - Typing Indicator

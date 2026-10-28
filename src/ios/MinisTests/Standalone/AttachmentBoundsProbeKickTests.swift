@@ -180,9 +180,21 @@ do {
     checkEq("still no probe", kicker.probeCalls, [])
 }
 
+/// The markdown renderer module (Views/Chat/Markdown/, formerly the single file
+/// SelectableMarkdownView.swift), read as one text with its files in path order.
+func markdownModuleSource() -> String {
+    let dir = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Views/Chat/Markdown")
+    let files = (FileManager.default.enumerator(at: dir, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? [])
+        .filter { $0.pathExtension == "swift" }
+        .sorted { $0.path < $1.path }
+    return files.compactMap { try? String(contentsOf: $0, encoding: .utf8) }.joined(separator: "\n")
+}
+
 print("\n▶️  6. shipping source carries the fix on BOTH image and video")
 do {
-    let md = codeOnly(source("Views/Chat/SelectableMarkdownView.swift"))
+    let md = codeOnly(markdownModuleSource())
     if md.isEmpty { print("  ⏭  source not readable") } else {
         // Image side.
         check("the image placeholder branch kicks a probe",

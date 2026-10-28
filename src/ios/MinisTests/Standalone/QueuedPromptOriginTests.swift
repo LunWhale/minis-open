@@ -1,8 +1,11 @@
 // [T24] Queued-prompt origin policy: a USER follow-up interrupts the running
 // plan at the next tool boundary, a PROGRAMMATIC job result waits for the loop
 // to converge, a programmatic prompt never touches the composer draft, and the
-// #579 role-alternation bridge is LLM-context-only (kept once in
-// agentHistory, never rendered, never merged away by same-role folding).
+// #579 interrupt note reaches the model without ever being shown.
+// [T-bridge-to-reminder] The note used to be an assistant "bridge" row; the
+// model learned to say it, so it is now a <system-reminder> part at the end of
+// the queued user message, and old bridge rows are hidden, kept out of
+// requests, and stripped when the model echoes them.
 //
 // Pins:
 //   d172f9acd  job results wait for the loop to converge (QueuedPrompt.deferUntilIdle,
@@ -18,6 +21,54 @@
 // section [5] re-reads the shipping sources so the copies cannot drift.
 
 import Foundation
+
+/// [T-messagelist-v3-split] CollectionViewMessageListV3.swift became the folder
+/// Agent/MessageList/CollectionViewMessageListV3/ (code moved verbatim); read all
+/// of it as one text, the way the single file used to be read.
+func messageListV3Source() -> String {
+    let ios = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let dir = ios.appendingPathComponent("Agent/MessageList/CollectionViewMessageListV3")
+    let files = (FileManager.default.enumerator(at: dir, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? [])
+        .filter { $0.pathExtension == "swift" }
+    return files.sorted { $0.path < $1.path }
+        .compactMap { try? String(contentsOf: $0, encoding: .utf8) }.joined(separator: "\n")
+}
+
+/// The sources that used to be the single file Agent/Chat/ChatStore.swift -
+/// the actor plus the files it was split into - read as one text.
+func chatStoreSource() -> String {
+    let chat = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Agent/Chat")
+    let names = ["ChatStore", "ChatStore+Schema", "ChatStore+SessionCRUD", "ChatStore+SessionList",
+                 "ChatStore+Search", "ChatStore+SessionQueries", "ChatStore+Folders",
+                 "ChatStore+SessionDeletion", "ChatStore+StoredPreview", "ChatStore+Messages",
+                 "ChatStore+Media", "ChatStore+CompactMarkers", "ChatStore+Tombstones",
+                 "ChatStore+WebAppShortcuts", "ChatStore+Maintenance", "ChatStore+Helpers",
+                 "ChatStore+UsageStats", "ChatStoreModels", "ContentPart+ProviderConversion",
+                 "RawMessage+Conversion", "ChatStore+SyncDirty", "ChatStore+SyncRemoteSessions",
+                 "ChatStore+SyncRemoteRecords", "ChatStore+BackupRestore"]
+    return names.compactMap { try? String(contentsOf: chat.appendingPathComponent($0 + ".swift"), encoding: .utf8) }
+        .joined(separator: "\n")
+}
+
+/// The sources that used to be the single file Agent/Chat/AIChatViewModel.swift -
+/// the class body plus the AIChatViewModel+<Concern>.swift files it was split
+/// into (the older extension files are NOT included) - read as one text.
+func chatViewModelSource() -> String {
+    let chat = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Agent/Chat")
+    let names = ["AIChatViewModel", "AIChatViewModel+Lifecycle", "AIChatViewModel+ContextUsage",
+                 "AIChatViewModel+StreamingUI", "AIChatViewModel+Speech", "AIChatViewModel+AutoPlayAudio",
+                 "AIChatViewModel+SystemPrompt", "AIChatViewModel+Send", "AIChatViewModel+Rerun",
+                 "AIChatViewModel+EditMessage", "AIChatViewModel+Cancel", "AIChatViewModel+PromptQueue",
+                 "AIChatViewModel+DebugDumps", "AIChatViewModel+TurnCompletion", "AIChatViewModel+AgentLoop",
+                 "AIChatViewModel+ThinkingLevel", "LLMProviderError"]
+    return names.compactMap { try? String(contentsOf: chat.appendingPathComponent($0 + ".swift"), encoding: .utf8) }
+        .joined(separator: "\n")
+}
 
 var failures = 0
 func check(_ label: String, _ actual: Bool, _ expected: Bool = true) {
@@ -101,6 +152,17 @@ enum Bridge {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return internalBridgeTexts.contains { trimmed == $0 }
     }
+    /// ChatStoreModels.swift — RawMessage.queuedInterruptReminderText.
+    static let queuedInterruptReminderText =
+        "<system-reminder>This note is from the system, not something the user wrote. The user sent the message above while you were in the middle of a task. Decide from that message and the conversation so far whether the earlier task should continue; do not forget or abandon it unless the user explicitly asks you to stop or the message makes clear it is no longer needed. Do not repeat or mention this note.</system-reminder>"
+    /// ChatStoreModels.swift — RawMessage.strippingInternalBridgeEcho.
+    static func strippingInternalBridgeEcho(_ text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        for bridge in internalBridgeTexts where trimmed.hasPrefix(bridge) {
+            return String(trimmed.dropFirst(bridge.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return nil
+    }
 }
 
 enum Part: Equatable { case text(String); case toolUse(String); case toolResult(String) }
@@ -133,7 +195,8 @@ struct UIMessage: Equatable {
     }
 }
 
-/// CollectionViewMessageListV3.swift:2623 — the single UI-collection sink filter.
+/// applySnapshot in Agent/MessageList/CollectionViewMessageListV3/Coordinator/
+/// MessageListV3Coordinator+Snapshot.swift — the single UI-collection sink filter.
 func uiSink(_ rawMessages: [UIMessage]) -> [UIMessage] {
     rawMessages.contains(where: { $0.isInternalBridge })
         ? rawMessages.filter { !$0.isInternalBridge }
@@ -156,13 +219,36 @@ func loadSession(_ rows: [AgentMessage]) -> (history: [AgentMessage], ui: [UIMes
     return (history, ui)
 }
 
-/// AIChatViewModel.swift:5109-5124 — injectQueuedPromptsAsNewTurn's bridge rule:
-/// insert the bridge only when the tail is a user row.
+/// AIChatViewModel+PromptQueue.swift — injectQueuedPromptsAsNewTurn: when the
+/// tail is a user row (a tool_result: the user interrupted between two tool
+/// steps) the note goes at the END of the queued message; no assistant row.
 func injectQueuedPrompt(_ history: inout AgentMessage, into agentHistory: inout [AgentMessage]) {
     if agentHistory.last?.role == .user {
-        agentHistory.append(AgentMessage(role: .assistant, parts: [.text(Bridge.internalBridgeText)]))
+        history.parts.append(.text(Bridge.queuedInterruptReminderText))
     }
     agentHistory.append(history)
+}
+
+/// AIChatViewModel+Persistence.swift — droppingLegacyBridgeRows.
+func droppingLegacyBridgeRows(_ history: [AgentMessage]) -> [AgentMessage] {
+    func isBridgePart(_ part: Part) -> Bool {
+        if case .text(let s) = part { return Bridge.isInternalBridgeText(s) }
+        return false
+    }
+    return history.compactMap { msg in
+        guard msg.role == .assistant, msg.parts.contains(where: isBridgePart) else { return msg }
+        var kept = msg
+        kept.parts.removeAll(where: isBridgePart)
+        return kept.parts.isEmpty ? nil : kept
+    }
+}
+
+/// AnthropicAgentProvider.reorderUserContent, reduced: tool_results first.
+func reorderUserContent(_ m: AgentMessage) -> AgentMessage {
+    guard m.role == .user else { return m }
+    let results = m.parts.filter { if case .toolResult = $0 { return true }; return false }
+    let rest = m.parts.filter { if case .toolResult = $0 { return false }; return true }
+    return AgentMessage(role: .user, parts: results + rest)
 }
 
 /// AnthropicAgentProvider.swift:686 — mergeConsecutiveSameRole, reduced to roles + parts.
@@ -286,6 +372,8 @@ do {
           AgentMessage(role: .assistant, parts: [.text("(Interrupted…) something else")]).isInternalBridge, false)
 
     // Injection at a tool-close boundary: tail is user(tool_result).
+    // [T-bridge-to-reminder] No assistant bridge any more: the note rides at
+    // the end of the queued message.
     var hist: [AgentMessage] = [
         AgentMessage(role: .user, parts: [.text("run the sync")]),
         AgentMessage(role: .assistant, parts: [.toolUse("shell_execute")]),
@@ -293,35 +381,63 @@ do {
     ]
     var queued = AgentMessage(role: .user, parts: [.text("how is it going?")])
     injectQueuedPrompt(&queued, into: &hist)
-    checkEq("bridge inserted exactly once", hist.filter { $0.isInternalBridge }.count, 1)
-    checkEq("sequence is …tool_result → bridge → queued",
-            hist.suffix(3).map { $0.role }, [.user, .assistant, .user])
+    checkEq("no assistant bridge row is written", hist.filter { $0.role == .assistant && $0.parts.contains(.text(Bridge.internalBridgeText)) }.count, 0)
+    checkEq("sequence is …tool_result → queued (two user rows)", hist.suffix(2).map { $0.role }, [.user, .user])
+    checkEq("the note is the queued message's LAST part, after the user's text",
+            hist.last?.parts, [.text("how is it going?"), .text(Bridge.queuedInterruptReminderText)])
+    check("the note is a <system-reminder> that says it is not the user and asks not to be repeated",
+          Bridge.queuedInterruptReminderText.hasPrefix("<system-reminder>")
+          && Bridge.queuedInterruptReminderText.hasSuffix("</system-reminder>")
+          && Bridge.queuedInterruptReminderText.contains("not something the user wrote")
+          && Bridge.queuedInterruptReminderText.contains("Do not repeat or mention this note."))
+    // Anthropic folds the two user rows into one, tool_result first, then the
+    // user's text, then the note — the tool_result row itself is untouched.
+    let merged = mergeConsecutiveSameRole(hist).map(reorderUserContent)
+    checkEq("Anthropic: one user turn, tool_result first, text, then the note",
+            merged.last?.parts, [.toolResult("ok"), .text("how is it going?"), .text(Bridge.queuedInterruptReminderText)])
+    checkEq("…and the tool_result row in history is unchanged", hist[2].parts, [.toolResult("ok")])
 
-    // The #579 failure mode: without the bridge, the queued text folds into
-    // the tool_result and reads as in-loop context.
-    let merged = mergeConsecutiveSameRole(hist)
-    checkEq("with the bridge, same-role merge keeps the queued prompt as its own turn",
-            merged.last, queued)
-    var noBridge = Array(hist.prefix(3)); noBridge.append(queued)
-    let foldedLast = mergeConsecutiveSameRole(noBridge).last!
-    check("PRE-#579: without the bridge the queued text is folded into the tool_result",
-          foldedLast.parts == [.toolResult("ok"), .text("how is it going?")])
-
-    // Finish-branch injection: tail is already an assistant reply → no bridge.
+    // Finish-branch injection: tail is already an assistant reply → no note.
     var finished: [AgentMessage] = [
         AgentMessage(role: .user, parts: [.text("hi")]),
         AgentMessage(role: .assistant, parts: [.text("done")]),
     ]
     var q2 = AgentMessage(role: .user, parts: [.text("next")])
     injectQueuedPrompt(&q2, into: &finished)
-    checkEq("assistant tail → no bridge", finished.filter { $0.isInternalBridge }.count, 0)
+    checkEq("assistant tail → no note", finished.last?.parts, [.text("next")])
 
-    // Reload: the bridge stays in agentHistory but produces no UI row.
-    let reloaded = loadSession(hist)
-    checkEq("reload keeps the bridge in agentHistory", reloaded.history.filter { $0.isInternalBridge }.count, 1)
-    check("reload emits no UI row for the bridge",
-          reloaded.ui.contains { $0.isInternalBridge }, false)
-    checkEq("reload emits the queued user bubble", reloaded.ui.last?.content, "how is it going?")
+    // Legacy rows from older builds: hidden in the UI, kept out of requests.
+    let legacy: [AgentMessage] = [
+        AgentMessage(role: .user, parts: [.text("run the sync")]),
+        AgentMessage(role: .assistant, parts: [.toolUse("shell_execute")]),
+        AgentMessage(role: .user, parts: [.toolResult("ok")]),
+        AgentMessage(role: .assistant, parts: [.text(Bridge.internalBridgeText)]),
+        AgentMessage(role: .user, parts: [.text("how is it going?")]),
+        AgentMessage(role: .assistant, parts: [.text("working"), .toolUse("read"), .text(Bridge.internalBridgeTexts[1])]),
+        AgentMessage(role: .user, parts: [.toolResult("r")]),
+    ]
+    let reloaded = loadSession(legacy)
+    check("reload emits no UI row for a legacy bridge row", reloaded.ui.contains { $0.isInternalBridge }, false)
+    checkEq("reload emits the queued user bubble",
+            reloaded.ui.first(where: { $0.content == "how is it going?" })?.content, "how is it going?")
+    let outbound = droppingLegacyBridgeRows(legacy)
+    checkEq("request: the bridge row is gone", outbound.count, legacy.count - 1)
+    checkEq("request: a copied bridge part inside a reply is gone, the rest stays",
+            outbound[4].parts, [.text("working"), .toolUse("read")])
+    check("request: every tool_use still has its tool_result (only text parts removed)",
+          outbound.flatMap(\.parts).filter { if case .toolUse = $0 { return true }; return false }.count
+          == outbound.flatMap(\.parts).filter { if case .toolResult = $0 { return true }; return false }.count)
+    checkEq("request: tool_result → queued are now adjacent user rows (merged like any interrupt)",
+            outbound[2...3].map(\.role), [.user, .user])
+    checkEq("request: nothing else is touched", droppingLegacyBridgeRows(hist), hist)
+
+    // Echo guard: the model writing a bridge itself.
+    checkEq("echo: exactly a bridge → empty", Bridge.strippingInternalBridgeEcho(Bridge.internalBridgeText), "")
+    checkEq("echo: old wording too", Bridge.strippingInternalBridgeEcho("  " + Bridge.internalBridgeTexts[1] + "\n"), "")
+    checkEq("echo: bridge then real text → the real text",
+            Bridge.strippingInternalBridgeEcho(Bridge.internalBridgeText + "\n\nDone: 3 files changed."), "Done: 3 files changed.")
+    checkEq("echo: ordinary text → untouched (nil)", Bridge.strippingInternalBridgeEcho("(Interrupted…) something else"), nil)
+    checkEq("echo: a bridge quoted mid-reply is not an echo", Bridge.strippingInternalBridgeEcho("He said " + Bridge.internalBridgeText), nil)
 
     // UI sink: every other path that pushes into the list is filtered too.
     let leaked: [UIMessage] = [
@@ -346,11 +462,11 @@ func source(_ rel: String) -> String {
     return (try? String(contentsOf: root.appendingPathComponent(rel), encoding: .utf8)) ?? ""
 }
 let pp = source("Agent/Chat/AIChatViewModel+ProgrammaticPrompt.swift")
-let vm = source("Agent/Chat/AIChatViewModel.swift")
+let vm = chatViewModelSource()
 let misc = source("Agent/Chat/AIChatViewModel+Misc.swift")
-let store = source("Agent/Chat/ChatStore.swift")
+let store = chatStoreSource()
 let models = source("Agent/Chat/ChatModels.swift")
-let cv3 = source("Agent/MessageList/CollectionViewMessageListV3.swift")
+let cv3 = messageListV3Source()
 let persist = source("Agent/Chat/AIChatViewModel+Persistence.swift")
 if [pp, vm, misc, store, models, cv3, persist].contains(where: { $0.isEmpty }) {
     print("  ⏭  a source is not readable"); failures += 1
@@ -362,20 +478,43 @@ if [pp, vm, misc, store, models, cv3, persist].contains(where: { $0.isEmpty }) {
     check("the idle path sends the text as an argument, not via inputText",
           pp.contains("send(overrideText: text)")
               && !pp.split(separator: "\n").contains { $0.trimmingCharacters(in: .whitespaces) == "inputText = text" })
-    check("QueueInterrupt keys off a NON-deferred prompt",
-          vm.contains("if promptQueue.contains(where: { !$0.deferUntilIdle }) {"))
+    // [T-scheduled-preempt] The gap rule moved into QueueDeliveryPlanner: a
+    // non-deferred prompt still interrupts; a scheduled fire may enter only
+    // while the model continues; other job callbacks never do.
+    check("QueueInterrupt keys off a NON-deferred prompt (or a scheduled fire while continuing)",
+          vm.contains("let gapTake = planQueueTake(at: .toolGap)")
+          && vm.contains("if let gapTake, gapTake.scheduledJobId == nil || stopReason == .toolUse {"))
     check("QueuedPrompt carries deferUntilIdle", models.contains("var deferUntilIdle: Bool = false"))
     check("enqueuePrompt clears the draft only for the composer's own send",
           misc.contains("let usingComposer = overrideText == nil") && misc.contains("if usingComposer { inputText = \"\" }"))
-    check("bridge text is the shared constant",
-          vm.contains("AgentMessage(role: .assistant, parts: [.text(RawMessage.internalBridgeText)])"))
-    check("bridge only when the tail is a user row", vm.contains("if agentHistory.last?.role == .user {"))
+    // [T-bridge-to-reminder]
+    check("no assistant bridge row is written any more",
+          !vm.contains("AgentMessage(role: .assistant, parts: [.text(bridgeText)])")
+          && !vm.contains("? RawMessage.scheduledInsertBridgeText"))
+    check("the note is appended to the queued message, only when the tail is a user row and not for a scheduled fire",
+          vm.contains("if agentHistory.last?.role == .user, take.scheduledJobId == nil {\n            qCombinedParts.append(.text(RawMessage.queuedInterruptReminderText))"))
+    check("the note's wording matches the shipping constant",
+          store.contains("\"" + Bridge.queuedInterruptReminderText + "\""))
+    check("requests drop legacy bridge rows / parts before the orphan pass",
+          persist.contains("let withoutBridges = Self.droppingLegacyBridgeRows(sliced)")
+          && persist.contains("let result = Self.dropOrphanedToolParts(withoutBridges, logger: logger)")
+          && persist.contains("kept.parts.removeAll(where: isBridgePart)"))
+    check("stream end drops an echoed bridge (not shown, not saved, not an 'empty reply')",
+          vm.contains("let bridgeEchoRemainder = RawMessage.strippingInternalBridgeEcho(streamResult.assistantText)")
+          && vm.contains("let assistantText = bridgeEchoRemainder ?? streamResult.assistantText")
+          && vm.contains("messages[msgIdx].blocks.remove(at: echoIdx)")
+          && vm.contains("&& !droppedBridgeEcho"))
+    check("echo helper matches the port", store.contains("for bridge in internalBridgeTexts where trimmed.hasPrefix(bridge) {"))
+    check("display drops a bridge text part inside a longer reply",
+          store.contains("if role == .assistant, Self.isInternalBridgeText(s) { continue }"))
     checkEq("bridge wording matches the shipping constant",
             store.contains("\"" + Bridge.internalBridgeText + "\""), true)
     check("old wording stays in the recognised set",
           store.contains("\"" + Bridge.internalBridgeTexts[1] + "\""))
-    check("RawMessage.isInternalBridge requires a single text part",
-          store.contains("guard role == .assistant, parts.count == 1,"))
+    check("RawMessage.isInternalBridge requires a single text part (assistant bridge or user nudge)",
+          store.contains("guard parts.count == 1, case .text(let s) = parts[0] else { return false }")
+          && store.contains("case .assistant: return Self.isInternalBridgeText(s)")
+          && store.contains("case .user: return Self.isInternalUserNudgeText(s)"))
     check("loadSession skips the bridge for UI but keeps it in history",
           persist.contains("if raw.isInternalBridge {\n                continue\n            }"))
     check("the UI sink filters every path", cv3.contains("? rawMessages.filter { !$0.isInternalBridge }"))

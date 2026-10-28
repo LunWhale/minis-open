@@ -73,14 +73,7 @@ final class AnthropicAgentProvider: AgentProvider {
         // The token rides on a header that the protocol strips before the
         // request leaves the device, the same mechanism X-Minis-OAuth-UUID
         // already uses.
-        let requestToken = UUID().uuidString
-        RequestBodyPatcher.setRequestToken(requestToken)
-        if !pendingToolResultImages.isEmpty {
-            RequestBodyPatcher.setToolResultImages(pendingToolResultImages, requestToken: requestToken)
-            #if DEBUG
-            AgentRequestTrace.shared.step("anthropic.setToolResultImages", detail: "ids=\(Array(pendingToolResultImages.keys)) token=\(requestToken.prefix(8))")
-            #endif
-        }
+        let requestToken = stageToolResultImages()
         // [T-agent-concurrency-probe] One line per outgoing Anthropic stream, so
         // the interleaving of concurrent sessions is visible in a device log
         // instead of being inferred from thread ids after a crash.
@@ -125,7 +118,7 @@ final class AnthropicAgentProvider: AgentProvider {
             // request (e.g. title generation, also `.off`, possibly a different
             // model) may reach the wire between this set and its take.
             RequestBodyPatcher.setThinkingDisabled(modelId: model.id)
-            logger.info("Thinking explicitly DISABLED (adaptive default-on model, level=off) model=\(self.model.id)")
+            logger.info("Thinking OFF intent (adaptive model, level=off) model=\(self.model.id) wire=\(AnthropicProvider.offThinking(for: self.model.id))")
         }
 
         // Anthropic-compat proxies (e.g. DeepSeek's deepseek-v4-pro endpoint
@@ -204,15 +197,8 @@ final class AnthropicAgentProvider: AgentProvider {
             logger.info("Compat-proxy thinking echo: queued \(history.compactMap { $0 }.count) reasoning block(s) across \(history.count) assistant turn(s), placeholder=\(injectPlaceholder)")
         }
 
-        let parameter = MessageParameter(
-            model: .other(model.id),
-            messages: cachedMessages,
-            maxTokens: maxTokens,
-            system: provider.resolveSystemPrompt(systemPrompt),
-            temperature: provider.effectiveTemperature(0.7),
-            tools: anthropicTools,
-            toolChoice: .init(type: .auto)
-        )
+        let parameter = messageParameter(messages: cachedMessages, tools: anthropicTools,
+                                         systemPrompt: systemPrompt, maxTokens: maxTokens)
 
         #if DEBUG
         // Note: request body is captured by the URLProtocol layer (OAuthURLProtocol / EagerStreamingURLProtocol).
@@ -824,19 +810,7 @@ final class AnthropicAgentProvider: AgentProvider {
 
     /// Convert `[String: Any]` to the SDK's `MessageResponse.Content.Input` type.
     private func convertToInput(_ dict: [String: Any]) -> MessageResponse.Content.Input {
-        var result: MessageResponse.Content.Input = [:]
-        for (key, value) in dict {
-            if let s = value as? String {
-                result[key] = .string(s)
-            } else if let n = value as? NSNumber {
-                if CFBooleanGetTypeID() == CFGetTypeID(n) {
-                    result[key] = .bool(n.boolValue)
-                } else {
-                    result[key] = .integer(n.intValue)
-                }
-            }
-        }
-        return result
+        AnthropicToolInputConverter.input(dict)
     }
 
     // MARK: - Image Helpers
@@ -900,14 +874,53 @@ final class AnthropicAgentProvider: AgentProvider {
 
     // MARK: - Tool Conversion
 
+    /// [T-user-ask] Render a nested schema with the SDK's types. Objects appear
+    /// only as array items (Property has no `properties`); item `required`
+    /// lists cannot be expressed here, so the tool's parser enforces them.
+    static func anthropicProperty(_ node: AgentSchemaNode, description: String? = nil) -> JSONSchema.Property {
+        switch node {
+        case .string(let d, let e):
+            return .init(type: .string, description: description ?? d, enumValues: e)
+        case .integer(let d):
+            return .init(type: .integer, description: description ?? d)
+        case .boolean(let d):
+            return .init(type: .boolean, description: description ?? d)
+        case .array(let d, let items, let minItems, let maxItems):
+            return .init(type: .array, description: description ?? d, items: anthropicItems(items),
+                         minItems: minItems, maxItems: maxItems)
+        case .object(let d, _, _):
+            // Not reachable for our schemas; degrade to a described string.
+            return .init(type: .string, description: description ?? d)
+        }
+    }
+
+    static func anthropicItems(_ node: AgentSchemaNode) -> JSONSchema.Items {
+        switch node {
+        case .object(_, let props, _):
+            var p: [String: JSONSchema.Property] = [:]
+            for (name, n) in props { p[name] = anthropicProperty(n) }
+            return .init(type: .object, properties: p)
+        case .string(_, let e): return .init(type: .string, enumValues: e)
+        case .integer: return .init(type: .integer)
+        case .boolean: return .init(type: .boolean)
+        case .array: return .init(type: .array)
+        }
+    }
+
     private func convertTools(_ tools: [AgentToolDefinition]) -> [MessageParameter.Tool] {
         tools.map { tool in
             var properties: [String: JSONSchema.Property] = [:]
             for (name, param) in tool.parameters {
+                // [T-user-ask] A structured param renders its nested schema.
+                if let schema = param.schema {
+                    properties[name] = Self.anthropicProperty(schema, description: param.description)
+                    continue
+                }
                 let type: JSONSchema.JSONType = switch param.type {
                 case .string: .string
                 case .integer: .integer
                 case .boolean: .boolean
+                case .array: .array
                 }
                 properties[name] = JSONSchema.Property(
                     type: type,
@@ -1089,3 +1102,164 @@ final class AnthropicAgentProvider: AgentProvider {
         return dict
     }
 }
+
+// BEGIN AnthropicToolInputConverter
+/// [T-anthropic-tool-input-lossless] Replays a stored tool call's arguments as
+/// the `input` of an outbound `tool_use` block.
+///
+/// The previous converter copied only strings and numbers, so arrays, nested
+/// objects and nulls vanished and every non-integer was truncated to an Int.
+/// `user_ask` takes a single array (`questions`), so each earlier call reached
+/// the model as `tool_use user_ask input={}` followed by a real result like
+/// `approved`: the model read that as "empty parameters were approved" and
+/// then imitated it, sending `{}` calls that preflight rejected.
+///
+/// The conversion must be lossless: the request has to show the model exactly
+/// the arguments it sent.
+enum AnthropicToolInputConverter {
+    typealias Value = MessageResponse.Content.DynamicContent
+
+    static func input(_ dict: [String: Any]) -> MessageResponse.Content.Input {
+        dict.mapValues(value)
+    }
+
+    static func value(_ raw: Any) -> Value {
+        switch raw {
+        case let s as String:
+            return .string(s)
+        // Before any numeric cast: an NSNumber from JSONSerialization bridges
+        // to Bool/Int/Double alike, so the boxed type is the only reliable
+        // signal. CFBoolean tells `true` apart from `1`.
+        case let n as NSNumber:
+            return number(n)
+        case let dict as [String: Any]:
+            return .dictionary(input(dict))
+        case let array as [Any]:
+            return .array(array.map(value))
+        case is NSNull:
+            return .null
+        case Optional<Any>.none:
+            return .null
+        default:
+            return .string(jsonFallback(raw))
+        }
+    }
+
+    private static func number(_ n: NSNumber) -> Value {
+        if CFGetTypeID(n) == CFBooleanGetTypeID() { return .bool(n.boolValue) }
+        switch String(cString: n.objCType) {
+        case "c", "s", "i", "l", "q", "C", "S", "I", "L":
+            return .integer(n.intValue)
+        case "Q":
+            // An unsigned value past Int.max must not wrap negative.
+            if let i = Int(exactly: n.uint64Value) { return .integer(i) }
+            return .double(n.doubleValue)
+        default:
+            // "d", "f" and NSDecimalNumber: keep the fraction.
+            let d = n.doubleValue
+            return d.isFinite ? .double(d) : .string(n.stringValue)
+        }
+    }
+
+    /// A value JSON cannot carry as itself (a Date, Data, …) still reaches the
+    /// model as text rather than being dropped.
+    private static func jsonFallback(_ raw: Any) -> String {
+        // isValidJSONObject first: JSONSerialization raises an Objective-C
+        // exception, which Swift cannot catch, on an invalid object.
+        guard JSONSerialization.isValidJSONObject([raw]),
+              let data = try? JSONSerialization.data(withJSONObject: [raw]),
+              let wrapped = String(data: data, encoding: .utf8),
+              wrapped.count >= 2 else { return String(describing: raw) }
+        return String(wrapped.dropFirst().dropLast())
+    }
+}
+// END AnthropicToolInputConverter
+
+// MARK: - The request body, without sending it [T-image-real-seams]
+
+// BEGIN AnthropicRequestBody
+/// Which URLProtocol a request goes through, which decides its body patches:
+/// `.oauth` (OAuthURLProtocol) or `.keyAuth` (EagerStreamingURLProtocol for an
+/// API key, DualAuthURLProtocol for a manual token on a proxy).
+enum AnthropicBodyRoute {
+    case oauth
+    case keyAuth
+}
+
+// MARK: - Reasoning echo gate [T-ctx-count-reasoning]
+
+extension AnthropicAgentProvider {
+    /// Unsigned `thinking` blocks are replayed only to compat proxies whose
+    /// model needs interleaved reasoning (DeepSeek V4, GLM, Kimi ...). The
+    /// official endpoint uses signed blocks this app never carries.
+    /// Keep in step with `echoReasoning` in streamAgentMessageClamped.
+    func echoesReasoningContent(thinkingLevel: ThinkingLevel) -> Bool {
+        let modelMayReason = model.supportsReasoning ?? true
+        let modelRequiresInterleave = model.interleavedReasoningField != nil
+        return modelMayReason && modelRequiresInterleave && !provider.isOfficialAnthropicEndpoint
+    }
+}
+
+extension AnthropicAgentProvider {
+    /// The SDK parameter for converted messages and tools; shared by
+    /// streamAgentMessageClamped and requestBody.
+    func messageParameter(messages cachedMessages: [MessageParameter.Message],
+                          tools anthropicTools: [MessageParameter.Tool],
+                          systemPrompt: String?, maxTokens: Int) -> MessageParameter {
+        MessageParameter(
+            model: .other(model.id),
+            messages: cachedMessages,
+            maxTokens: maxTokens,
+            system: provider.resolveSystemPrompt(systemPrompt),
+            temperature: provider.effectiveTemperature(0.7),
+            tools: anthropicTools,
+            toolChoice: .init(type: .auto)
+        )
+    }
+
+    /// Hand the tool-result images collected by convertMessages to the
+    /// RequestBodyPatcher under a fresh request token, and return the token.
+    /// See [T-anthropic-toolimages-cross-request] at the call in
+    /// streamAgentMessageClamped.
+    func stageToolResultImages() -> String {
+        let requestToken = UUID().uuidString
+        RequestBodyPatcher.setRequestToken(requestToken)
+        if !pendingToolResultImages.isEmpty {
+            RequestBodyPatcher.setToolResultImages(pendingToolResultImages, requestToken: requestToken)
+            #if DEBUG
+            AgentRequestTrace.shared.step("anthropic.setToolResultImages", detail: "ids=\(Array(pendingToolResultImages.keys)) token=\(requestToken.prefix(8))")
+            #endif
+        }
+        return requestToken
+    }
+
+    /// The JSON body this provider puts on the wire for `messages`, without
+    /// any network: the same conversion, cache breakpoints, parameter and image
+    /// staging as streamAgentMessageClamped; the SwiftAnthropic request encoding
+    /// (streamMessage sets stream = true; Endpoint encodes with snake_case keys);
+    /// then the body patches of the URLProtocol `route` names. Thinking flags are
+    /// per-request state set by streamAgentMessageClamped and are not staged here,
+    /// so their patches are no-ops unless something else set them.
+    func requestBody(messages: [AgentMessage], systemPrompt: String?, tools: [AgentToolDefinition],
+                     maxTokens: Int, route: AnthropicBodyRoute) throws -> Data? {
+        pendingToolResultImages.removeAll()
+        let anthropicMessages = convertMessages(messages)
+        let anthropicTools = convertTools(tools)
+        let cachedMessages = messagesWithCacheBreakpoints(anthropicMessages)
+        _ = stageToolResultImages()
+        var parameter = messageParameter(messages: cachedMessages, tools: anthropicTools,
+                                         systemPrompt: systemPrompt, maxTokens: maxTokens)
+        parameter.stream = true
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        let request = NSMutableURLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
+        request.httpMethod = "POST"
+        request.httpBody = try encoder.encode(parameter)
+        switch route {
+        case .oauth: RequestBodyPatcher.applyOAuthBodyPatches(to: request)
+        case .keyAuth: RequestBodyPatcher.applyKeyAuthBodyPatches(to: request)
+        }
+        return request.httpBody
+    }
+}
+// END AnthropicRequestBody

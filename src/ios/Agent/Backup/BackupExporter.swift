@@ -978,7 +978,15 @@ actor BackupExporter {
     /// missing from `allAsDict()`.
     private func exportEnvironmentVariables(dataDir: URL) async throws
         -> BackupManifest.CategoryStat? {
-        let entries = await MainActor.run { EnvVarStore.shared.entries }
+        // [T-envvar-disable] Each line carries `enabled` (EnvVarBackupEntry);
+        // a backup reader that predates it ignores the extra field.
+        let entries = await MainActor.run { () -> [EnvVarBackupEntry] in
+            let store = EnvVarStore.shared
+            return store.entries.map {
+                EnvVarBackupEntry(id: $0.id, key: $0.key, createdAt: $0.createdAt,
+                                  note: $0.note, enabled: store.isEnabled(id: $0.id))
+            }
+        }
         guard !entries.isEmpty else { return nil }
         let url = dataDir.appendingPathComponent("env_vars.json")
         try BackupJSONFile.write(entries, to: url)

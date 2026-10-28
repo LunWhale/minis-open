@@ -27,13 +27,18 @@ enum MessageListItem: Hashable {
     case assistantBlock(UUID, UUID)  // (messageId, blockId)
     /// Footer area: typing indicator, error, resume, usage.
     case assistantFooter(UUID)
+    /// [T-fold-consecutive-tools] The "Ran N tools" row standing in for a
+    /// folded run of tool blocks (see ToolFoldPlanner). Collapsed, the run's
+    /// blocks are not in the list; expanded, they follow this row as ordinary
+    /// `.assistantBlock` items.
+    case toolGroup(UUID, UUID)  // (messageId, first folded blockId)
 
     /// The message ID this item belongs to.
     var messageId: UUID {
         switch self {
         case .wholeMessage(let id), .assistantHeader(let id),
              .assistantFooter(let id): return id
-        case .assistantBlock(let msgId, _): return msgId
+        case .assistantBlock(let msgId, _), .toolGroup(let msgId, _): return msgId
         }
     }
 }
@@ -107,6 +112,14 @@ class SelfSizingCell: UICollectionViewCell {
     /// `indexPath(for:) == nil` (idx=-1) window during reuse, where an
     /// index-based write would miss.
     var contentKey: String?
+
+    /// [T-first-text-scroll-jump] Set by configureCell: this cell hosts a text
+    /// block with visible content. Such a cell can never really be < 4pt tall,
+    /// so a near-zero measurement of it is a measure taken before its freshly
+    /// created markdown text view had a width (device log:
+    /// `REJECT-NAN-INF-NEG size=0.0x-16.0` + `[MK-VIEW] new textView` in the
+    /// same millisecond as the reconfigure) and must not be applied.
+    var rendersNonEmptyText = false
 
     #if DEBUG
     /// [T-ios-scroll-metrics-ring] Stable content-hash identity (set by
@@ -257,13 +270,20 @@ class SelfSizingCell: UICollectionViewCell {
         //     active (their content isn't changing mid-stream; an in-place
         //     change like an async image load clears the cache via
         //     clearCachedHeight() and falls through to a live measure);
-        //  B. the streaming cell itself returns the layout's precalc height —
-        //     the real-TextKit-engine calibration reseeded on every chunk,
-        //     i.e. the exact value prepare() already laid out — so per-chunk
-        //     growth stays graph-free too. Cells without a precalc (tool
-        //     capsules, thinking, footer) keep the live measure; the
-        //     stream-end settle (ranges cleared → guards inert) re-measures
-        //     everything authoritatively.
+        //  B. (REMOVED, [T-stream-precalc-freeze]) the streaming cell used to
+        //     return the layout's precalc height without measuring, on the
+        //     premise that precalc was "reseeded on every chunk". Nothing ever
+        //     reseeds it: precalc is only written when a snapshot applies
+        //     (block-count changes), so mid-stream it is the height of the text
+        //     as it was at that snapshot. It was harmless while growing text
+        //     blocks had no precalc; once the cross-load memo
+        //     ([T-scroll-estimate-fidelity], 358818abd) gave a brand-new empty
+        //     text block the remembered ~32 pt of an earlier empty block, the
+        //     live block stayed 32 pt tall while its text grew past 1800 pt
+        //     ([TableCellShort] cellH=32 tvH=1856, 2026-10-04 11:02) and drew
+        //     over the rows around it until the turn ended. The streaming cell
+        //     is measured live again (its pre-10-03 behaviour in practice);
+        //     the stream-end settle still re-measures everything.
         if let cv = superview as? UICollectionView,
            let layout = cv.collectionViewLayout as? MessageListLayout {
             let item = layoutAttributes.indexPath.item
@@ -276,12 +296,6 @@ class SelfSizingCell: UICollectionViewCell {
                 let copy = layoutAttributes.copy() as! UICollectionViewLayoutAttributes
                 copy.size.width = cachedW
                 copy.size.height = cached
-                return copy
-            }
-            if isStreamingItem,
-               let precalc = layout.precalcHeight(at: item) {
-                let copy = layoutAttributes.copy() as! UICollectionViewLayoutAttributes
-                copy.size.height = precalc
                 return copy
             }
         }
@@ -311,6 +325,13 @@ class SelfSizingCell: UICollectionViewCell {
             lastComputedHeight = sh
             lastComputedWidth = layoutAttributes.size.width
             lastMeasureMediaTime = CACurrentMediaTime()
+            #if DEBUG
+            // [T-table-layout-true-width] The seed replaces a real measure, so a
+            // wrong one never shows up as a MemoWrite. Log every use, keyed like
+            // the memo, so a height that later proves short ([TableCellShort])
+            // can be traced to the seed that set it.
+            Self.sizingLogger.info("[MemoSeed] key=\(contentKey.map { Self.renderQualifiedKey($0, for: self) } ?? "-") h=\(String(format: "%.1f", sh)) w=\(String(format: "%.0f", sw)) — skipped systemLayoutSizeFitting")
+            #endif
             let copy = layoutAttributes.copy() as! UICollectionViewLayoutAttributes
             copy.size.height = sh
             return copy
@@ -442,7 +463,7 @@ class SelfSizingCell: UICollectionViewCell {
                 key: contentKey ?? "",
                 src: lastComputedHeight == nil ? "first" : "re",
                 pos: phase, offset: cv.contentOffset.y,
-                note: String(format: "%.1fms", elapsed),
+                note: String(format: "%.1fms", elapsed) + " sv=\(superview != nil ? 1 : 0) win=\(window != nil ? 1 : 0)",
                 tag: metricsTag ?? "")
         }
         #endif
@@ -484,6 +505,17 @@ class SelfSizingCell: UICollectionViewCell {
             Self.sizingLogger.info("[TextDrift] ⚠️ CELL GREW FROM ~0: idx=\(idx) \(String(format: "%.0f", layoutAttributes.size.height))→\(String(format: "%.0f", fittingSize.height))pt — potential text overlap during this transition")
         }
         guard configGeneration == gen else { return attrs }
+        // [T-first-text-scroll-jump] A text block with content measured as
+        // ~0pt: the measure ran before its new text view was laid out. Keep the
+        // height the layout already holds (the filled-signal handler leaves a
+        // real or one-line height there) instead of collapsing the row to 0 -
+        // with the list pinned to the bottom, that collapse moved everything
+        // above the reply down by a line until the next streaming re-measure
+        // ~0.25s later. Not cached, so the next pass measures again.
+        if rendersNonEmptyText, fittingSize.height < 4, layoutAttributes.size.height >= 4 {
+            Self.sizingLogger.info("[TextDrift] kept idx=\(idx) held=\(String(format: "%.0f", layoutAttributes.size.height))pt — non-empty text measured \(String(format: "%.0f", fittingSize.height))pt (text view not laid out yet)")
+            return layoutAttributes
+        }
         #if DEBUG
         // [BottomGapDiag] Catch "the layout is holding a taller height than the
         // cell actually renders" — the shape behind every reported blank strip
@@ -632,6 +664,7 @@ class SelfSizingCell: UICollectionViewCell {
 
     override func prepareForReuse() {
         super.prepareForReuse()
+        rendersNonEmptyText = false
         lastComputedHeight = nil
         lastComputedWidth = nil
         lastMeasureMediaTime = nil
@@ -724,6 +757,11 @@ final class NoAnimationCollectionView: UICollectionView {
     private static let watchdogProbe = AppLogger(category: "WatchdogProbe")
     #endif
 
+    /// [T-user-ask-expand-anim] Set by the caller for exactly one
+    /// `layoutIfNeeded()` made inside its own `UIView.animate`: that pass
+    /// skips the `performWithoutAnimation` below so cell frames animate.
+    var animatesNextLayoutPass = false
+
     override func layoutSubviews() {
         guard !isApplyingSnapshot else { return }
         // Skip expensive layout when backgrounded to avoid 0x8BADF00D watchdog kill.
@@ -778,7 +816,12 @@ final class NoAnimationCollectionView: UICollectionView {
         // During user scroll (tracking/decelerating), let UIKit handle layout
         // naturally — stripping animations mid-scroll kills the deceleration
         // curve and causes a visible jitter at the end.
-        if isTracking || isDecelerating {
+        if animatesNextLayoutPass {
+            // [T-user-ask-expand-anim] A caller-owned animated pass (a card the
+            // user expanded / collapsed in place): run inside the caller's
+            // UIView.animate so the cells around it move smoothly.
+            super.layoutSubviews()
+        } else if isTracking || isDecelerating {
             super.layoutSubviews()
         } else if streamingGrowAnimationEnabled, isStreamingNow, contentOverflowsViewport,
                   !isApplyingSnapshot, !inStreamingGrowLayout {
@@ -854,6 +897,13 @@ final class NoAnimationCollectionView: UICollectionView {
 
         #if DEBUG
         let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
+        // [T-scroll-cell-build-diag] Whole layout pass: on a pass that brings
+        // a new row on screen this is where its build + measure + first layout
+        // land, so a dropped frame can be split into this vs everything else.
+        if elapsed >= 4, ScrollMetricsRecorder.shared.isEnabled {
+            ScrollMetricsRecorder.shared.record(kind: "cvl", a: elapsed, b: Double(visibleCells.count),
+                pos: isDecelerating ? "decel" : (isTracking ? "drag" : "idle"), offset: contentOffset.y)
+        }
         if elapsed >= 200 {
             Self.watchdogProbe.warning("[WatchdogProbe][cv-layout] slow layoutSubviews elapsed=\(String(format: "%.1f", elapsed))ms visibleCells=\(visibleCells.count) bounds=\(Int(newSize.width))x\(Int(newSize.height)) widthChanged=\(widthChanged ? 1 : 0)")
         }
@@ -1168,7 +1218,7 @@ final class CellStateBridgeV2: ObservableObject {
     @Published var onResume: (() -> Void)?
     @Published var onCompact: (() -> Void)?
     @Published var onForceSync: (() -> Void)?
-    @Published var onCopyScreenshot: (() -> Void)?
+    @Published var onShareMessages: (() -> Void)?
     /// Read this whole reply aloud from the start (clears in-progress TTS).
     @Published var onReadAloud: (() -> Void)?
     /// [T-selection-menu-minis-tts] Speak an arbitrary text snippet (the

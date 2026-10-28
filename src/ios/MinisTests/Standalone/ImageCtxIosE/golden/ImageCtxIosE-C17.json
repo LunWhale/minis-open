@@ -1,0 +1,708 @@
+{
+  "live" : {
+    "anthropic" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "open",
+              "sha8" : "2348f998",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_v2-fc_v2",
+            "kind" : "toolUse",
+            "name" : "browser_use"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_v2-fc_v2",
+            "kind" : "toolResult",
+            "text" : {
+              "chars" : 105,
+              "head" : "Screenshot captured\n  Image: 3000x2000 (1636KB)\n  minis_url: \/var\/minis\/browser\/screenshot_<ts>.jpg",
+              "sha8" : "4041c806",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 431708,
+              "bytes" : 323781,
+              "fmt" : "jpeg",
+              "h" : 1333,
+              "mime" : "image\/jpeg",
+              "sha256" : "4671afae155eb653",
+              "w" : 2000
+            },
+            "inToolResult" : true,
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "and?",
+              "sha8" : "6d970bd6",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "antigravity" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "open",
+              "sha8" : "2348f998",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "browser_use",
+            "kind" : "toolUse",
+            "name" : "browser_use"
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "browser_use",
+            "kind" : "toolResult",
+            "name" : "browser_use",
+            "text" : {
+              "chars" : 124,
+              "head" : "{\"result\":\"Screenshot captured\\n  Image: 3000x2000 (1636KB)\\n  minis_url: \\\/var\\\/minis\\\/browser\\\/screenshot_<ts>.jpg\"}",
+              "sha8" : "d477bd71",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 431708,
+              "bytes" : 323781,
+              "fmt" : "jpeg",
+              "h" : 1333,
+              "mime" : "image\/jpeg",
+              "sha256" : "4671afae155eb653",
+              "w" : 2000
+            },
+            "kind" : "image"
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "and?",
+              "sha8" : "6d970bd6",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "chat" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "open",
+              "sha8" : "2348f998",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_v2|fc_v2",
+            "kind" : "toolUse",
+            "name" : "browser_use"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_v2|fc_v2",
+            "kind" : "toolResult",
+            "text" : {
+              "chars" : 105,
+              "head" : "Screenshot captured\n  Image: 3000x2000 (1636KB)\n  minis_url: \/var\/minis\/browser\/screenshot_<ts>.jpg",
+              "sha8" : "4041c806",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "tool"
+      },
+      {
+        "parts" : [
+          {
+            "image" : {
+              "base64Len" : 431708,
+              "bytes" : 323781,
+              "fmt" : "jpeg",
+              "h" : 1333,
+              "mime" : "image\/jpeg",
+              "sha256" : "4671afae155eb653",
+              "w" : 2000
+            },
+            "kind" : "image"
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "and?",
+              "sha8" : "6d970bd6",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "gemini" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "open",
+              "sha8" : "2348f998",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "browser_use",
+            "kind" : "toolUse",
+            "name" : "browser_use"
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "browser_use",
+            "kind" : "toolResult",
+            "name" : "browser_use",
+            "text" : {
+              "chars" : 124,
+              "head" : "{\"result\":\"Screenshot captured\\n  Image: 3000x2000 (1636KB)\\n  minis_url: \\\/var\\\/minis\\\/browser\\\/screenshot_<ts>.jpg\"}",
+              "sha8" : "d477bd71",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 431708,
+              "bytes" : 323781,
+              "fmt" : "jpeg",
+              "h" : 1333,
+              "mime" : "image\/jpeg",
+              "sha256" : "4671afae155eb653",
+              "w" : 2000
+            },
+            "kind" : "image"
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "and?",
+              "sha8" : "6d970bd6",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "responses" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "open",
+              "sha8" : "2348f998",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "reasoning"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_v2",
+            "kind" : "toolUse",
+            "name" : "browser_use"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_v2",
+            "kind" : "toolResult",
+            "text" : {
+              "chars" : 105,
+              "head" : "Screenshot captured\n  Image: 3000x2000 (1636KB)\n  minis_url: \/var\/minis\/browser\/screenshot_<ts>.jpg",
+              "sha8" : "4041c806",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "tool"
+      },
+      {
+        "parts" : [
+          {
+            "image" : {
+              "base64Len" : 431708,
+              "bytes" : 323781,
+              "fmt" : "jpeg",
+              "h" : 1333,
+              "mime" : "image\/jpeg",
+              "sha256" : "4671afae155eb653",
+              "w" : 2000
+            },
+            "kind" : "image"
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "and?",
+              "sha8" : "6d970bd6",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ]
+  },
+  "restart" : {
+    "anthropic" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "open",
+              "sha8" : "2348f998",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_v2-fc_v2",
+            "kind" : "toolUse",
+            "name" : "browser_use"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_v2-fc_v2",
+            "kind" : "toolResult",
+            "text" : {
+              "chars" : 105,
+              "head" : "Screenshot captured\n  Image: 3000x2000 (1636KB)\n  minis_url: \/var\/minis\/browser\/screenshot_<ts>.jpg",
+              "sha8" : "4041c806",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 431708,
+              "bytes" : 323781,
+              "fmt" : "jpeg",
+              "h" : 1333,
+              "mime" : "image\/jpeg",
+              "sha256" : "4671afae155eb653",
+              "w" : 2000
+            },
+            "inToolResult" : true,
+            "kind" : "image"
+          },
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "and?",
+              "sha8" : "6d970bd6",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "antigravity" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "open",
+              "sha8" : "2348f998",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "browser_use",
+            "kind" : "toolUse",
+            "name" : "browser_use"
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "browser_use",
+            "kind" : "toolResult",
+            "name" : "browser_use",
+            "text" : {
+              "chars" : 124,
+              "head" : "{\"result\":\"Screenshot captured\\n  Image: 3000x2000 (1636KB)\\n  minis_url: \\\/var\\\/minis\\\/browser\\\/screenshot_<ts>.jpg\"}",
+              "sha8" : "d477bd71",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 431708,
+              "bytes" : 323781,
+              "fmt" : "jpeg",
+              "h" : 1333,
+              "mime" : "image\/jpeg",
+              "sha256" : "4671afae155eb653",
+              "w" : 2000
+            },
+            "kind" : "image"
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "and?",
+              "sha8" : "6d970bd6",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "chat" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "open",
+              "sha8" : "2348f998",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_v2|fc_v2",
+            "kind" : "toolUse",
+            "name" : "browser_use"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_v2|fc_v2",
+            "kind" : "toolResult",
+            "text" : {
+              "chars" : 105,
+              "head" : "Screenshot captured\n  Image: 3000x2000 (1636KB)\n  minis_url: \/var\/minis\/browser\/screenshot_<ts>.jpg",
+              "sha8" : "4041c806",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "tool"
+      },
+      {
+        "parts" : [
+          {
+            "image" : {
+              "base64Len" : 431708,
+              "bytes" : 323781,
+              "fmt" : "jpeg",
+              "h" : 1333,
+              "mime" : "image\/jpeg",
+              "sha256" : "4671afae155eb653",
+              "w" : 2000
+            },
+            "kind" : "image"
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "and?",
+              "sha8" : "6d970bd6",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "gemini" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "open",
+              "sha8" : "2348f998",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "browser_use",
+            "kind" : "toolUse",
+            "name" : "browser_use"
+          }
+        ],
+        "role" : "model"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "browser_use",
+            "kind" : "toolResult",
+            "name" : "browser_use",
+            "text" : {
+              "chars" : 124,
+              "head" : "{\"result\":\"Screenshot captured\\n  Image: 3000x2000 (1636KB)\\n  minis_url: \\\/var\\\/minis\\\/browser\\\/screenshot_<ts>.jpg\"}",
+              "sha8" : "d477bd71",
+              "tail" : ""
+            }
+          },
+          {
+            "image" : {
+              "base64Len" : 431708,
+              "bytes" : 323781,
+              "fmt" : "jpeg",
+              "h" : 1333,
+              "mime" : "image\/jpeg",
+              "sha256" : "4671afae155eb653",
+              "w" : 2000
+            },
+            "kind" : "image"
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "and?",
+              "sha8" : "6d970bd6",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ],
+    "responses" : [
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "open",
+              "sha8" : "2348f998",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "reasoning"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_v2",
+            "kind" : "toolUse",
+            "name" : "browser_use"
+          }
+        ],
+        "role" : "assistant"
+      },
+      {
+        "parts" : [
+          {
+            "id" : "call_v2",
+            "kind" : "toolResult",
+            "text" : {
+              "chars" : 105,
+              "head" : "Screenshot captured\n  Image: 3000x2000 (1636KB)\n  minis_url: \/var\/minis\/browser\/screenshot_<ts>.jpg",
+              "sha8" : "4041c806",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "tool"
+      },
+      {
+        "parts" : [
+          {
+            "image" : {
+              "base64Len" : 431708,
+              "bytes" : 323781,
+              "fmt" : "jpeg",
+              "h" : 1333,
+              "mime" : "image\/jpeg",
+              "sha256" : "4671afae155eb653",
+              "w" : 2000
+            },
+            "kind" : "image"
+          }
+        ],
+        "role" : "user"
+      },
+      {
+        "parts" : [
+          {
+            "kind" : "text",
+            "text" : {
+              "chars" : 4,
+              "head" : "and?",
+              "sha8" : "6d970bd6",
+              "tail" : ""
+            }
+          }
+        ],
+        "role" : "user"
+      }
+    ]
+  }
+}

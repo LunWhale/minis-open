@@ -22,7 +22,8 @@
 // isProcessing didSet ~L860-935, clearStreamingUIUpdatesSuspended L1538,
 // consumeDeferredSnapshotIfNeeded L1561, didBecomeActive observer L330-360,
 // setStreamingUIUpdatesSuspended L7420; coordinator side:
-// CollectionViewMessageListV3.swift bind4b block-count sink ~L2520,
+// Agent/MessageList/CollectionViewMessageListV3/ (split; line numbers below are
+// pre-split): bind4b block-count sink ~L2520 (+Bindings),
 // stream-end terminal rescue ~L2497, onStreamingUIUpdatesResumed hook ~L1952,
 // flushPendingSnapshotIfNeeded L2536; compaction: +Compaction.swift L740-761),
 // and section [3] greps the shipping sources so every known trigger site
@@ -32,6 +33,36 @@
 // link for a simulator (deps/libs/libish_emu.a is device-only arm64).
 
 import Foundation
+
+/// [T-messagelist-v3-split] CollectionViewMessageListV3.swift became the folder
+/// Agent/MessageList/CollectionViewMessageListV3/ (code moved verbatim); read all
+/// of it as one text, the way the single file used to be read.
+func messageListV3Source() -> String {
+    let ios = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let dir = ios.appendingPathComponent("Agent/MessageList/CollectionViewMessageListV3")
+    let files = (FileManager.default.enumerator(at: dir, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? [])
+        .filter { $0.pathExtension == "swift" }
+    return files.sorted { $0.path < $1.path }
+        .compactMap { try? String(contentsOf: $0, encoding: .utf8) }.joined(separator: "\n")
+}
+
+/// The sources that used to be the single file Agent/Chat/AIChatViewModel.swift -
+/// the class body plus the AIChatViewModel+<Concern>.swift files it was split
+/// into (the older extension files are NOT included) - read as one text.
+func chatViewModelSource() -> String {
+    let chat = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Agent/Chat")
+    let names = ["AIChatViewModel", "AIChatViewModel+Lifecycle", "AIChatViewModel+ContextUsage",
+                 "AIChatViewModel+StreamingUI", "AIChatViewModel+Speech", "AIChatViewModel+AutoPlayAudio",
+                 "AIChatViewModel+SystemPrompt", "AIChatViewModel+Send", "AIChatViewModel+Rerun",
+                 "AIChatViewModel+EditMessage", "AIChatViewModel+Cancel", "AIChatViewModel+PromptQueue",
+                 "AIChatViewModel+DebugDumps", "AIChatViewModel+TurnCompletion", "AIChatViewModel+AgentLoop",
+                 "AIChatViewModel+ThinkingLevel", "LLMProviderError"]
+    return names.compactMap { try? String(contentsOf: chat.appendingPathComponent($0 + ".swift"), encoding: .utf8) }
+        .joined(separator: "\n")
+}
 
 var failures = 0
 func check(_ label: String, _ actual: Bool, _ expected: Bool = true) {
@@ -381,8 +412,8 @@ func source(_ rel: String) -> String {
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
     return (try? String(contentsOf: root.appendingPathComponent(rel), encoding: .utf8)) ?? ""
 }
-let vmSrc = source("Agent/Chat/AIChatViewModel.swift")
-let cv3 = source("Agent/MessageList/CollectionViewMessageListV3.swift")
+let vmSrc = chatViewModelSource()
+let cv3 = messageListV3Source()
 let comp = source("Agent/Chat/AIChatViewModel+Compaction.swift")
 if vmSrc.isEmpty || cv3.isEmpty || comp.isEmpty {
     print("  ⏭  a source is not readable"); failures += 1
@@ -424,7 +455,7 @@ if vmSrc.isEmpty || cv3.isEmpty || comp.isEmpty {
     } else { check("resume hook located", false) }
     check("retrySnapshotReloadSignal rebuilds the snapshot", cv3.contains("self.applySnapshot(messages: msgs, caller: \"retrySnapshotReload\")"))
     check("flushPendingSnapshotIfNeeded is the single apply funnel for deferred snapshots",
-          cv3.contains("fileprivate func flushPendingSnapshotIfNeeded(caller: String = \"?\") {\n            guard hasPendingSnapshot else { return }\n            hasPendingSnapshot = false"))
+          cv3.contains("func flushPendingSnapshotIfNeeded(caller: String = \"?\") {\n            guard hasPendingSnapshot else { return }\n            hasPendingSnapshot = false"))
     for caller in ["sheetDismiss", "settle", "stream-end", "suspend-resume", "updateUIVC-backstop", "flushStreamingLayout"] {
         check("flush caller \"\(caller)\" still exists", cv3.contains("flushPendingSnapshotIfNeeded(caller: \"\(caller)\")"))
     }

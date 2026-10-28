@@ -7,6 +7,19 @@ private let logger = AppLogger(category: "LiveActivity")
 
 @MainActor
 final class AgentLiveActivityManager {
+    /// [T-bka-la-before-task] relevanceScore on every content we send. ActivityKit
+    /// ranks an app's own Live Activities by it for the Dynamic Island. With the
+    /// "Prefer Continued Background Processing" switch on, the system also shows
+    /// the continued task's card (app icon, our title); a high score is the one
+    /// lever we have for keeping THIS activity in the Island's main slot - if
+    /// the system counts that card as ours. Harmless otherwise: we only ever
+    /// run one activity. DEBUG override: UserDefaults bka.laRelevanceScore
+    /// (debug.bka.setProfile liveActivityRelevance).
+    nonisolated static let relevanceScoreKey = "bka.laRelevanceScore"
+    nonisolated static var relevanceScore: Double {
+        (UserDefaults.standard.object(forKey: relevanceScoreKey) as? Double) ?? 100
+    }
+
     static let shared = AgentLiveActivityManager()
     private init() {}
 
@@ -189,7 +202,7 @@ final class AgentLiveActivityManager {
             guard awaitingDismissal || completedState else { return }
             logger.info("[LiveActivity][finish] foreground return — dismissing completed activity (awaitingDismissal=\(awaitingDismissal) completedState=\(completedState))")
             _endActivity()
-            let remaining = SessionActivityTracker.shared.activeSessions
+            let remaining = SessionActivityTracker.shared.liveActivitySessions
             if !remaining.isEmpty {
                 logger.info("[LiveActivity][finish] \(remaining.count) session(s) still active after dismiss — restarting activity")
                 BackgroundKeepAliveManager.shared.updateLiveActivityIfNeeded(source: "postDismissRecovery")
@@ -253,7 +266,7 @@ final class AgentLiveActivityManager {
         // changes keep the original damping.
         let bypassRateLimit = (source == Self.userAudioToggleSource)
         let audio = Self.currentAudioState()
-        let sessions = SessionActivityTracker.shared.activeSessions
+        let sessions = SessionActivityTracker.shared.liveActivitySessions
         logger.info("[LiveActivity][audio] src=\(source) isPlaying=\(audio.isPlaying) isLoaded=\(audio.isLoaded) sessions=\(sessions.count) hasActivity=\(self.currentActivity != nil)")
 
         // Audio gone AND no sessions → let the standard end path run (unless a
@@ -381,7 +394,7 @@ final class AgentLiveActivityManager {
                 // (task finished while backgrounded, VM torn down, session
                 // deleted) and would otherwise inflate the count — e.g. showing
                 // "8" when only 2 are really running.
-                let liveIds = SessionActivityTracker.shared.activeSessions
+                let liveIds = SessionActivityTracker.shared.liveActivitySessions
                 for sid in completedSessionSnapshots.keys where !liveIds.contains(sid) {
                     completedSessionSnapshots.removeValue(forKey: sid)
                 }
@@ -419,7 +432,7 @@ final class AgentLiveActivityManager {
             carouselIndex: 0,
             soulName: ""
         )
-        let finalContent = ActivityContent(state: finalState, staleDate: nil)
+        let finalContent = ActivityContent(state: finalState, staleDate: nil, relevanceScore: Self.relevanceScore)
         for activity in stale {
             let id = activity.id
             Task {
@@ -454,7 +467,7 @@ final class AgentLiveActivityManager {
                 carouselIndex: 0,
                 soulName: ""
             )
-            let finalContent = ActivityContent(state: finalState, staleDate: nil)
+            let finalContent = ActivityContent(state: finalState, staleDate: nil, relevanceScore: Self.relevanceScore)
             for old in stale {
                 let id = old.id
                 Task {
@@ -480,9 +493,12 @@ final class AgentLiveActivityManager {
         // considers active — the caller's `sessions` list can lag when tasks
         // finished between snapshot and start. Completed carryover snapshots
         // stay for their UI card but must NOT be counted as running.
-        let liveIds = SessionActivityTracker.shared.activeSessions
+        let liveIds = SessionActivityTracker.shared.liveActivitySessions
         let filteredInput = sessions.filter { liveIds.contains($0.sessionId) }
         let activeSids = Set(filteredInput.map { $0.sessionId })
+        for s in filteredInput where s.isScheduledWait {
+            completedSessionSnapshots.removeValue(forKey: s.sessionId)
+        }
         var merged = filteredInput
         for (sid, snap) in completedSessionSnapshots where !activeSids.contains(sid) {
             merged.append(snap)
@@ -505,7 +521,7 @@ final class AgentLiveActivityManager {
             minimalShowsTool: minimalShowsTool
         ))
         let attributes = AgentActivityAttributes(startDate: now)
-        let content = ActivityContent(state: state, staleDate: nil)
+        let content = ActivityContent(state: state, staleDate: nil, relevanceScore: Self.relevanceScore)
 
         do {
             let activity = try Activity.request(
@@ -556,7 +572,7 @@ final class AgentLiveActivityManager {
         // sessions only live in lastPushedState).
         let shown = (lastPushedState as? AgentActivityAttributes.ContentState)?.sessions ?? []
         let remainingShown = shown.filter { $0.sessionId != sessionId }
-        let remainingActive = SessionActivityTracker.shared.activeSessions.subtracting([sessionId])
+        let remainingActive = SessionActivityTracker.shared.liveActivitySessions.subtracting([sessionId])
 
         if !remainingActive.isEmpty {
             // Other sessions still running — the normal update path rebuilds
@@ -613,6 +629,9 @@ final class AgentLiveActivityManager {
             toolIcon: "checkmark.circle.fill", toolStatus: "", loopIteration: 0
         )
         snap.isCompleted = true
+        snap.scheduledWaiting = nil
+        snap.nextRunAt = nil
+        snap.runCounter = nil
         snap.toolIcon = "checkmark.circle.fill"
         snap.toolStatus = AppLocalized("Completed")
         snap.lastMessage = Self.collapseLastMessage(lastMessage)
@@ -648,9 +667,14 @@ final class AgentLiveActivityManager {
         // and can carry entries whose tasks finished before this update landed;
         // if we forward them verbatim the Dynamic Island keeps showing a stale
         // running count (repro: 8 shown while only 2 isRunning).
-        let liveIds = SessionActivityTracker.shared.activeSessions
+        let liveIds = SessionActivityTracker.shared.liveActivitySessions
         let filteredInput = sessions.filter { liveIds.contains($0.sessionId) }
         let activeSids = Set(filteredInput.map { $0.sessionId })
+        // [T-live-activity-scheduled] A conversation waiting for its next
+        // scheduled run shows its waiting card, never an older "completed" one.
+        for s in filteredInput where s.isScheduledWait {
+            completedSessionSnapshots.removeValue(forKey: s.sessionId)
+        }
         var mergedSessions: [LiveSessionSnapshot] = filteredInput.map { s in
             guard let snap = completedSessionSnapshots[s.sessionId] else { return s }
             return snap
@@ -811,11 +835,65 @@ final class AgentLiveActivityManager {
         lastPushDate = Date()
         updateCount += 1
         let count = updateCount
-        let content = ActivityContent(state: state, staleDate: nil)
-        logger.info("[LiveActivity][push] #\(count) active=\(state.activeSessionCount) sessions=\(state.sessions.count)")
+        let content = ActivityContent(state: state, staleDate: nil, relevanceScore: Self.relevanceScore)
+        // [T-bka-loc-pulse] Location / lifecycle state with every push, to line
+        // up a push with whether the Lock Screen actually changed.
+        logger.info("[LiveActivity][push] #\(count) active=\(state.activeSessionCount) sessions=\(state.sessions.count) \(BackgroundKeepAliveManager.shared.liveActivityPushDiag)")
+        let t0 = Date()
         Task {
             await activity.update(content)
-            logger.info("[LiveActivity][push] #\(count) activity.update() returned")
+            logger.info("[LiveActivity][push] #\(count) activity.update() returned in \(Int(Date().timeIntervalSince(t0) * 1000))ms activityState=\(String(describing: activity.activityState))")
+        }
+    }
+
+    /// [T-bka-la-after-task] Re-create the Live Activity so it is the NEWEST
+    /// system activity - testing whether the Dynamic Island's main slot goes
+    /// to whichever started last. With the continued-processing task on, its
+    /// card took that slot even when our activity was requested first: the
+    /// task only STARTS (and shows its card) ~60ms after it is submitted, so
+    /// it was the newer one either way.
+    ///
+    /// Requests the new activity first, synchronously, while still in the
+    /// foreground, and only then ends the old one - unlike renewActivity
+    /// (end, then request), which at willResignActive could lose the race to
+    /// the background and leave no activity at all. Skips (logged) when not
+    /// in the foreground or there is nothing to copy; on failure the old
+    /// activity stays.
+    func restartForIslandPriority(reason: String) {
+        guard #available(iOS 16.2, *) else { return }
+        restartForIslandPriorityImpl(reason: reason)
+    }
+
+    @available(iOS 16.2, *)
+    private func restartForIslandPriorityImpl(reason: String) {
+        let appState = UIApplication.shared.applicationState
+        guard appState != .background else {
+            logger.info("[LiveActivity][islandRestart] skip (\(reason)) - app in background")
+            return
+        }
+        guard let old = currentActivity as? Activity<AgentActivityAttributes>,
+              let state = lastPushedState as? AgentActivityAttributes.ContentState else {
+            logger.info("[LiveActivity][islandRestart] skip (\(reason)) - no activity / state yet")
+            return
+        }
+        let content = ActivityContent(state: state, staleDate: nil, relevanceScore: Self.relevanceScore)
+        do {
+            let fresh = try Activity.request(
+                attributes: AgentActivityAttributes(startDate: startTime ?? Date()),
+                content: content,
+                pushType: nil
+            )
+            currentActivity = fresh
+            lastRenewDate = Date()
+            lastPushDate = Date()
+            updateCount += 1
+            logger.info("[LiveActivity][islandRestart] (\(reason)) new id=\(fresh.id) appState=\(appState.rawValue) - ending old id=\(old.id)")
+            Task {
+                await old.end(content, dismissalPolicy: .immediate)
+                logger.info("[LiveActivity][islandRestart] old id=\(old.id) ended")
+            }
+        } catch {
+            logger.error("[LiveActivity][islandRestart] (\(reason)) request failed, keeping the old one: \(error.localizedDescription)")
         }
     }
 
@@ -846,14 +924,14 @@ final class AgentLiveActivityManager {
         logger.info("[LiveActivity][renew] ending old id=\(oldId) after \(sinceLastRenew)s to reset budget")
 
         currentActivity = nil
-        let finalContent = ActivityContent(state: state, staleDate: nil)
+        let finalContent = ActivityContent(state: state, staleDate: nil, relevanceScore: Self.relevanceScore)
 
         Task {
             await oldActivity.end(finalContent, dismissalPolicy: .immediate)
             logger.info("[LiveActivity][renew] old id=\(oldId) ended")
 
             let attributes = AgentActivityAttributes(startDate: self.startTime ?? Date())
-            let content = ActivityContent(state: state, staleDate: nil)
+            let content = ActivityContent(state: state, staleDate: nil, relevanceScore: Self.relevanceScore)
             do {
                 let newActivity = try Activity.request(
                     attributes: attributes,
@@ -891,7 +969,7 @@ final class AgentLiveActivityManager {
             return
         }
         let attributes = AgentActivityAttributes(startDate: startTime ?? Date())
-        let content = ActivityContent(state: state, staleDate: nil)
+        let content = ActivityContent(state: state, staleDate: nil, relevanceScore: Self.relevanceScore)
         do {
             let activity = try Activity.request(attributes: attributes, content: content, pushType: nil)
             currentActivity = activity
@@ -956,6 +1034,11 @@ final class AgentLiveActivityManager {
             var c = s
             c.isCompleted = true
             c.toolStatus = AppLocalized("Completed")
+            // [T-live-activity-scheduled] A waiting card that ends up in the
+            // finished state stops counting down.
+            c.scheduledWaiting = nil
+            c.nextRunAt = nil
+            c.runCounter = nil
             c.lastMessage = resolvedMessages[s.sessionId] ?? ""
             return c
         }
@@ -981,7 +1064,7 @@ final class AgentLiveActivityManager {
             logger.info("[LiveActivity][finish] dropped completed push — activity already dismissed")
             return
         }
-        let content = ActivityContent(state: finished, staleDate: nil)
+        let content = ActivityContent(state: finished, staleDate: nil, relevanceScore: Self.relevanceScore)
         await activity.update(content)
         self.lastPushedState = finished
         self.lastPushDate = Date()
@@ -1022,7 +1105,7 @@ final class AgentLiveActivityManager {
             carouselIndex: 0,
             soulName: ""
         )
-        let content = ActivityContent(state: finalState, staleDate: nil)
+        let content = ActivityContent(state: finalState, staleDate: nil, relevanceScore: Self.relevanceScore)
 
         let all = Activity<AgentActivityAttributes>.activities
         let allIds = all.map { $0.id }.joined(separator: ",")
