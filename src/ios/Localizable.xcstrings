@@ -283068,6 +283068,50 @@
           }
         }
       }
+    },
+    "Confirm before stopping" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止前确认"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止前確認"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm before stopping"
+          }
+        }
+      }
+    },
+    "Prefer continued background processing (iOS 26+)" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "优先使用持续后台处理（iOS 26+）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "優先使用持續背景處理（iOS 26+）"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prefer continued background processing (iOS 26+)"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"
