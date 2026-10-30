@@ -88,7 +88,9 @@ enum SearchKeywords {
             FROM messages m
             WHERE \(visibleHitClause(termCount: n))
             GROUP BY m.session_id)
-        SELECT s.id, s.title, s.model_id, s.created_at, s.updated_at, s.category, n.parts_json
+        SELECT s.id, s.title, s.model_id, s.created_at, s.updated_at, s.category, n.parts_json,
+               -- [T-minimal-mode] Appended LAST: the decode reads by index.
+               s.agent_mode
         FROM sessions s
         LEFT JOIN newest n ON n.session_id = s.id
         WHERE \(anyLike("s.title", termCount: n)) OR n.session_id IS NOT NULL
@@ -103,7 +105,8 @@ enum SearchKeywords {
         SELECT DISTINCT s.id, s.title, s.model_id, s.created_at, s.updated_at, s.category,
                (SELECT m2.parts_json FROM messages m2
                 WHERE m2.session_id = s.id AND \(anyLike("m2.parts_json", termCount: n))
-                ORDER BY m2.sort_order DESC LIMIT 1)
+                ORDER BY m2.sort_order DESC LIMIT 1),
+               s.agent_mode
         FROM sessions s
         LEFT JOIN messages m ON m.session_id = s.id
         WHERE \(anyLike("s.title", termCount: n)) OR \(anyLike("m.parts_json", termCount: n))
@@ -357,10 +360,13 @@ extension ChatStore {
                 continue
             }
 
-            let session = ChatSession(
+            var session = ChatSession(
                 id: id, title: title, category: category, modelId: modelId,
                 createdAt: createdAt, updatedAt: updatedAt, lastMessage: snippet
             )
+            // [T-minimal-mode] Column 7, both SELECTs. Without it a minimal
+            // session found by search loses its badge in the results list.
+            session.agentModeRaw = sqlite3_column_text(stmt, 7).map { String(cString: $0) }
             results.append(SearchResult(session: session, matchSnippet: snippet, titleMatched: titleMatched))
         }
         sqlite3_finalize(stmt)
