@@ -417,7 +417,9 @@ extension ChatStore {
     }
 
     func getSession(_ id: String) -> ChatSession? {
-        let sql = "SELECT id, title, model_id, created_at, updated_at, category, source, pinned_at, folder_id, parent_session_id, parent_tool_use_id FROM sessions WHERE id = ?"
+        // [T-minimal-mode] `agent_mode` appended last: the decode below reads by
+        // index, so a new column goes at the end.
+        let sql = "SELECT id, title, model_id, created_at, updated_at, category, source, pinned_at, folder_id, parent_session_id, parent_tool_use_id, agent_mode FROM sessions WHERE id = ?"
         var stmt: OpaquePointer?
         var session: ChatSession?
 
@@ -443,6 +445,9 @@ extension ChatStore {
                 )
                 session?.parentSessionId = parentSessionId
                 session?.parentToolUseId = parentToolUseId
+                // [T-minimal-mode] Column 11 — keeps the sidebar badge correct
+                // when a row is re-read through this path instead of the list.
+                session?.agentModeRaw = sqlite3_column_text(stmt, 11).map { String(cString: $0) }
             }
         }
         sqlite3_finalize(stmt)

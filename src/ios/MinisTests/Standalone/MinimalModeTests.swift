@@ -80,6 +80,15 @@ for id in ["builtin.mounts"] {
 check("the keep-list carries the always-on basics",
       policy.contains("keptBuiltins") && policy.contains("mountsID")
         && policy.contains("sharedFoldersID") && policy.contains("envVarsID"))
+// A prompt module listed as a kept feature plugin would put a settings row on
+// the page describing the wrong mechanism.
+let keptSlice: String = {
+    guard let a = policy.range(of: "keptBuiltins"),
+          let b = policy.range(of: "allowsBuiltin") else { return "" }
+    return String(policy[a.upperBound..<b.lowerBound])
+}()
+check("the keep-list holds feature plugins only — no prompt module",
+      !keptSlice.isEmpty && !keptSlice.contains("promptStyleID"))
 check("no disabled plugin is also listed as kept",
       disabledBuiltins.isDisjoint(with: keptBuiltins))
 

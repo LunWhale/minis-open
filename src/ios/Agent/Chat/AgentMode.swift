@@ -78,6 +78,10 @@ enum MinimalModePolicy {
     ///
     /// Every entry earns its place by costing tokens on EVERY turn: a tool
     /// schema entry, a system-prompt section, or a per-turn file injection.
+    ///
+    /// Feature plugins only. A prompt module belongs in `keptPromptModules` (or
+    /// nowhere); listing one here or in `keptBuiltins` would put a row on the
+    /// settings page that describes the wrong mechanism.
     static let disabledBuiltins: [String: String] = [
         BuiltinExtension.soulID:
             "A persona section in every prompt, for flavour only.",
@@ -103,8 +107,6 @@ enum MinimalModePolicy {
             "Same: shared folders are a data path, not a prompt section.",
         BuiltinExtension.envVarsID:
             "API keys live here. Without them shell tasks that need a key cannot work, and the value costs nothing until used.",
-        BuiltinExtension.promptStyleID:
-            "Marker only — it owns prompt text, which minimal mode handles separately.",
     ]
 
     /// Whether a built-in plugin may contribute anything in minimal mode.
