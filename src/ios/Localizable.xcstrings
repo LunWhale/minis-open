@@ -1,9 +1,7 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "" : {
-
-    },
+    "" : {},
     "\"%@\" is due. Open Minis to see whether it ran." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6765,9 +6763,7 @@
         }
       }
     },
-    "AOJIT" : {
-
-    },
+    "AOJIT" : {},
     "AOJIT Optimization" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -58026,9 +58022,7 @@
         }
       }
     },
-    "." : {
-
-    },
+    "." : {},
     "“%1$@” (%2$@) will be permanently deleted from this folder. There is no trash to recover it from, and any data only in this backup will be lost. This cannot be undone." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -58707,9 +58701,7 @@
         }
       }
     },
-    "·" : {
-
-    },
+    "·" : {},
     "· Migration backlog" : {
       "localizations" : {
         "de" : {
@@ -60160,12 +60152,8 @@
         }
       }
     },
-    "/" : {
-
-    },
-    "/%@" : {
-
-    },
+    "/" : {},
+    "/%@" : {},
     "/var/minis/mounts/%@" : {
       "localizations" : {
         "de" : {
@@ -60278,9 +60266,7 @@
         }
       }
     },
-    "#%lld" : {
-
-    },
+    "#%lld" : {},
     "#%lld: %@" : {
       "localizations" : {
         "de" : {
@@ -60506,9 +60492,7 @@
         }
       }
     },
-    "%@" : {
-
-    },
+    "%@" : {},
     "%@\n%@ → %@" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -67360,9 +67344,7 @@
         }
       }
     },
-    "•" : {
-
-    },
+    "•" : {},
     "• Reset: Delete everything\n• Backup: Save /root directory\n• Restore: Recover saved data" : {
       "localizations" : {
         "de" : {
@@ -68612,9 +68594,7 @@
         }
       }
     },
-    "✨" : {
-
-    },
+    "✨" : {},
     "❌ Task failed" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -69510,9 +69490,7 @@
         }
       }
     },
-    "00:00" : {
-
-    },
+    "00:00" : {},
     "1 MB" : {
       "localizations" : {
         "de" : {
@@ -72214,9 +72192,7 @@
         }
       }
     },
-    "128000" : {
-
-    },
+    "128000" : {},
     "A" : {
       "localizations" : {
         "de" : {
@@ -148382,9 +148358,7 @@
         }
       }
     },
-    "https://…" : {
-
-    },
+    "https://…" : {},
     "I Understand & Agree" : {
       "localizations" : {
         "de" : {
@@ -165311,9 +165285,7 @@
         }
       }
     },
-    "Loop %lld" : {
-
-    },
+    "Loop %lld" : {},
     "Low" : {
       "localizations" : {
         "de" : {
@@ -229802,12 +229774,8 @@
         }
       }
     },
-    "session" : {
-
-    },
-    "sessions" : {
-
-    },
+    "session" : {},
+    "sessions" : {},
     "settings_memory_global_enabled" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -282649,6 +282617,438 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "設定鬧鐘"
+          }
+        }
+      }
+    },
+    "A token-lean session" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更省 token 的会话"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A token-lean session"
+          }
+        }
+      }
+    },
+    "Minimal Mode" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "极简模式"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Minimal Mode"
+          }
+        }
+      }
+    },
+    "Normal" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "普通模式"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Normal"
+          }
+        }
+      }
+    },
+    "Minimal" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "极简"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Minimal"
+          }
+        }
+      }
+    },
+    "Every capability you have switched on." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你已开启的全部能力。"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Every capability you have switched on."
+          }
+        }
+      }
+    },
+    "Token-lean: prompt, tools and injections reduced to the essentials." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "省 token：提示词、工具与注入都精简到最小。"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Token-lean: prompt, tools and injections reduced to the essentials."
+          }
+        }
+      }
+    },
+    "Offer Minimal Mode in the / menu" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 / 菜单中提供极简模式"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offer Minimal Mode in the / menu"
+          }
+        }
+      }
+    },
+    "When off, new sessions no longer offer the choice. Existing minimal sessions are unaffected." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭后，新会话不再提供该选项；已存在的极简模式会话不受影响。"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When off, new sessions no longer offer the choice. Existing minimal sessions are unaffected."
+          }
+        }
+      }
+    },
+    "You choose it once, from the / menu, on a new session. It cannot be changed afterwards: the tool list and prompt a conversation was reasoned under must not change mid-thread." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在新会话的 / 菜单里选择一次，之后无法更改：一段对话所依据的工具清单与提示词不能在对话中途改变。"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You choose it once, from the / menu, on a new session. It cannot be changed afterwards: the tool list and prompt a conversation was reasoned under must not change mid-thread."
+          }
+        }
+      }
+    },
+    "Minimal mode runs the same agent with a much smaller prompt and a much smaller tool list. It is meant for quick, focused work — every turn costs less because there is less to send." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "极简模式运行同一个 agent，但提示词与工具清单小得多。它适合快速、专注的任务——每一轮要发送的内容更少，所以更省。"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Minimal mode runs the same agent with a much smaller prompt and a much smaller tool list. It is meant for quick, focused work — every turn costs less because there is less to send."
+          }
+        }
+      }
+    },
+    "Always off in minimal mode" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "极简模式下始终关闭"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Always off in minimal mode"
+          }
+        }
+      }
+    },
+    "These are switched off because each one adds tokens to every turn. They are not affected in normal sessions." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这些功能每一项都会给每一轮增加 token，因此被关闭。普通模式下的会话不受影响。"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "These are switched off because each one adds tokens to every turn. They are not affected in normal sessions."
+          }
+        }
+      }
+    },
+    "Kept" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保留"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kept"
+          }
+        }
+      }
+    },
+    "Basic capabilities that cost nothing per turn, or that the agent cannot work without." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每轮不消耗 token、或 agent 无法离开的基础能力。"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Basic capabilities that cost nothing per turn, or that the agent cannot work without."
+          }
+        }
+      }
+    },
+    "Your extensions" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已安装插件"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your extensions"
+          }
+        }
+      }
+    },
+    "All off by default. Switch on only the ones a minimal session needs — each one adds its tools to every turn. Built-in plugins are not listed here; they are governed above." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "默认全部关闭。只打开极简会话真正需要的——每个都会把它的工具加进每一轮。系统内置插件不在此列，由上面的规则管理。"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All off by default. Switch on only the ones a minimal session needs — each one adds its tools to every turn. Built-in plugins are not listed here; they are governed above."
+          }
+        }
+      }
+    },
+    "You have not installed any extensions yet." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你还没有安装任何插件。"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You have not installed any extensions yet."
+          }
+        }
+      }
+    },
+    "Basics" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "基础设置"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Basics"
+          }
+        }
+      }
+    },
+    "Start this session token-lean. Cannot be changed later" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "以极简模式开始本会话，之后无法更改"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start this session token-lean. Cannot be changed later"
+          }
+        }
+      }
+    },
+    "Start this session with everything you have enabled" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "以普通模式开始本会话，使用你已开启的全部能力"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start this session with everything you have enabled"
+          }
+        }
+      }
+    },
+    "Minimal mode session" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "极简模式会话"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Minimal mode session"
+          }
+        }
+      }
+    },
+    "Minimal mode is locked for this session — start a new session to change it." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本会话已锁定极简模式——如需更改请新建会话。"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Minimal mode is locked for this session — start a new session to change it."
+          }
+        }
+      }
+    },
+    "The mode is chosen before the first message. Start a new session to pick one." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模式在发送第一条消息之前选择。请新建会话再选。"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The mode is chosen before the first message. Start a new session to pick one."
+          }
+        }
+      }
+    },
+    "This session is already in \\(mode.displayName) mode." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本会话已经是%@模式。"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This session is already in \\(mode.displayName) mode."
+          }
+        }
+      }
+    },
+    "New sessions will start in \\(mode.displayName) mode." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新会话将以%@模式开始。"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New sessions will start in \\(mode.displayName) mode."
+          }
+        }
+      }
+    },
+    "Normal mode: every capability you have enabled." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "普通模式：你已开启的全部能力。"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Normal mode: every capability you have enabled."
+          }
+        }
+      }
+    },
+    "Minimal mode on: persona, memory, skills, MCP, todo and sub-agents are off, and the prompt is trimmed. The sandbox, mounted folders and environment variables stay. This cannot be changed later." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "极简模式已开启：人格、记忆、技能、MCP、待办与子 agent 均已关闭，提示词已精简；沙箱、挂载文件夹和环境变量保留。之后无法更改。"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Minimal mode on: persona, memory, skills, MCP, todo and sub-agents are off, and the prompt is trimmed. The sandbox, mounted folders and environment variables stay. This cannot be changed later."
           }
         }
       }

@@ -1080,7 +1080,11 @@ enum SystemPromptBuilder {
     /// We never substitute a default body into the prompt — the identity
     /// sentence alone is the safe fallback when SOUL.md is missing or
     /// empty, matching pre-SOUL behavior.
-    static func identitySection() -> String {
+    /// - Parameter soulPluginEnabled: nil keeps the existing behaviour (read the
+    ///   global Soul plugin switch). [T-minimal-mode] passes false for a
+    ///   token-lean session so the persona stops reaching the model there without
+    ///   mutating the user's stored preference for every other session.
+    static func identitySection(soulPluginEnabled: Bool? = nil) -> String {
         // [plugin] The Soul feature plugin owns this entire surface. With the
         // plugin off (Settings → Extensions) the persona, the style line, the
         // SOUL.md edit hint and the user-chosen name all stop reaching the
@@ -1088,7 +1092,7 @@ enum SystemPromptBuilder {
         // — exactly the pre-SOUL prompt. SOUL.md itself is never touched, so
         // re-enabling restores everything. The three sub-switches let a user
         // keep the plugin on but trim one piece of it.
-        let soulOn = ExtensionRegistry.builtinEnabled(BuiltinExtension.soulID)
+        let soulOn = soulPluginEnabled ?? ExtensionRegistry.builtinEnabled(BuiltinExtension.soulID)
         let wantPersonality = soulOn && ExtensionRegistry.featureToggle(BuiltinExtension.soulID, "injectPersonality")
         let wantStyle = soulOn && ExtensionRegistry.featureToggle(BuiltinExtension.soulID, "injectStyle")
         let wantHint = soulOn && ExtensionRegistry.featureToggle(BuiltinExtension.soulID, "showEditHint")

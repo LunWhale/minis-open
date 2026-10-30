@@ -69,6 +69,21 @@ struct ChatSession: Identifiable, Codable, Hashable {
     /// nil for a child created without a tool block (scheduled, P2).
     var parentToolUseId: String?
 
+    /// [T-minimal-mode] "minimal" for a token-lean session, nil/"normal"
+    /// otherwise.
+    ///
+    /// Stored as the Optional raw string rather than an `AgentMode` so the
+    /// synthesized `Codable` keeps decoding records written before this field
+    /// existed (`decodeIfPresent` for Optionals) — a non-Optional enum would make
+    /// every old snapshot fail to decode. Read it through `agentMode`, which
+    /// defaults to `.normal`.
+    var agentModeRaw: String?
+
+    var agentMode: AgentMode {
+        get { AgentMode(rawValue: agentModeRaw ?? AgentMode.normal.rawValue) ?? .normal }
+        set { agentModeRaw = newValue.rawValue }
+    }
+
     /// Whether this session is a hidden child of another session.
     var isChild: Bool { parentSessionId != nil }
 

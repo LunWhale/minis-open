@@ -209,7 +209,23 @@ extension AIChatViewModel {
         tools.append(contentsOf: ExtensionRegistry.shared.builtinToolDefinitions())
 
         // Extension tools (from installed .minisx extensions).
-        tools.append(contentsOf: ExtensionRegistry.shared.extensionToolDefinitions())
+        // [T-minimal-mode] In a minimal session only the extensions the user
+        // allowed on the Minimal Mode page contribute tools. Each extension's
+        // schema is billed on every request, so "off by default" has to mean
+        // absent from the list, not merely unrunnable — and the filter is applied
+        // before the definition is built, in the registry, so a hidden extension
+        // costs nothing at all.
+        if isMinimalMode {
+            let allowlist = ExtensionRegistry.shared.installedExtensionIDs.filter { id in
+                UserDefaults.standard.object(forKey: MinimalModePolicy.Key.allow(id)) == nil
+                    ? MinimalModePolicy.userExtensionDefaultEnabled
+                    : UserDefaults.standard.bool(forKey: MinimalModePolicy.Key.allow(id))
+            }
+            tools.append(contentsOf: ExtensionRegistry.shared
+                .extensionToolDefinitions(allowedExtensionIDs: allowlist))
+        } else {
+            tools.append(contentsOf: ExtensionRegistry.shared.extensionToolDefinitions())
+        }
 
         // [T-tools-granular-switches] Settings › Tools › Browser Use off ⇒
         // browser_use is not in the schema at all (it is declared in the base
@@ -230,11 +246,17 @@ extension AIChatViewModel {
         // The dispatcher guards in AIChatViewModel+ConcurrentTools stay as the
         // second half of the pair: the switch can flip mid-run, after this
         // schema was already built.
-        if !ExtensionRegistry.shared.isBuiltinEnabled(BuiltinExtension.todoID) {
+        if !pluginEnabled(BuiltinExtension.todoID) {
             tools.removeAll { $0.name.hasPrefix("todo_") }
         }
-        if !ExtensionRegistry.shared.isBuiltinEnabled(BuiltinExtension.memoryID) {
+        if !pluginEnabled(BuiltinExtension.memoryID) {
             tools.removeAll { $0.name == "memory_write" || $0.name == "memory_get" }
+        }
+        // [T-minimal-mode] Minimal mode also drops delegation: the tool costs a
+        // full roster section in the prompt plus a schema entry, and a minimal
+        // session is by definition one the user wants cheap.
+        if !pluginEnabled(BuiltinExtension.subagentsID) {
+            tools.removeAll { $0.name == SubAgentDefinition.toolName }
         }
 
         // [T-p1-delegate-task] Depth = 1: a helper never sees this tool.
@@ -244,7 +266,7 @@ extension AIChatViewModel {
         // [fork] Additionally gated by the Sub-agent Delegation plugin switch
         // on the Extensions page; both must be on.
         if !isHelper && Self.toolEnabled(.agents),
-           ExtensionRegistry.shared.isBuiltinEnabled(BuiltinExtension.subagentsID) {
+           pluginEnabled(BuiltinExtension.subagentsID) {
             tools.append(AgentToolDefinition(
                 name: SubAgentDefinition.toolName,
                 description: "Delegate a self-contained task to a sub agent — its own isolated context and tool loop, in a hidden child session running concurrently with you — and inspect or stop the ones you started. `action` defaults to `delegate`.\n\nDELEGATE work needing many rounds of exploration (reading lots of files or pages, trial-and-error), producing bulk output you only need a conclusion from, or splitting into independent sub-problems you can run in parallel (several calls in one turn). DO NOT delegate what you can finish in one or two tool calls, what needs the user's confirmation mid-way, or work depending on nuances of this conversation you cannot restate. A sub agent cannot see this conversation and has no memory: write `task` as a complete brief for a capable colleague who just walked in — goal, constraints, where things are, what exactly to return. It costs a full model run, so nothing trivial. Only \(AgentJobRegistry.maxChildJobsPerParent) of this conversation's sub agents run at once, but delegate everything you need anyway: extras return status=queued and start as slots free, so never re-delegate a queued task or wait for a slot.\n\nwait=false (default) returns at once with status=running and a job_id; the result arrives later as a NEW MESSAGE prefixed [Background task finished …] (also on cancel/timeout/failure). End your turn when you have nothing else to do — never poll in a loop, never promise to report back. You do NOT need action=status to receive results.",
@@ -290,6 +312,18 @@ extension AIChatViewModel {
 // MARK: - Sub agent roster  [T-sub-agents-v1]
 
 extension AIChatViewModel {
+
+
+    /// Whether a built-in plugin may contribute to THIS session.
+    ///
+    /// [T-minimal-mode] The user's stored switch is the first half; minimal mode
+    /// is an overlay that can only narrow it. Every gate in the tool schema goes
+    /// through here so a minimal session can never inherit a tool from a plugin
+    /// the policy forbids, however the global switch happens to be set.
+    func pluginEnabled(_ id: String) -> Bool {
+        guard ExtensionRegistry.shared.isBuiltinEnabled(id) else { return false }
+        return !isMinimalMode || MinimalModePolicy.allowsBuiltin(id)
+    }
 
     /// The "which sub agent for which job" section of the system prompt.
     ///

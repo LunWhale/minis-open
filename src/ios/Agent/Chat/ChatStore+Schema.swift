@@ -86,6 +86,11 @@ extension ChatStore {
         addColumnIfMissing(table: "messages", column: "reasoning_echo", definition: "TEXT")
         addColumnIfMissing(table: "messages", column: "stream_interrupt_count", definition: "INTEGER NOT NULL DEFAULT 0")
         addColumnIfMissing(table: "sessions", column: "memory_enabled", definition: "INTEGER NOT NULL DEFAULT 1")
+        // [T-minimal-mode] Which flavour this session runs in. A string rather
+        // than an integer so the value is self-describing in a backup or a bug
+        // report ("normal" / "minimal"), and DEFAULT 'normal' so every session
+        // written before this column existed keeps behaving exactly as before.
+        addColumnIfMissing(table: "sessions", column: "agent_mode", definition: "TEXT NOT NULL DEFAULT 'normal'")
         addColumnIfMissing(table: "sessions", column: "last_synced_at", definition: "REAL")
         addColumnIfMissing(table: "sessions", column: "remote_origin_device_id", definition: "TEXT")
         addColumnIfMissing(table: "sync_devices", column: "upload_types", definition: "TEXT NOT NULL DEFAULT ''")

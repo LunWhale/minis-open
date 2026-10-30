@@ -245,6 +245,7 @@ extension AIChatViewModel {
 
         // Load persisted memory-write toggle
         memoryEnabled = await ChatStore.shared.getMemoryEnabled(sessionId: sessionId)
+        agentMode = await ChatStore.shared.agentMode(sessionId: sessionId)
         // [T-memory-enabled-new-session-bug DIAG] confirm loadSession set
         // vm.memoryEnabled from the DB/global default, and which session.
         AppLogger(category: "MemDiag").info("[MemDiag] loadSession sid=\(sessionId.prefix(8)) → vm.memoryEnabled=\(self.memoryEnabled)")
@@ -1218,6 +1219,9 @@ extension AIChatViewModel {
         // (DB row, which createSession wrote from the global default) drives
         // the flag.
         memoryEnabled = await ChatStore.shared.getMemoryEnabled(sessionId: session.id)
+        // [T-minimal-mode] A brand-new session is always normal until the user
+        // picks a mode; read it back so the mode the picker just wrote wins.
+        agentMode = await ChatStore.shared.agentMode(sessionId: session.id)
         AppLogger(category: "MemDiag").info("[MemDiag] ensureSession sid=\(session.id.prefix(8)) → vm.memoryEnabled=\(self.memoryEnabled)")
         // Tracker migration: if this vm was marked active under its draftId,
         // swap that entry to the real session id. draftId is kept on the vm

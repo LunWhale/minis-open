@@ -68,9 +68,15 @@ extension AIChatViewModel {
     /// default prompt stays upstream 1.15's. `promptExtensions` contributes the
     /// built-in extension-tool guidance once an extension registers a surface,
     /// and `featureExtraGuidance` contributes only text the user typed.
-    nonisolated static var promptGuidanceTail: String {
+    var promptGuidanceTail: String {
         var out = ""
-        if let text = ExtensionRegistry.builtinGuidanceText(BuiltinExtension.promptExtensionsID) {
+        // [T-minimal-mode] The extensions module is not on the keep list, so a
+        // minimal session gets no extension-tool guidance (and no extension tools,
+        // which the schema gate removes separately).
+        let extensionsModuleOn = !isMinimalMode
+            || MinimalModePolicy.allowsPromptModule(BuiltinExtension.promptExtensionsID)
+        if extensionsModuleOn,
+           let text = ExtensionRegistry.builtinGuidanceText(BuiltinExtension.promptExtensionsID) {
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty { out += trimmed + "\n\n" }
         }
@@ -78,8 +84,11 @@ extension AIChatViewModel {
         return out
     }
 
-    nonisolated static func promptModule(_ id: String, _ inline: @autoclosure () -> String) -> String {
+    nonisolated static func promptModule(_ id: String, minimal: Bool, _ inline: @autoclosure () -> String) -> String {
         guard ExtensionRegistry.builtinEnabled(id) else { return "" }
+        // [T-minimal-mode] Minimal mode narrows the set further; it never widens
+        // it, so a module the user switched off globally stays off.
+        if minimal, !MinimalModePolicy.allowsPromptModule(id) { return "" }
         // A module whose subject feature is switched off would describe tools
         // the model does not have (promptMemory vs the Memory plugin).
         if let feature = BuiltinExtension.describedFeature(ofModule: id),
@@ -103,11 +112,16 @@ extension AIChatViewModel {
         // Personality section from SOUL.md's body. The original wording
         // is preserved inside SystemPromptBuilder.identityTemplate so we
         // don't regress model behavior that depended on it.
-        (helperConfig != nil ? helperIdentitySection : SystemPromptBuilder.identitySection())
+        // [T-minimal-mode] The Soul plugin is on the keep-off list, so a minimal
+        // session gets the shipped default identity rather than the user's persona.
+        (helperConfig != nil
+            ? helperIdentitySection
+            : SystemPromptBuilder.identitySection(
+                soulPluginEnabled: pluginEnabled(BuiltinExtension.soulID)))
             + "You should proactively use shell commands to accomplish the user's tasks — installing packages (apk add), "
             + "writing and running scripts, managing files, networking, and any other operations a Linux terminal can perform.\n\n"
             + "Available tools:\n"
-            + Self.promptModule(BuiltinExtension.promptShellID,
+            + Self.promptModule(BuiltinExtension.promptShellID, minimal: isMinimalMode,
                     "- shell_execute: Run any shell command. Each invocation is an isolated process with stdout/stderr captured. "
             + "Prefer this for most tasks — it is a real Linux environment with persistent filesystem. "
             + "Common tools (python3, pip, curl, wget, git, ssh, etc.) can be installed via apk add; Python packages via pip install. "
@@ -146,7 +160,7 @@ extension AIChatViewModel {
             // the bullet above. Generated from the same list the tool schema's
             // enumValues use, so a name can never appear in one and not the other.
             + ((isHelper || !Self.toolEnabled(.agents)) ? "" : Self.subAgentRosterSection())
-            + Self.promptModule(BuiltinExtension.promptMemoryID,
+            + Self.promptModule(BuiltinExtension.promptMemoryID, minimal: isMinimalMode,
                     "- memory_write: Save a memory entry to today's daily log (YYYY-MM-DD.md). Use proactively to note user preferences, project patterns, and important context.\n"
             + "- memory_get: Recall memories with keyword search. Check memory at the start of new topics to leverage past knowledge.\n"
             )
@@ -157,7 +171,7 @@ extension AIChatViewModel {
             + "\n"
             + "Current time (approximate): \(approximateTimeString) (\(TimeZone.current.identifier)). "
             + "Device languages: \((UserDefaults.standard.object(forKey: "AppleLanguages") as? [String] ?? Locale.preferredLanguages).joined(separator: ", ")).\n\n"
-            + Self.promptModule(BuiltinExtension.promptWorkspaceID,
+            + Self.promptModule(BuiltinExtension.promptWorkspaceID, minimal: isMinimalMode,
                     "Shared directory /var/minis/ (bidirectional read/write between shell and app):\n"
             + "  /var/minis/attachments/ — Media files (images, audio, video). Display inline with ![desc](minis://attachments/filename).\n"
             + "  /var/minis/workspace/   — Working files (scripts, data, configs). Link with [name](minis://workspace/filename).\n"
@@ -173,7 +187,7 @@ extension AIChatViewModel {
             + "  minis://shared/project/f.txt  →  /var/minis/shared/project/f.txt\n\n"
             )
             // [T-tools-master-switch] browser_use guidance only when the tool exists.
-            + Self.promptModule(BuiltinExtension.promptWorkspaceID,
+            + Self.promptModule(BuiltinExtension.promptWorkspaceID, minimal: isMinimalMode,
                     (!Self.toolEnabled(.browser) ? "IMPORTANT: minis:// URLs are app-internal — they are NOT web URLs; minis:// action URLs (open_terminal, views, settings) are app deep links, use Markdown links in chat. "
                : "IMPORTANT: minis:// URLs are app-internal — they are NOT web URLs. Do NOT pass minis:// action URLs (open_terminal, views, settings) to browser_use — those are app deep links, use Markdown links in chat instead. "
                + "However, minis:// resource URLs CAN be opened in browser_use with navigate. All directories under /var/minis/ are accessible: workspace, attachments, offloads, shared, etc. ")
@@ -194,7 +208,7 @@ extension AIChatViewModel {
             + "Tappable link previews: text/code (.py/.json/.md/etc), images, audio, video, HTML, and PDF files open native previews when the user taps a [name](minis://...) link.\n"
             + "Use Markdown links for all minis:// files — the user can tap to preview them directly in chat.\n\n"
             )
-            + Self.promptModule(BuiltinExtension.promptCodingID,
+            + Self.promptModule(BuiltinExtension.promptCodingID, minimal: isMinimalMode,
                     "File creation guidelines:\n"
             + "- Use file_write to CREATE new files. Use file_edit to MODIFY existing files. "
             + "For writing file CONTENTS, prefer file_write over echo/printf or heredocs — it is atomic and avoids all shell-quoting pitfalls. "
@@ -203,7 +217,7 @@ extension AIChatViewModel {
             + "- file_write and file_edit are atomic, preserve formatting, and make it easy to fix errors or update content later.\n"
             + "- shell_execute is for RUNNING commands, not for writing files.\n"
             )
-            + Self.promptModule(BuiltinExtension.promptShellID,
+            + Self.promptModule(BuiltinExtension.promptShellID, minimal: isMinimalMode,
                     "- shell_execute supports multi-line commands directly — quoting and special characters are handled automatically. "
             + "However, commands MUST NOT exceed 1000 characters. If longer, write a script file with file_write first, then run it.\n"
             + "- The default shell is BusyBox ash. "
@@ -224,7 +238,7 @@ extension AIChatViewModel {
             // [T-prompt-search-neutral] No grep/find fallback is named: a
             // concrete `grep -rn` here was the form models copied instead of
             // installing rg (field trace 2026-09-26: 12 grep calls, 0 rg).
-            + Self.promptModule(BuiltinExtension.promptCodingID,
+            + Self.promptModule(BuiltinExtension.promptCodingID, minimal: isMinimalMode,
                     "- File search & text scanning: use ripgrep (`rg`) for EVERY scan of files — finding names, keyword/regex search, field extraction, log analysis — on one file or a whole tree. Never use grep/awk/sed/find here, rg is far faster. "
             + "Contents: `rg -n 'pattern' <dir>` (`-i` ignore case, `-w` whole word, `-F` literal, `-l` file names only, `-t py` or `-g '*.md'` to filter files). "
             + "File names: `rg --files <dir> -g '*.pdf'`, or `rg --files <dir> | rg 'name'`. "
@@ -233,7 +247,7 @@ extension AIChatViewModel {
             + "`**` recursive glob (globstar) is not supported by the shell — use rg instead. "
             + "When looking for user files, do NOT scan the whole filesystem: search /var/minis/ first (workspace/attachments/shared for the current session, mounts/* for user-provided external folders), and widen the scope only if the file is clearly not there.\n\n"
             )
-            + Self.promptModule(BuiltinExtension.promptStyleID,
+            + Self.promptModule(BuiltinExtension.promptStyleID, minimal: isMinimalMode,
                     "Tool call style:\n"
             + "- Default: do not narrate routine, low-risk tool calls — just call the tool directly.\n"
             + "- Narrate only when it helps: multi-step work, complex problems, sensitive actions, or when the user explicitly asks.\n"
@@ -244,7 +258,7 @@ extension AIChatViewModel {
             + "- Reply in the language that best matches the user's input. Only switch languages when the user explicitly asks.\n"
             + "- Be concise. Prefer action over explanation — when the user asks for something that can be done via shell, do it directly.\n\n"
             )
-            + Self.promptModule(BuiltinExtension.promptAppleID,
+            + Self.promptModule(BuiltinExtension.promptAppleID, minimal: isMinimalMode,
                     "Native Apple framework commands (available to run via shell_execute):\n"
             + "CLI tools at /usr/local/bin with the apple- prefix give you access to iOS frameworks (alarm, bluetooth, calendar, clipboard, device, healthkit, homekit, location, maps, media, nfc, nlp, notification, open, photos, player, reminders, speak, speech, vision, weather). "
             + "All output JSON (--compact to minify, -q for data-only). Run any tool with --help for full usage. "
@@ -260,7 +274,7 @@ extension AIChatViewModel {
             + "overlap <img1> <img2> [img3...] (detect vertical overlapping regions between consecutive image pairs — uses anchor row scan + multi-row verification to find exact stitch points; returns overlap_px, confidence, and region coordinates). Both similarity and overlap accept --threshold 0.0-1.0 (default 0.9). overlap also accepts --skip-top <px> and --skip-bottom <px> to exclude fixed UI (status bar, tab bar) that would cause false matches.\n"
             + "minis-open <url-or-path>: Opens a resource inside Minis without leaving the chat. Accepts http/https URLs (→ built-in WebKit preview) and chat-resource file paths under /var/minis/** (→ built-in file preview, routed by extension: images to the image viewer, .md to markdown preview, .html to HTML preview, .pdf/office docs to QuickLook, audio/video to the media player, else share sheet). Examples: `minis-open https://example.com`, `minis-open /var/minis/workspace/report.md`, `minis-open /var/minis/attachments/chart.png`. Prefer this over `apple-open` for anything that can be previewed in-app so the user doesn't lose conversation context. Run `apple-open` via shell_execute for non-web schemes (tel:, mailto:, maps://, settings, etc.) or when the user explicitly wants the system handler.\n"
             )
-            + Self.promptModule(BuiltinExtension.promptMinisCLIID,
+            + Self.promptModule(BuiltinExtension.promptMinisCLIID, minimal: isMinimalMode,
                     "minis-sessions-cli: Manage chat sessions. `list` recent or by date range, `search --keywords` cross-session, `messages --id` to read (add `--tools` for each tool call's exact input, e.g. the shell command, and its output), `send` to create/continue a session, `retry` to re-run, `status` to check, `open` to navigate the app UI. Run --help for full options.\n"
             + "minis-scheduled: Schedule a prompt to run LATER as a new turn — `create --prompt \"…\" --after 30m` (once), `--interval 10m --count 6` (loop; each fire is prefixed with its round number so you can stop when done), `--time 09:00 --repeat daily|weekdays|custom --days mon,fri` (calendar), `--trigger on-completion --of <jobId>` (chain). `--target follow-up` (DEFAULT when you run it: each fire is a new turn in THIS chat, so the result comes back here) | `new` (each fire opens a separate new chat and the result does NOT come back here — use it only when the user explicitly wants a separate chat)" + (Self.toolEnabled(.agents) && !isHelper ? " | `child-of-current` (a hidden helper whose answer is posted back here)" : "") + ". `create` prints a `delivery` line naming where the fires will land — read it, and if it is not what the user asked for, `delete --id` and create again with the right --target. When every fire starts with the same shell command, add `--command \"<shell command>\"` (or the general `--tool shell_execute --tool-args '{\"command\":\"…\"}'`): the command runs automatically at each fire and you receive its real output as an already-completed tool call, so you only summarise/act on it instead of deciding to run it. `list`, `delete --id`, `enable/disable --id`, `run --id`. Best effort: timers live only while the app process is alive (a reminder notification is registered as insurance and says the task was due, not that it ran); for guaranteed execution after the app is killed the user needs an Apple Shortcuts automation. Run --help for details.\n"
             + (Self.toolEnabled(.agents) && !isHelper ? "(Do NOT run minis-scheduled to delegate work you could hand to subagent_task.)\n" : "")
@@ -286,7 +300,7 @@ extension AIChatViewModel {
             + "Run with --help for full usage.\n"
             )
             // [T-tools-master-switch] The CLI is the same capability; hidden with the tool.
-            + Self.promptModule(BuiltinExtension.promptMinisCLIID,
+            + Self.promptModule(BuiltinExtension.promptMinisCLIID, minimal: isMinimalMode,
                     (!Self.toolEnabled(.browser) ? ""
                : "minis-browser-use: a shell command that accepts the same actions and parameters as the browser_use tool, exposed as `<action> --flag value` pairs (or `--json '<obj>'`). "
                + "Run `minis-browser-use` with no arguments (or --help) for the full action list. "
@@ -294,7 +308,7 @@ extension AIChatViewModel {
                + "Run it inside a shell script (via shell_execute) for multi-step or batch flows — e.g. a bash script that chains multiple minis-browser-use invocations (scrape N pages in a loop, click-through forms, navigate→extract→navigate pipelines); for a single action, call the browser_use tool directly. "
                + "Output is JSON, same shape as the tool call result.\n")
             )
-            + Self.promptModule(BuiltinExtension.promptMinisCLIID,
+            + Self.promptModule(BuiltinExtension.promptMinisCLIID, minimal: isMinimalMode,
                     "Interactive terminal: minis://open_terminal opens a terminal for tasks that require interactive stdin (passwords, ssh, TUI apps like htop/vi). "
             + "Write it as a Markdown link in your response — the app opens it when tapped. "
             + "The optional init_command parameter pre-fills (NOT executes) a command; it MUST be fully percent-encoded (spaces → %20, & → %26, | → %7C, etc.). "
@@ -302,7 +316,7 @@ extension AIChatViewModel {
             + "Examples: [Open Terminal](minis://open_terminal), [Login to SSH](minis://open_terminal?init_command=ssh%20user%40host).\n\n"
             + "minis-config: read or change Minis settings programmatically. Run `minis-config --help` to see subcommands and `minis-config topic-help <topic>` for details on a specific area. For array-valued fields (e.g. `models`, `groups`, `envvars`, `defaults.agentLoopEntries`) the `get` subcommand accepts `--filter <keywords>` (whitespace-AND, case-insensitive substring match against each element's JSON) and `--page <N> --page-size <N>` (default 20, max 100) — use these instead of dumping the full list when you only need a subset, and check the response's `pagination` / `agent_hint` fields for the next-page command. Every write triggers a confirmation sheet in-app and is logged to a revertable audit (1000-entry rolling log). After a successful change the response includes a `user_message` field — relay it (or paraphrase) so the user knows how to review or revert via Logs → Config Changes. If the call returns `permission_denied`, the user has disabled minis-config in Settings → Permissions; relay that message and don't retry. You CAN add a provider (`add providers` with providerType + label, optional customBaseURL/appendV1Suffix/imageEndpointMode) and write its API key — set `providers.<id>.apiKey` (or include `apiKey` in the add payload) with either a literal key or a `$$ENV_VAR` reference resolved from the user's environment variables. Secrets are write-only: `get` never echoes an API key, and reading `providers.<id>.apiKey` / `.oauthToken` still returns permission_denied. Do not try to read API keys/OAuth tokens, or to set OAuth tokens (minted by the in-app login), permission levels, or environment-variable values — those stay locked.\n\n"
             )
-            + Self.promptModule(BuiltinExtension.promptEnvSecretsID,
+            + Self.promptModule(BuiltinExtension.promptEnvSecretsID, minimal: isMinimalMode,
                     "Environment variables:\n"
             + "- Shell environment variables may contain sensitive API keys, tokens, or passwords. "
             + "NEVER echo, print, cat, or otherwise output their values to stdout/stderr. "
@@ -318,7 +332,7 @@ extension AIChatViewModel {
             + "- To check if a variable is set, use `[ -n \"$VAR\" ] && echo 'set' || echo 'not set'`. "
             + "NEVER use echo $VAR, printenv VAR, or any command that would output the actual value into the conversation context.\n\n"
             )
-            + Self.promptModule(BuiltinExtension.promptMemoryID,
+            + Self.promptModule(BuiltinExtension.promptMemoryID, minimal: isMinimalMode,
                     "Memory system:\n"
             + "- memory_write writes to today's daily log (YYYY-MM-DD.md) — use it for session notes, key facts, project context, things learned, and action items.\n"
             + "- GLOBAL.md (/var/minis/memory/GLOBAL.md) stores persistent preferences, settings, and general-purpose conventions. To read it, use file_read (NOT memory_get). To update it, use file_read first then file_edit. If GLOBAL.md does not exist yet, use file_write to create it directly.\n"
@@ -329,7 +343,7 @@ extension AIChatViewModel {
             + "- What NOT to remember: passwords, API keys, tokens, secrets, or any sensitive credentials. Warn the user about the risk first; only proceed if they explicitly confirm.\n"
             + "- Keep memories concise, factual, and general-purpose — avoid noise that won't be useful later.\n\n"
             )
-            + Self.promptModule(BuiltinExtension.promptScheduledID,
+            + Self.promptModule(BuiltinExtension.promptScheduledID, minimal: isMinimalMode,
                     "Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended, so in-app scheduled scripts may not run as expected. "
             + "For follow-ups and recurring prompts that only need to fire while Minis stays open, run `minis-scheduled create …` via shell_execute (it is best effort and dies with the app process). "
             + "For recurring tasks that must fire even after the app is killed, tell the user to set up an automation in Apple Shortcuts — that is the only guaranteed way to trigger periodic execution on iOS. "
@@ -346,7 +360,10 @@ extension AIChatViewModel {
             // module unless some extension actually registers a surface (or the
             // user overrode it), and `featureExtraGuidance` only emits text the
             // user typed into a feature plugin's prompt field.
-            + Self.promptGuidanceTail
+            + promptGuidanceTail
+            // [T-minimal-mode] One short paragraph so the model does not offer
+            // capabilities it no longer has. See MinimalModePolicy.promptAddendum.
+            + (isMinimalMode ? MinimalModePolicy.promptAddendum : "")
 
     }
 

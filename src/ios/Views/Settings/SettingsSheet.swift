@@ -114,6 +114,23 @@ struct SettingsSheet: View {
                 }
 
                 Section("Agent Runtime") {
+                    // [T-minimal-mode] Second row, right under Agent Tools: both
+                    // pages answer the same question — how much the agent is
+                    // allowed to do — and a user who trims the tool list is the
+                    // one most likely to want the whole session lean.
+                    NavigationLink {
+                        MinimalModeSettingsView()
+                    } label: {
+                        Label {
+                            Text(AppLocalized("Minimal Mode"))
+                        } icon: {
+                            Image(systemName: "leaf.fill")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.white)
+                                .frame(width: 21, height: 21)
+                                .background(.green, in: Circle())
+                        }
+                    }
                     // [T-tools-granular-switches] First row: per-tool switches.
                     NavigationLink {
                         ToolsSettingsView()

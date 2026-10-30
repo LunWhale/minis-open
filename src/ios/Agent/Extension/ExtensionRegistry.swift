@@ -361,9 +361,24 @@ final class ExtensionRegistry {
     /// The author-written description (runtime registration first, manifest
     /// fallback) and the manifest's JSON schema are surfaced so the model can
     /// see what the tool does and which arguments it accepts.
-    func extensionToolDefinitions() -> [AgentToolDefinition] {
+    /// Every extension id that could contribute a tool right now.
+    ///
+    /// Used by minimal mode to build its allowlist UI and to decide which
+    /// extensions a token-lean session may run.
+    var installedExtensionIDs: Set<String> {
+        Set(toolIndex.keys).union(luaToolIndex.keys).union(manifests.keys)
+    }
+
+    /// Tool definitions from installed extensions.
+    ///
+    /// - Parameter allowedExtensionIDs: when non-nil, only these extensions
+    ///   contribute. Filtering happens BEFORE the definition is built, so a
+    ///   hidden extension costs nothing — not even the schema string.
+    ///   [T-minimal-mode] uses this for its per-session allowlist.
+    func extensionToolDefinitions(allowedExtensionIDs: Set<String>? = nil) -> [AgentToolDefinition] {
         var defs: [AgentToolDefinition] = []
         for (extID, tools) in toolIndex {
+            if let allowed = allowedExtensionIDs, !allowed.contains(extID) { continue }
             guard let manifest = manifests[extID] else { continue }
             for (toolName, tool) in tools {
                 defs.append(Self.extensionToolDefinition(
@@ -378,6 +393,7 @@ final class ExtensionRegistry {
         }
         // Lua tools.
         for (extID, tools) in luaToolIndex {
+            if let allowed = allowedExtensionIDs, !allowed.contains(extID) { continue }
             guard let manifest = manifests[extID] else { continue }
             for (toolName, tool) in tools {
                 defs.append(Self.extensionToolDefinition(

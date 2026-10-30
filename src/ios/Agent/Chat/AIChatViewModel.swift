@@ -1310,6 +1310,25 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// When false, memory_write tool calls are skipped (returns "Memory disabled") in this session.
     @Published var memoryEnabled = true
 
+    /// [T-minimal-mode] Which flavour this session runs in. Persisted in
+    /// `sessions.agent_mode`, loaded with the session, immutable once the
+    /// session is minimal (see `ChatStore.setAgentMode`).
+    ///
+    /// Kept on the view model rather than read from the store at every use: the
+    /// agent loop rebuilds the prompt and the tool schema on every turn, and a
+    /// database round trip per turn for a value that cannot change is pure cost.
+    @Published var agentMode: AgentMode = .normal
+
+    /// True when this session is token-lean. Read by the prompt assembler, the
+    /// tool schema and the injection sites.
+    var isMinimalMode: Bool { agentMode == .minimal }
+
+    /// Whether memory injection and the memory tools are live for this turn.
+    ///
+    /// [T-minimal-mode] Two independent reasons to be off, combined here so no
+    /// call site can honour one and forget the other.
+    var memoryActive: Bool { memoryEnabled && !isMinimalMode }
+
     // MARK: - Session Stats
     /// Accumulated streaming duration (seconds) for output token speed calculation.
     var sessionStreamDuration: TimeInterval = 0

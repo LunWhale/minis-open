@@ -231,12 +231,16 @@ extension AIChatViewModel {
         // and MCP enablement (the user configured those for the conversation
         // that spawned it; the child session has no overrides of its own).
         if let sid = helperConfig?.parentSessionId ?? sessionId,
+           !isMinimalMode,
            let skillFragment = SkillStore.shared.skillPromptFragment(for: sid) {
             userSystemPrompt += "\n\n" + skillFragment
         }
 
         // [T-mcp-integration-ios] Inject Top-20 enabled MCP server metadata.
         if let sid = helperConfig?.parentSessionId ?? sessionId,
+           // [T-minimal-mode] MCP snippets are a per-turn prompt injection, so a
+           // minimal session drops them with the rest.
+           !isMinimalMode,
            let mcpFragment = MCPStore.shared.systemPromptSnippet(for: sid) {
             userSystemPrompt += "\n\n" + mcpFragment
         }
@@ -250,8 +254,12 @@ extension AIChatViewModel {
         // value the injection actually keys off. Trace it against the
         // session so a repro shows whether loadSession seeded it from the
         // global default.
-        AppLogger(category: "MemDiag").info("[MemDiag] inject-decision sid=\(self.sessionId?.prefix(8) ?? "nil") vm.memoryEnabled=\(self.memoryEnabled)")
-        if memoryEnabled {
+        AppLogger(category: "MemDiag").info("[MemDiag] inject-decision sid=\(self.sessionId?.prefix(8) ?? "nil") vm.memoryEnabled=\(self.memoryEnabled) minimalMode=\(self.isMinimalMode)")
+        // [T-minimal-mode] Memory is one of the capabilities minimal mode exists
+        // to drop: GLOBAL.md plus the recent daily logs are a per-turn
+        // injection. Expressed as one derived flag so the two assembly sites
+        // (initial build, mid-turn model switch) cannot disagree.
+        if memoryActive {
             if let memoryFragment = Self.loadGlobalMemoryFragment() {
                 userSystemPrompt += "\n\n" + memoryFragment
             }
@@ -1079,11 +1087,14 @@ extension AIChatViewModel {
                 // Keying on the child id here made a sub-agent that fell back
                 // lose the parent's skills and MCP servers mid-run.
                 if let sid = helperConfig?.parentSessionId ?? sessionId,
-                   let skillFragment = SkillStore.shared.skillPromptFragment(for: sid) {
+                   !isMinimalMode,
+           let skillFragment = SkillStore.shared.skillPromptFragment(for: sid) {
                     userSystemPrompt += "\n\n" + skillFragment
                 }
                 // [T-mcp-integration-ios] Inject Top-20 enabled MCP metadata.
-                if let sid = helperConfig?.parentSessionId ?? sessionId,
+                // [T-minimal-mode] Not in a token-lean session.
+                if !isMinimalMode,
+                   let sid = helperConfig?.parentSessionId ?? sessionId,
                    let mcpFragment = MCPStore.shared.systemPromptSnippet(for: sid) {
                     userSystemPrompt += "\n\n" + mcpFragment
                 }
@@ -1091,7 +1102,9 @@ extension AIChatViewModel {
                 // the gate from the first injection site — fallback to a
                 // new provider must respect the per-session memoryEnabled
                 // toggle the same way the initial system prompt did.
-                if memoryEnabled {
+                // [T-minimal-mode] Same for the mode: both assembly paths must
+                // agree, or switching model mid-turn silently re-injects memory.
+                if memoryActive {
                     if let memoryFragment = Self.loadGlobalMemoryFragment() {
                         userSystemPrompt += "\n\n" + memoryFragment
                     }

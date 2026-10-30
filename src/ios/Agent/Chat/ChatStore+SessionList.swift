@@ -281,7 +281,9 @@ extension ChatStore {
                    s.parent_session_id, s.parent_tool_use_id,
                    -- [T-ios-listsessions-perf] Appended LAST, same reason as
                    -- folder_id above: the decode reads by index.
-                   s.preview_text, s.preview_sort_order
+                   s.preview_text, s.preview_sort_order,
+                   -- [T-minimal-mode] Appended LAST, same reason as folder_id.
+                   s.agent_mode
             FROM sessions s\(whereClause)
             ORDER BY s.updated_at DESC
             """
@@ -379,6 +381,8 @@ extension ChatStore {
             )
             row.parentSessionId = parentSessionId
             row.parentToolUseId = parentToolUseId
+            // [T-minimal-mode] Column 17 — the badge in the sidebar reads this.
+            row.agentModeRaw = Self.colTextOpt(stmt, 17)
             // The sort_order the preview came from, so a later incremental
             // update compares against a real value instead of NULL.
             let winningOrder: Int? = {

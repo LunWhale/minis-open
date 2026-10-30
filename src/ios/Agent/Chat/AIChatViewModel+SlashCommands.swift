@@ -44,6 +44,12 @@ extension AIChatViewModel {
         SlashCommand(id: "memory", icon: "brain.head.profile", title: "Memory", subtitle: "Toggle memory for this session (tools + injection)"),
         SlashCommand(id: "thinking", icon: "lightbulb", title: "Thinking", subtitle: "Toggle deep thinking mode on/off"),
         SlashCommand(id: "extensions", icon: "puzzlepiece.extension.fill", title: "Extensions", subtitle: "Open the extension manager"),
+        // [T-minimal-mode] The mode is chosen here, once, on an empty session.
+        // Both rows are filtered out of the menu as soon as the choice is fixed
+        // (see availableSlashCommands(for:)), so the menu never offers a switch
+        // that would be refused.
+        SlashCommand(id: "minimal", icon: "leaf.fill", title: "Minimal Mode", subtitle: "Start this session token-lean. Cannot be changed later"),
+        SlashCommand(id: "normal", icon: "circle.lefthalf.filled", title: "Normal Mode", subtitle: "Start this session with everything you have enabled"),
     ]
 
     /// Show slash menu without replacing existing input text.
@@ -178,8 +184,18 @@ extension AIChatViewModel {
         // reads unaffected", but `memoryEnabled == false` drops memory_get and
         // memory_write from the tool list *and* stops the injection.
         let memoryPluginOn = ExtensionRegistry.builtinEnabled(BuiltinExtension.memoryID)
+        // [T-minimal-mode] Show the mode rows only while the choice is still
+        // open: an empty thread that is not already minimal. A minimal session
+        // is locked for good, so offering `/normal` there would be a lie.
+        let modeChoiceOpen = !isMinimalMode && messages.isEmpty
+        let minimalModeAdvertised = UserDefaults.standard.object(forKey: MinimalModePolicy.Key.enabled) == nil
+            || UserDefaults.standard.bool(forKey: MinimalModePolicy.Key.enabled)
         var commands = Self.availableSlashCommands
             .filter { !($0.id == "memory" && !memoryPluginOn) }
+            .filter { cmd in
+                guard cmd.id == "minimal" || cmd.id == "normal" else { return true }
+                return modeChoiceOpen && minimalModeAdvertised
+            }
             .map { cmd -> SlashCommand in
             if cmd.id == "memory" {
                 let status = memoryEnabled ? "on" : "off"
@@ -508,6 +524,8 @@ extension AIChatViewModel {
             // Open the Extension Manager (same path as minis://extensions).
             DeepLinkCoordinator.shared.showExtensions = true
             appendSystemInfo("Opening extension manager…", icon: "puzzlepiece.extension.fill")
+        case "minimal", "normal":
+            chooseAgentMode(cmd.id == "minimal" ? .minimal : .normal)
         case "clear":
             clearChatConfirmRequested = true
         default:

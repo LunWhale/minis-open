@@ -117,6 +117,7 @@ struct SessionRow: View, Equatable {
     // gates the parent-push path, not observed-object invalidation).
     static func == (lhs: SessionRow, rhs: SessionRow) -> Bool {
         lhs.session.id == rhs.session.id
+            && lhs.session.agentModeRaw == rhs.session.agentModeRaw
             && lhs.session.title == rhs.session.title
             && lhs.session.lastMessage == rhs.session.lastMessage
             && lhs.session.updatedAt == rhs.session.updatedAt
@@ -272,12 +273,24 @@ struct SessionRow: View, Equatable {
             // as plain text in the list. The avatar and trailing lock-icon
             // overlay sit outside this VStack so they stay crisp.
             VStack(alignment: .leading, spacing: 4) {
-                highlightedText(
-                    session.title ?? "New Chat",
-                    font: .system(size: fontSettings.scaledApp(16), weight: .semibold),
-                    color: Color(UIColor.label)
-                )
-                .lineLimit(1)
+                HStack(spacing: 5) {
+                    highlightedText(
+                        session.title ?? "New Chat",
+                        font: .system(size: fontSettings.scaledApp(16), weight: .semibold),
+                        color: Color(UIColor.label)
+                    )
+                    .lineLimit(1)
+                    // [T-minimal-mode] The session's mode is otherwise invisible
+                    // once the slash menu stops offering the choice, so the list
+                    // has to say it. Small and trailing: it qualifies the title,
+                    // it is not a second title.
+                    if session.agentMode == .minimal {
+                        Image(systemName: AgentMode.minimal.symbol)
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(.green)
+                            .accessibilityLabel(AppLocalized("Minimal mode session"))
+                    }
+                }
 
                 if let snippet = matchSnippet, !snippet.isEmpty {
                     // During active search, prefer the body-match snippet over

@@ -296,6 +296,7 @@
 		E5G000001 /* BackgroundKeepAliveManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5G000011 /* BackgroundKeepAliveManager.swift */; };
 		E5G000002 /* AgentLiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5G000012 /* AgentLiveActivityManager.swift */; };
 		E5G000003 /* EnhancedBackgroundSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5G000013 /* EnhancedBackgroundSettingsView.swift */; };
+		E5AGMD0004B /* MinimalModeSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5AGMD0004R /* MinimalModeSettingsView.swift */; };
 		E5G000004 /* AgentActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5G000014 /* AgentActivityAttributes.swift */; };
 		E5GWF0003 /* GeminiWireFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5GWF0013 /* GeminiWireFormat.swift */; };
 		E5H000001 /* AgentWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5H000011 /* AgentWidgetBundle.swift */; };
@@ -534,6 +535,9 @@
 		E5VMSPL004B /* AIChatViewModel+Speech.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMSPL004R /* AIChatViewModel+Speech.swift */; };
 		E5VMSPL005B /* AIChatViewModel+AutoPlayAudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMSPL005R /* AIChatViewModel+AutoPlayAudio.swift */; };
 		E5VMSPL006B /* AIChatViewModel+SystemPrompt.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMSPL006R /* AIChatViewModel+SystemPrompt.swift */; };
+		E5AGMD0001B /* AgentMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5AGMD0001R /* AgentMode.swift */; };
+		E5AGMD0003B /* AIChatViewModel+AgentMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5AGMD0003R /* AIChatViewModel+AgentMode.swift */; };
+		E5AGMD0002B /* ChatStore+AgentMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5AGMD0002R /* ChatStore+AgentMode.swift */; };
 		E5VMSPL007B /* AIChatViewModel+Send.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMSPL007R /* AIChatViewModel+Send.swift */; };
 		E5VMSPL008B /* AIChatViewModel+Rerun.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMSPL008R /* AIChatViewModel+Rerun.swift */; };
 		E5VMSPL009B /* AIChatViewModel+EditMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMSPL009R /* AIChatViewModel+EditMessage.swift */; };
@@ -1078,6 +1082,7 @@
 		E5G000011 /* BackgroundKeepAliveManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundKeepAliveManager.swift; sourceTree = "<group>"; };
 		E5G000012 /* AgentLiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLiveActivityManager.swift; sourceTree = "<group>"; };
 		E5G000013 /* EnhancedBackgroundSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnhancedBackgroundSettingsView.swift; sourceTree = "<group>"; };
+		E5AGMD0004R /* MinimalModeSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinimalModeSettingsView.swift; sourceTree = "<group>"; };
 		E5G000014 /* AgentActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentActivityAttributes.swift; sourceTree = "<group>"; };
 		E5GWF0013 /* GeminiWireFormat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeminiWireFormat.swift; sourceTree = "<group>"; };
 		E5H000010 /* AgentWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AgentWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -1488,6 +1493,9 @@
 		E5VMSPL004R /* AIChatViewModel+Speech.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+Speech.swift"; sourceTree = "<group>"; };
 		E5VMSPL005R /* AIChatViewModel+AutoPlayAudio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+AutoPlayAudio.swift"; sourceTree = "<group>"; };
 		E5VMSPL006R /* AIChatViewModel+SystemPrompt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+SystemPrompt.swift"; sourceTree = "<group>"; };
+		E5AGMD0001R /* AgentMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AgentMode.swift"; sourceTree = "<group>"; };
+		E5AGMD0003R /* AIChatViewModel+AgentMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+AgentMode.swift"; sourceTree = "<group>"; };
+		E5AGMD0002R /* ChatStore+AgentMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatStore+AgentMode.swift"; sourceTree = "<group>"; };
 		E5VMSPL007R /* AIChatViewModel+Send.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+Send.swift"; sourceTree = "<group>"; };
 		E5VMSPL008R /* AIChatViewModel+Rerun.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+Rerun.swift"; sourceTree = "<group>"; };
 		E5VMSPL009R /* AIChatViewModel+EditMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+EditMessage.swift"; sourceTree = "<group>"; };
@@ -2598,6 +2606,9 @@
 				E5VMSPL004R /* AIChatViewModel+Speech.swift */,
 				E5VMSPL005R /* AIChatViewModel+AutoPlayAudio.swift */,
 				E5VMSPL006R /* AIChatViewModel+SystemPrompt.swift */,
+				E5AGMD0001R /* AgentMode.swift */,
+				E5AGMD0003R /* AIChatViewModel+AgentMode.swift */,
+				E5AGMD0002R /* ChatStore+AgentMode.swift */,
 				E5VMSPL007R /* AIChatViewModel+Send.swift */,
 				E5VMSPL008R /* AIChatViewModel+Rerun.swift */,
 				E5VMSPL009R /* AIChatViewModel+EditMessage.swift */,
@@ -2847,6 +2858,7 @@
 				AA0838A12F3B941A00049557 /* AboutView.swift */,
 				E5S000014 /* CloudSyncSettingsView.swift */,
 				E5G000013 /* EnhancedBackgroundSettingsView.swift */,
+				E5AGMD0004R /* MinimalModeSettingsView.swift */,
 				E5P000012 /* EnvironmentVariablesView.swift */,
 				E5J000012 /* LogManagementView.swift */,
 				E5CDX0012 /* CrashDiagnosticsView.swift */,
@@ -3472,6 +3484,9 @@
 				E5VMSPL004B /* AIChatViewModel+Speech.swift in Sources */,
 				E5VMSPL005B /* AIChatViewModel+AutoPlayAudio.swift in Sources */,
 				E5VMSPL006B /* AIChatViewModel+SystemPrompt.swift in Sources */,
+				E5AGMD0001B /* AgentMode.swift in Sources */,
+				E5AGMD0003B /* AIChatViewModel+AgentMode.swift in Sources */,
+				E5AGMD0002B /* ChatStore+AgentMode.swift in Sources */,
 				E5VMSPL007B /* AIChatViewModel+Send.swift in Sources */,
 				E5VMSPL008B /* AIChatViewModel+Rerun.swift in Sources */,
 				E5VMSPL009B /* AIChatViewModel+EditMessage.swift in Sources */,
@@ -3759,6 +3774,7 @@
 				E5G000001 /* BackgroundKeepAliveManager.swift in Sources */,
 				E5G000002 /* AgentLiveActivityManager.swift in Sources */,
 				E5G000003 /* EnhancedBackgroundSettingsView.swift in Sources */,
+				E5AGMD0004B /* MinimalModeSettingsView.swift in Sources */,
 				E5G000004 /* AgentActivityAttributes.swift in Sources */,
 				E5AT00004 /* AudioTogglePlaybackIntent.swift in Sources */,
 				E5I000001 /* SpeechRecognitionManager.swift in Sources */,
