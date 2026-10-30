@@ -28,6 +28,13 @@ extension AIChatViewModel {
     // MARK: - Tool Definitions (Canonical)
 
     func makeAgentTools() -> [AgentToolDefinition] {
+        // [T-minimal-mode] Exactly two tools, matching the reference design the
+        // objective names. Returning early (rather than pruning the full list)
+        // also keeps the expensive definitions below from being built at all.
+        if isMinimalMode {
+            return Self.minimalToolDefinitions
+        }
+
         // [T-memory-toggle-gates-injection-and-tools-ios] memory_get and
         // memory_write are conditionally registered. Two switches silence
         // them: the global Memory System feature plugin (Settings →
@@ -313,6 +320,39 @@ extension AIChatViewModel {
 
 extension AIChatViewModel {
 
+
+    /// The two tools a minimal-mode session is offered.
+    ///
+    /// [T-minimal-mode] Descriptions are deliberately short: this is the whole tool
+    /// surface, so every word here is paid on every turn. The full length lives in
+    /// the normal-mode definitions above.
+    static var minimalToolDefinitions: [AgentToolDefinition] {
+        [
+            AgentToolDefinition(
+                name: "shell_execute",
+                description: "Run any shell command in a persistent Linux environment. Each call is its own process with stdout/stderr captured; installed packages and files persist. Use the `delay` parameter to wait without occupying the shell.",
+                parameters: [
+                    "tool_title": AgentToolParam(type: .string, description: "A concise 5-10 word summary shown to the user (e.g. 'List project files'). Use the user's language."),
+                    "command": AgentToolParam(type: .string, description: "The shell command to run (max 1000 characters; write a script file first if longer)."),
+                    "delay": AgentToolParam(type: .integer, description: "Optional: seconds to wait before returning, without holding the shell. Prefer this over `sleep` in the command."),
+                    "timeout": AgentToolParam(type: .integer, description: "Optional: seconds before the command is killed."),
+                ],
+                required: ["tool_title", "command"],
+                propertyOrdering: ["tool_title", "command", "delay", "timeout"]
+            ),
+            AgentToolDefinition(
+                name: "file_write",
+                description: "Create a file or overwrite it with the given content. Preferred over shell heredocs: it is atomic and avoids quoting problems. Read files with `cat` through shell_execute.",
+                parameters: [
+                    "tool_title": AgentToolParam(type: .string, description: "A concise 5-10 word summary shown to the user. Use the user's language."),
+                    "path": AgentToolParam(type: .string, description: "Absolute path, e.g. /var/minis/workspace/notes.md."),
+                    "content": AgentToolParam(type: .string, description: "Full file contents."),
+                ],
+                required: ["tool_title", "path", "content"],
+                propertyOrdering: ["tool_title", "path", "content"]
+            ),
+        ]
+    }
 
     /// Whether a built-in plugin may contribute to THIS session.
     ///

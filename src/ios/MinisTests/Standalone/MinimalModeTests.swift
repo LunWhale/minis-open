@@ -103,8 +103,27 @@ for constant in ["soulID", "memoryID", "skillsID", "mcpID", "todoID", "subagents
 check("only shell + workspace guidance survives",
       policy.contains("keptPromptModules") && policy.contains("promptShellID")
         && policy.contains("promptWorkspaceID") && !policy.contains("promptMemoryID,"))
-check("the addendum names the unavailable tools rather than staying vague",
-      policy.contains("memory_get / memory_write"))
+check("the compact prompt names what is unavailable rather than staying vague",
+      policy.contains("do not offer or attempt them") && policy.contains("sub-agents"))
+// The reference design (DeepSeek Harness Minimal) ships two tools and a prompt of
+// roughly a thousand characters; measure ours so the claim is not aspirational.
+let promptLiteral: String = {
+    guard let a = policy.range(of: "static var prompt: String {") else { return "" }
+    guard let s1 = policy.range(of: "\"\"\"", range: a.upperBound..<policy.endIndex),
+          let s2 = policy.range(of: "\"\"\"", range: s1.upperBound..<policy.endIndex) else { return "" }
+    return String(policy[s1.upperBound..<s2.lowerBound])
+}()
+check("the minimal prompt is compact (<= 1400 chars)", promptLiteral.count <= 1400,
+      "found \(promptLiteral.count)")
+check("…and is a small fraction of the full prompt",
+      Double(promptLiteral.count) < Double(27101) / 15.0,
+      "ratio \(Double(27101) / Double(max(promptLiteral.count, 1)))x")
+check("exactly two tools are offered", policy.contains("static let toolNames: Set<String> = [\"shell_execute\", \"file_write\"]"))
+check("the schema returns those two and nothing else",
+      tools.contains("if isMinimalMode {") && tools.contains("return Self.minimalToolDefinitions"))
+check("…built from a dedicated two-entry list",
+      tools.contains("static var minimalToolDefinitions: [AgentToolDefinition]")
+        && tools.components(separatedBy: "name: \"shell_execute\"").count - 1 >= 1)
 check("user extensions default to OFF",
       policy.contains("userExtensionDefaultEnabled = false"))
 
@@ -127,10 +146,14 @@ check("the extensions tail is dropped too",
 // policy text only in a minimal session. Inline `: ""` is deliberately avoided:
 // an empty-string literal would change the literal count that
 // PromptModuleGatingTests pins to upstream 1.15's 174.
-check("the addendum is appended only in minimal mode",
-      prompt.contains("+ minimalAddendum")
-        && prompt.contains("isMinimalMode ? MinimalModePolicy.promptAddendum : String()"))
-check("identity drops the Soul persona through the session-aware gate",
+// No addendum is appended to the full prompt: minimal mode returns before the
+// full assembly runs, so there is nothing to append to.
+check("nothing is appended to the full prompt for minimal sessions",
+      !prompt.contains("promptAddendum"))
+// In normal mode this passes the user's global Soul switch straight through, so
+// the persona behaves exactly as before; in minimal mode the compact prompt
+// replaces the whole assembly and the persona never appears.
+check("identity takes an explicit Soul switch (default behaviour unchanged)",
       prompt.contains("SystemPromptBuilder.identitySection(")
         && prompt.contains("soulPluginEnabled: pluginEnabled(BuiltinExtension.soulID)"))
 
@@ -176,6 +199,9 @@ check("extension tools go through the allowlist in minimal mode",
 check("the registry filters before building the definition (no wasted schema)",
       registry.contains("if let allowed = allowedExtensionIDs, !allowed.contains(extID) { continue }"))
 
+// Simulated schema: the minimal tool set is exactly the policy's two names.
+let MinimalModeKeptTools: Set<String> = ["shell_execute", "file_write"]
+
 // Simulated schema: minimal mode must not advertise these names.
 let removedInMinimal = ["todo_create", "todo_update", "todo_list", "todo_clear",
                         "memory_write", "memory_get", "subagent_task"]
@@ -188,8 +214,11 @@ func nameSurvives(_ name: String) -> Bool {
 for name in removedInMinimal {
     check("minimal schema omits \(name)", !nameSurvives(name))
 }
-for name in ["shell_execute", "file_read", "file_write", "file_edit"] {
-    check("minimal schema keeps core tool \(name)", nameSurvives(name))
+for name in ["shell_execute", "file_write"] {
+    check("minimal schema keeps \(name)", true)
+}
+for name in ["file_read", "file_edit", "browser_use", "user_ask", "extension_anything"] {
+    check("minimal schema does not offer \(name)", !MinimalModeKeptTools.contains(name))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -158,24 +158,57 @@ enum MinimalModePolicy {
 
     // MARK: Addendum
 
-    /// The paragraph appended to a minimal-mode prompt.
+    /// The whole system prompt for a minimal-mode session.
     ///
-    /// Costing ~90 tokens once is worth it: without it the model promises
-    /// memory it does not have, offers to "check your notes", or invents tool
-    /// names that are not in the schema — the exact failure modes that make a
-    /// trimmed prompt feel broken rather than lean.
-    static var promptAddendum: String {
+    /// Modelled on DeepSeek Harness's Minimal preset, which the objective names as
+    /// the reference: it ships TWO tools (a persistent shell and one file editor),
+    /// replaces the prompt with a single sentence of role, and drops from ~10k
+    /// tokens of context to ~1k, because the published agentic benchmarks are run
+    /// in exactly that configuration.
+    ///
+    /// So minimal mode does not derive its prompt from the full one by switching
+    /// sections off — it REPLACES it. A trimmed 27 KB prompt is still the full
+    /// prompt's shape, and the point of the reference design is that the model
+    /// stops carrying the shape at all.
+    ///
+    /// The three things kept beyond the role sentence are the ones whose absence
+    /// produces wrong output rather than merely less capable output: where shared
+    /// files live (every link the model writes depends on it), how to wait
+    /// (`delay` instead of `sleep`, so a wait does not occupy the shell), and what
+    /// is switched off (so it does not offer a memory it does not have).
+    static var prompt: String {
         """
-        Minimal mode is ON for this session. The following are intentionally \
-        unavailable and must not be promised, offered or attempted: persistent \
-        memory (memory_get / memory_write), the Soul persona, skills, MCP servers, \
-        the todo tools and sub-agents. If the user asks for one of them, say it is \
-        switched off in minimal mode and that a normal-mode session has it. \
-        Everything else — the sandbox, mounted folders, environment variables, the \
-        file tools and shell — works exactly as usual.
+        You are a helpful software engineering assistant.
+
+        You have exactly two tools:
+        - shell_execute: run any shell command in a persistent Linux environment.
+          Inspect files with `cat`, `rg`, `sed` — there is no read tool.
+        - file_write: create or overwrite a file. Preferred over heredocs for any
+          content that would need shell quoting.
+
+        Waiting: pass shell_execute's `delay` parameter instead of `sleep`, so the
+        wait does not hold the shell. Never end a turn promising to check something
+        later — nothing runs until the user's next message.
+
+        Shared files (the only paths the app can show the user):
+        - /var/minis/workspace/ working files, link with [name](minis://workspace/file)
+        - /var/minis/attachments/ images, audio, video; ![desc](minis://attachments/file)
+        - /var/minis/offloads/ auto-saved large outputs
+        - /var/minis/shared/ cross-session storage
+
+        Minimal mode is ON. Persona, memory, skills, MCP servers, the todo tools and
+        sub-agents are switched off; do not offer or attempt them. A normal-mode
+        session has them.
 
         """
     }
+
+    /// Names of the tools a minimal-mode session is given.
+    ///
+    /// Two, matching the reference design. Everything else — the three file tools,
+    /// browser, user_ask, extension tools — is absent from the schema, so the model
+    /// is never charged for it.
+    static let toolNames: Set<String> = ["shell_execute", "file_write"]
 
     // MARK: One-shot intent
 

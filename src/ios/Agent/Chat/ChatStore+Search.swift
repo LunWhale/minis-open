@@ -88,9 +88,7 @@ enum SearchKeywords {
             FROM messages m
             WHERE \(visibleHitClause(termCount: n))
             GROUP BY m.session_id)
-        SELECT s.id, s.title, s.model_id, s.created_at, s.updated_at, s.category, n.parts_json,
-               -- [T-minimal-mode] Appended LAST: the decode reads by index.
-               s.agent_mode
+        SELECT s.id, s.title, s.model_id, s.created_at, s.updated_at, s.category, n.parts_json
         FROM sessions s
         LEFT JOIN newest n ON n.session_id = s.id
         WHERE \(anyLike("s.title", termCount: n)) OR n.session_id IS NOT NULL
@@ -105,8 +103,7 @@ enum SearchKeywords {
         SELECT DISTINCT s.id, s.title, s.model_id, s.created_at, s.updated_at, s.category,
                (SELECT m2.parts_json FROM messages m2
                 WHERE m2.session_id = s.id AND \(anyLike("m2.parts_json", termCount: n))
-                ORDER BY m2.sort_order DESC LIMIT 1),
-               s.agent_mode
+                ORDER BY m2.sort_order DESC LIMIT 1)
         FROM sessions s
         LEFT JOIN messages m ON m.session_id = s.id
         WHERE \(anyLike("s.title", termCount: n)) OR \(anyLike("m.parts_json", termCount: n))
@@ -166,7 +163,9 @@ extension ChatStore {
     /// Returns matching sessions with the line of the newest matching message
     /// that holds the keyword (if a message matched).
     struct SearchResult {
-        let session: ChatSession
+        /// `var` so [T-minimal-mode] can stamp the agent mode in after the
+        /// mirror-guarded SELECT has produced the row (see agentModeBySession).
+        var session: ChatSession
         /// [T-search-hit-line] The line of the newest matching message that
         /// holds the query, windowed around the hit (see searchHitLine), or
         /// nil when no message shows the query (title-only match, or a hit
@@ -295,6 +294,34 @@ extension ChatStore {
         return nil
     }
 
+    /// Agent mode for a set of session ids, fetched in one statement.
+    ///
+    /// [T-minimal-mode] Search results are built from a mirror-guarded SELECT that
+    /// cannot carry a new column, so the mode is read separately. Ids are matched
+    /// exactly; anything absent from the result defaults to `.normal` at the model
+    /// level, which is the correct answer for every session that predates the
+    /// column.
+    private func agentModeBySession(idPrefixes ids: [String]) -> [String: String] {
+        guard !ids.isEmpty else { return [:] }
+        // Ids are app-generated UUID strings; still, bind them rather than
+        // interpolating, so a stray quote can never reshape the statement.
+        let placeholders = Array(repeating: "?", count: ids.count).joined(separator: ", ")
+        let sql = "SELECT id, agent_mode FROM sessions WHERE id IN (\(placeholders))"
+        var stmt: OpaquePointer?
+        var out: [String: String] = [:]
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return out }
+        for (i, id) in ids.enumerated() {
+            sqlite3_bind_text(stmt, Int32(i + 1), (id as NSString).utf8String, -1, Self.searchBindTransient)
+        }
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            guard let idC = sqlite3_column_text(stmt, 0),
+                  let modeC = sqlite3_column_text(stmt, 1) else { continue }
+            out[String(cString: idC)] = String(cString: modeC)
+        }
+        return out
+    }
+
     // SQLITE_TRANSIENT: SQLite copies each pattern, so the temporary string
     // backing it may go away before the statement steps.
     private static let searchBindTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
@@ -364,14 +391,23 @@ extension ChatStore {
                 id: id, title: title, category: category, modelId: modelId,
                 createdAt: createdAt, updatedAt: updatedAt, lastMessage: snippet
             )
-            // [T-minimal-mode] Column 7, both SELECTs. Without it a minimal
-            // session found by search loses its badge in the results list.
-            session.agentModeRaw = sqlite3_column_text(stmt, 7).map { String(cString: $0) }
             results.append(SearchResult(session: session, matchSnippet: snippet, titleMatched: titleMatched))
         }
         sqlite3_finalize(stmt)
         if dropped > 0 {
             logger.info("[Search] dropped \(dropped) session(s) with no visible hit (visibleOnly=\(visibleOnly), budgetLeft=\(fallbackBudget))")
+        }
+        // [T-minimal-mode] The search SELECTs live in the mirror-guarded region
+        // ("BEGIN searchKeywords"), where the SQL is asserted byte-identical
+        // against a port copy and the order of result columns is what the port's
+        // own tests step over — so the mode is fetched here instead, in one extra
+        // query for the ids we are about to return. Without it a minimal session
+        // found by search loses its badge.
+        let modes = agentModeBySession(idPrefixes: results.map(\.session.id))
+        if !modes.isEmpty {
+            for i in results.indices {
+                results[i].session.agentModeRaw = modes[results[i].session.id]
+            }
         }
         return results
     }

@@ -92,9 +92,9 @@ for t in oldModuleTexts {
 print("\n▶️  2. all-on output is upstream 1.15's prompt, byte for byte")
 
 /// Source lines of `var baseSystemPrompt: String { ... }`, brace-matched.
-func baseSystemPromptBody(_ text: String) -> [String] {
+func promptBody(_ text: String, anchor: String) -> [String] {
     let lines = text.components(separatedBy: "\n")
-    guard let start = lines.firstIndex(where: { $0.contains("var baseSystemPrompt: String {") })
+    guard let start = lines.firstIndex(where: { $0.contains(anchor) })
     else { return [] }
     var out: [String] = []
     var depth = 0
@@ -141,7 +141,14 @@ func literals(_ lines: [String]) -> [String] {
     return res
 }
 
-let mine = literals(baseSystemPromptBody(current))
+// [T-minimal-mode] Our body lives in `fullSystemPrompt`; upstream 1.15's lived
+// in `baseSystemPrompt` (a minimal session now substitutes its own compact prompt,
+// so the full one moved behind a wrapper). Same text, different home.
+let mine = literals(promptBody(current, anchor: "var fullSystemPrompt: String {"))
+// The wrapper must still hand a normal session this exact prompt.
+check("a normal session gets the full prompt",
+      current.contains("if isMinimalMode { return MinimalModePolicy.prompt }")
+        && current.contains("return fullSystemPrompt"))
 check("the assembled prompt has the expected literal count (174)", mine.count == 174,
       "found \(mine.count)")
 let totalChars = mine.reduce(0) { $0 + $1.count }
@@ -164,7 +171,7 @@ git.waitUntilExit()
 
 if git.terminationStatus == 0, !upstreamData.isEmpty,
    let upstream = String(data: upstreamData, encoding: .utf8) {
-    let theirs = literals(baseSystemPromptBody(upstream))
+    let theirs = literals(promptBody(upstream, anchor: "var baseSystemPrompt: String {"))
     check("upstream 1.15 has the same literal count", theirs.count == mine.count,
           "upstream \(theirs.count) vs ours \(mine.count)")
     if theirs.count == mine.count {
