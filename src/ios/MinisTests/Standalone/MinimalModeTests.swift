@@ -114,8 +114,13 @@ check("a module off the keep list returns nothing in minimal mode",
       prompt.contains("if minimal, !MinimalModePolicy.allowsPromptModule(id) { return \"\" }"))
 check("the extensions tail is dropped too",
       prompt.contains("MinimalModePolicy.allowsPromptModule(BuiltinExtension.promptExtensionsID)"))
+// The body appends `minimalAddendum`, a computed property that yields the
+// policy text only in a minimal session. Inline `: ""` is deliberately avoided:
+// an empty-string literal would change the literal count that
+// PromptModuleGatingTests pins to upstream 1.15's 174.
 check("the addendum is appended only in minimal mode",
-      prompt.contains("(isMinimalMode ? MinimalModePolicy.promptAddendum : \"\")"))
+      prompt.contains("+ minimalAddendum")
+        && prompt.contains("isMinimalMode ? MinimalModePolicy.promptAddendum : String()"))
 check("identity drops the Soul persona through the session-aware gate",
       prompt.contains("SystemPromptBuilder.identitySection(")
         && prompt.contains("soulPluginEnabled: pluginEnabled(BuiltinExtension.soulID)"))
@@ -200,6 +205,11 @@ check("the VM enforces the lock before the store (better message)",
       choose.contains("if agentMode == .minimal {") && choose.contains("AppLocalized(\"Minimal mode is locked"))
 check("a draft session keeps the choice for createSession",
       choose.contains("guard let sid = sessionId else {") && choose.contains("agentMode = mode"))
+// The draft path is only honest if the choice survives the row being created.
+let persistence = src("Agent/Chat/AIChatViewModel+Persistence.swift")
+check("ensureSession persists a draft-time choice instead of overwriting it",
+      persistence.contains("if agentMode != .normal, storedMode == .normal {")
+        && persistence.contains("mode: agentMode) != .applied"))
 for outcome in [".applied", ".lockedMinimal", ".threadStarted", ".noSuchSession"] {
     check("VM handles \(outcome)", choose.contains(outcome))
 }
@@ -238,6 +248,27 @@ check("the session list marks a minimal session",
       row.contains("session.agentMode == .minimal") && row.contains("AgentMode.minimal.symbol"))
 check("the row's Equatable includes the mode, or the badge would not refresh in place",
       row.contains("lhs.session.agentModeRaw == rhs.session.agentModeRaw"))
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MARK: - 6b. The settings button, and the one-shot intent behind it
+// ─────────────────────────────────────────────────────────────────────────────
+
+print("\n▶️  6b. starting a minimal session from Settings")
+
+check("the introduction carries a button, as the objective asks",
+      settingsView.contains("Start a minimal session") && settingsView.contains(".buttonStyle(.borderedProminent)"))
+check("the button respects the master switch",
+      settingsView.contains(".disabled(!minimalModeEnabled)"))
+check("it records a one-shot intent rather than a global preference",
+      policy.contains("enum Intent") && policy.contains("minimalMode.pendingMode"))
+check("…which is cleared as it is spent, so it cannot apply twice",
+      src("Agent/Chat/AIChatViewModel+Persistence.swift")
+        .contains("MinimalModePolicy.Intent.pending = nil"))
+check("it opens a new session only after the sheet is gone",
+      settingsView.contains(".asyncAfter(deadline: .now() + 0.35)"))
+check("minimal mode is NOT a plugin: absent from BuiltinExtension.all",
+      !src("Agent/Extension/BuiltinExtension.swift")
+        .contains("minimalID"))
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MARK: - 7. Language coverage

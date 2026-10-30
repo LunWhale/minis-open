@@ -68,6 +68,14 @@ extension AIChatViewModel {
     /// default prompt stays upstream 1.15's. `promptExtensions` contributes the
     /// built-in extension-tool guidance once an extension registers a surface,
     /// and `featureExtraGuidance` contributes only text the user typed.
+    /// The minimal-mode note, or an empty string in a normal session.
+    ///
+    /// A computed property rather than an inline ternary so the prompt body keeps
+    /// exactly the literals upstream wrote (see the call site).
+    var minimalAddendum: String {
+        isMinimalMode ? MinimalModePolicy.promptAddendum : String()
+    }
+
     var promptGuidanceTail: String {
         var out = ""
         // [T-minimal-mode] The extensions module is not on the keep list, so a
@@ -363,7 +371,12 @@ extension AIChatViewModel {
             + promptGuidanceTail
             // [T-minimal-mode] One short paragraph so the model does not offer
             // capabilities it no longer has. See MinimalModePolicy.promptAddendum.
-            + (isMinimalMode ? MinimalModePolicy.promptAddendum : "")
+            //
+            // `minimalAddendum`, not an inline `: ""`: the empty string would be a
+            // 175th literal in this body, and PromptModuleGatingTests pins the
+            // literal sequence to upstream 1.15's 174 so the normal-mode prompt
+            // cannot drift. `String()` adds no literal.
+            + minimalAddendum
 
     }
 

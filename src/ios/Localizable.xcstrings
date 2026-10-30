@@ -283052,6 +283052,22 @@
           }
         }
       }
+    },
+    "Start a minimal session" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开启极简会话"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start a minimal session"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

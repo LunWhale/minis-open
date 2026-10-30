@@ -175,6 +175,33 @@ enum MinimalModePolicy {
         """
     }
 
+    // MARK: One-shot intent
+
+    /// A mode waiting to be applied to the next session that gets created.
+    ///
+    /// [T-minimal-mode] The settings page has a button that starts a minimal
+    /// session directly. The session row does not exist until the first message
+    /// is sent (`ensureSession`), so the choice has to travel: it is stored here,
+    /// consumed where the row is created, and cleared so it applies exactly once.
+    ///
+    /// Deliberately NOT the same key as a session's own mode: an intent is an
+    /// unsaved wish, and a crash before the first message must not leave the app
+    /// silently treating some later session as minimal.
+    enum Intent {
+        static let key = "minimalMode.pendingMode"
+
+        static var pending: AgentMode? {
+            get {
+                guard let raw = UserDefaults.standard.string(forKey: key) else { return nil }
+                return AgentMode(rawValue: raw)
+            }
+            set {
+                if let newValue { UserDefaults.standard.set(newValue.rawValue, forKey: key) }
+                else { UserDefaults.standard.removeObject(forKey: key) }
+            }
+        }
+    }
+
     // MARK: Settings surface
 
     /// UserDefaults keys. Namespaced under `minimalMode.` so the feature can be

@@ -1219,9 +1219,37 @@ extension AIChatViewModel {
         // (DB row, which createSession wrote from the global default) drives
         // the flag.
         memoryEnabled = await ChatStore.shared.getMemoryEnabled(sessionId: session.id)
-        // [T-minimal-mode] A brand-new session is always normal until the user
-        // picks a mode; read it back so the mode the picker just wrote wins.
-        agentMode = await ChatStore.shared.agentMode(sessionId: session.id)
+        // [T-minimal-mode] Reconcile the in-memory mode with the row that was
+        // just created.
+        //
+        // A draft VM exists before the row does, so `/minimal` on a brand-new
+        // session takes the "no session id yet" branch in chooseAgentMode and
+        // records the choice only in memory. Blindly assigning the stored value
+        // here would silently reset that choice to `.normal` — the user would
+        // pick minimal mode, send their first message, and get a normal session.
+        // So: keep a non-normal in-memory choice and persist it; otherwise adopt
+        // whatever the row says (which covers loading an existing session).
+        let storedMode = await ChatStore.shared.agentMode(sessionId: session.id)
+        if agentMode != .normal, storedMode == .normal {
+            if await ChatStore.shared.setAgentMode(sessionId: session.id, mode: agentMode) != .applied {
+                // Could not persist (row raced away); fall back to the row's word
+                // rather than running a mode the database does not agree with.
+                agentMode = storedMode
+            }
+        } else {
+            agentMode = storedMode
+        }
+        // …and if the user came from Settings → Minimal Mode → "Start a minimal
+        // session", spend that one-shot intent here: the row exists now and the
+        // thread is still empty, which is the only window `setAgentMode` allows.
+        if let intent = MinimalModePolicy.Intent.pending {
+            MinimalModePolicy.Intent.pending = nil
+            // ChatStore is an actor; take the intent locally first so a second
+            // consumer cannot also claim it while this await is in flight.
+            if await ChatStore.shared.setAgentMode(sessionId: session.id, mode: intent) == .applied {
+                agentMode = intent
+            }
+        }
         AppLogger(category: "MemDiag").info("[MemDiag] ensureSession sid=\(session.id.prefix(8)) → vm.memoryEnabled=\(self.memoryEnabled)")
         // Tracker migration: if this vm was marked active under its draftId,
         // swap that entry to the real session id. draftId is kept on the vm

@@ -15,6 +15,7 @@
 import SwiftUI
 
 struct MinimalModeSettingsView: View {
+    @Environment(\.dismiss) private var dismiss
     /// Master switch: whether the mode is offered in the slash menu.
     @AppStorage(MinimalModePolicy.Key.enabled) private var minimalModeEnabled = true
 
@@ -68,6 +69,27 @@ struct MinimalModeSettingsView: View {
                 Text(AppLocalized("You choose it once, from the / menu, on a new session. It cannot be changed afterwards: the tool list and prompt a conversation was reasoned under must not change mid-thread."))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+
+                // [T-minimal-mode] The objective's "button above the settings".
+                // Starting the session from here is what makes the mode
+                // discoverable: without it the feature lives behind a command
+                // name a user has to already know.
+                Button {
+                    MinimalModePolicy.Intent.pending = .minimal
+                    dismiss()
+                    // After the sheet is gone, so the new session is not created
+                    // underneath a covering sheet.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                        NotificationCenter.default.post(name: .newChatRequested, object: nil)
+                    }
+                } label: {
+                    Label(AppLocalized("Start a minimal session"), systemImage: AgentMode.minimal.symbol)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.green)
+                .disabled(!minimalModeEnabled)
+                .padding(.top, 6)
             }
             .padding(.vertical, 4)
         }
