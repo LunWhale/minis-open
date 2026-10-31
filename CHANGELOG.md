@@ -2,7 +2,104 @@
 
 All fork commits are listed here, newest first. The base is upstream
 OpenMinis v1.10 (`9cf3a85`), rebased onto upstream v1.12 (`09fc199`),
-then merged with upstream v1.14 (`b4c0661`).
+then merged with upstream v1.14 (`b4c0661`) and v1.15 (`6eda552`).
+
+## [1.15] - 2026-10-31
+
+Fork version 1.15, tracking upstream OpenMinis v1.15. Still **iOS only**.
+
+### Merge upstream v1.15
+
+18 commits, 2173 files (+376k/-64k), keeping every fork feature.
+
+- **iOS 26 background execution.** Upstream's `BackgroundKeepAliveManager` grew
+  from 1855 to 2874 lines and now uses `BGContinuedProcessingTask` — the iOS 26
+  API that keeps a long agent run alive while showing a Live Activity. Settings →
+  Agent Runtime → Enhanced Background exposes the opt-in switch (default off,
+  iOS 26+ only), and `Info.plist` declares `com.openminis.app.continued.*`.
+  This is the answer to iPad suspending long runs.
+- Big files split upstream, and the fork's additions were ported into the new
+  layout: `Views/ContentView.swift` → `Views/ContentView/**`,
+  `Views/Chat/AIChatView.swift` → `Views/Chat/AIChatView/**`,
+  `Agent/Chat/AIChatViewModel.swift` → `Agent/Chat/AIChatViewModel+*.swift`.
+- `deps/ish` advanced to upstream's 1.15 pin (`0fd17a1`), which brings the AOJIT
+  runtime; `deps/build_ish.sh` keeps the fork's patch replay and gains upstream's
+  per-platform loop plus `build_aot.sh`.
+- Android kept out, as the fork requires: 349 conflicting `src/android/**` paths
+  plus `deps/proot` and the Android scripts stay deleted. `scripts/drop-android.sh
+  --check` passes.
+
+### Minimal mode (new)
+
+A token-lean session flavour, modelled on DeepSeek Harness's Minimal preset
+(2 tools, one short prompt, ~1k tokens of context):
+
+- **2 tools**: `shell_execute` + `file_write`. File inspection goes through
+  `cat`/`rg` in the shell.
+- **Prompt replaced, not trimmed**: 1014 chars ≈ 254 tokens versus the normal
+  prompt's 27101 ≈ 6775 — **24.7x** smaller.
+- **Off**: persona (Soul), memory, skills, MCP, todo, sub-agents, and 8 of the 10
+  prompt modules.
+- **Kept, deliberately**: background execution, mounted folders, shared folders,
+  environment variables.
+- **Chosen once**: `/minimal` or `/normal` in a session that has no messages yet,
+  or the "Start a minimal session" button in Settings. Once minimal, the session
+  is locked — enforced in the view model, in `ChatStore.setAgentMode`, and by the
+  message count, so a stale UI cannot write it either.
+- **Marked**: a leaf badge in the sidebar; the mode travels through the session
+  list, single-session reads and search results.
+- Settings → Agent Runtime → Minimal Mode: introduction, the start button, the
+  off/kept tables with reasons, and the user's own installed extensions (all off
+  by default, opted in one at a time).
+
+### Prompt modules wired to 1.15
+
+The fork's pluginizable system prompt had become dead switches in the merge —
+upstream rewrote the prompt as one 27 KB concatenation and nothing read the ten
+module switches any more. Fixed by gating the sections upstream writes inline:
+
+- 9 modules wrap 15 section runs; `promptExtensions` plus user-typed per-plugin
+  guidance ride in a tail.
+- **Contract**: with every module enabled and no override — the stock state —
+  the assembled prompt is upstream 1.15's prompt **byte for byte** (174 ordered
+  string literals, 27101 chars, enforced by `PromptModuleGatingTests`).
+- A module's stored override still replaces its section, so modules stay
+  editable exactly as before.
+
+### Icons, versions, about
+
+- All **13** app-icon variants are upstream 1.15's artwork rotated 180°, including
+  the new `Icon-1024-Tinted.png`. The icon picker had been showing upstream's
+  unflipped thumbnails, and the 1.14 merge had reverted the two 1024 icons.
+- `MARKETING_VERSION` 1.15 / `CURRENT_PROJECT_VERSION` 5 across all 14
+  configurations.
+- About names the upstream base ("fork of OpenMinis 1.15"), because the fork
+  tracks upstream numbering and the number alone cannot identify the codebase.
+
+### Fixes carried in this release
+
+- **"Kernel boot failed: -22"** no longer dead-ends. `-22` is `EINVAL` from
+  `fake_db_init` failing to open `meta.db`; `isInstalled` used to answer from
+  `data/` plus the `.arch` tag alone, so such a tree looked installed for ever.
+  It now requires a usable database, replaces an unbootable tree, and the failure
+  screen offers Reinstall Rootfs / Try Again. A merely unwritable database is
+  reported rather than wiped.
+- **Soul, Todo, Memory, sub-agent and extension gates** restored after upstream's
+  split dropped them from the schema and the settings list.
+- **Honest limit**: a repaired rootfs keeps `/root`'s bytes, but fakefs resolves
+  through `meta.db`, so the guest shell does not list them. `/var/minis` is the
+  user data that genuinely survives. The log says so.
+
+### Docs and tests
+
+- `docs/pluginization-audit.md`: what the plugin promise still covers, what it
+  does not (the 10 prompt modules are now wired; below them, features that were
+  never pluginized are listed explicitly), and a diagnosis of every failing
+  standalone test.
+- `MinimalModeTests` 102 checks, `PromptModuleGatingTests` 28, both green.
+  Suite total 294 passing / 25 failing — all 25 are upstream-1.15 drift,
+  itemised in the audit doc rather than silently updated.
+- All keys in `Localizable.xcstrings` have zh-Hans and zh-Hant.
 
 ## [1.14] - 2026-09-13
 
