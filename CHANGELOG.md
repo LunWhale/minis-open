@@ -110,6 +110,29 @@ that reached registration could die instead of logging.
 - `BGTaskIdentifierTests` pins all of it: no wildcard in the list, the code's
   identifier present verbatim, no interpolated identifiers at any register call.
 
+### Fix: the sandbox could not execute a single guest instruction (build 7)
+
+Upstream 1.15 changed how iSH is compiled: `-Djit=true -Djit_emit=false`, an
+**AOT-only** runtime that "never maps executable memory" and can only run code
+from the AOT images linked into the app. Those images are ~1 GB of assembly and
+are gitignored, so this tree has none — and `build_ish.sh` still built happily,
+producing a 720-byte empty `libish_aot.a`.
+
+The result is a runtime with neither a translator nor any pre-translated code:
+`jit_init()` falls through to "running gadgets only" and no guest block can run.
+That is a crash the instant the sandbox starts, which is exactly the three-dot
+boot screen.
+
+- `build_ish.sh` now decides from reality: AOT runtime only when
+  `deps/aot/aot_*.S` exist, otherwise the plain interpreter — the configuration
+  this fork shipped up to 1.14 and the one verified on device.
+- `jit_control` / `jit_describe` are `weak_import` with NULL guards, so the
+  interpreter build links and the AOJIT UI reports "unavailable" instead of
+  calling through NULL.
+
+Also in build 7: the BGTaskScheduler identifier fix from build 6 (a wildcard that
+can never match, with an uncatchable ObjC exception behind it).
+
 ### Docs and tests
 
 - `docs/pluginization-audit.md`: what the plugin promise still covers, what it

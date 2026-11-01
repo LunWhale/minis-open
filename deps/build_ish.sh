@@ -283,15 +283,34 @@ build_ish() {
         MESON_NDEBUG="false"
     fi
 
+    # [T-aojit-needs-images] -Djit=true -Djit_emit=false is an AOT-ONLY runtime:
+    # it never maps executable memory and can only run code from the AOT images
+    # linked into the app (libish_aot.a). Those images are ~1 GB of assembly and
+    # are gitignored, so a fresh clone has none — and an AOT-only libish with
+    # zero images can execute no guest instruction at all, which looked like a
+    # crash the moment the sandbox started.
+    #
+    # So: use the AOT runtime only when images are actually present, and
+    # otherwise build the plain interpreter — the configuration this fork
+    # shipped up to 1.14 and the one that is known to run on device.
+    if compgen -G "$SCRIPT_DIR/aot/aot_*.S" > /dev/null; then
+        ISH_JIT_FLAGS="-Djit=true -Djit_emit=false"
+        log_info "AOT images present: building the AOT-only runtime"
+    else
+        # [T-aojit-needs-images] No images, so keep the translator ON. This is
+        # iSH's default and the configuration the fork shipped up to 1.14:
+        # blocks are translated at run time into a dual-mapped (RW + RX views of
+        # the same pages) region, which needs no JIT entitlement and no AOT
+        # images. Building with -Djit=false instead would drop the whole JIT
+        # symbol set the app's crash-recovery path links against.
+        ISH_JIT_FLAGS="-Djit=true -Djit_emit=true"
+        log_warning "No AOT images in deps/aot: building with the run-time translator (AOJIT unavailable in the app)"
+    fi
+
     # Check if already configured
     if [ ! -f "$BUILD_DIR/build.ninja" ]; then
         log_info "Configuring meson build..."
 
-        # [T-ios-aojit] -Djit=true -Djit_emit=false: the AOT-only runtime. It
-        # never maps executable memory (no JIT entitlement needed); it only
-        # installs translations from AOT images linked into the app
-        # (libish_aot.a). With no image, or with AOJIT switched off in the
-        # app (the default), blocks run on the gadget engine as before.
         meson setup "$BUILD_DIR" \
             --cross-file "$CROSS_FILE" \
             --buildtype="$MESON_BUILDTYPE" \
@@ -301,8 +320,7 @@ build_ish() {
             -Dkernel=ish \
             -Dengine=asbestos \
             -Dguest_arch=arm64 \
-            -Djit=true \
-            -Djit_emit=false
+            $ISH_JIT_FLAGS
     else
         # Reconfigure both options: an existing build-ios/ from before
         # b_ndebug was introduced would otherwise keep asserts enabled.
@@ -310,8 +328,7 @@ build_ish() {
         meson configure "$BUILD_DIR" \
             --buildtype="$MESON_BUILDTYPE" \
             -Db_ndebug="$MESON_NDEBUG" \
-            -Djit=true \
-            -Djit_emit=false
+            $ISH_JIT_FLAGS
     fi
 
     # Build libraries

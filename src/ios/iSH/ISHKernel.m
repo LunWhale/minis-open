@@ -12,10 +12,16 @@
 #import "Minis-Swift.h"   // MinisContainerDns (ContainerDnsSettings, NetworkMonitor.swift)
 
 // [T-ios-aojit] AOT runtime entry points (deps/ish asbestos/guest-arm64/jit.h,
-// which is not part of the copied headers). libish is built with -Djit=true
-// -Djit_emit=false, so these always exist.
-int jit_control(const char *cmd, size_t len);
-size_t jit_describe(char *buf, size_t size);
+// which is not part of the copied headers).
+//
+// [T-aojit-weak-link] WEAK imports: an iSH built without -Djit (the pure
+// interpreter configuration this fork shipped up to 1.14, and the one
+// build_ish.sh now selects when deps/aot holds no images) does not define these
+// at all. Strong references made that build fail to link; weak ones make a
+// missing symbol a no-op, and the AOJIT UI then reports "unavailable" instead of
+// calling through NULL.
+__attribute__((weak_import)) int jit_control(const char *cmd, size_t len);
+__attribute__((weak_import)) size_t jit_describe(char *buf, size_t size);
 static NSString *const AOJITEnabledDefaultsKey = @"aojitEnabled";
 // [GH#175] For sizeof(sockaddr_un.sun_path) — the Darwin HOST limit that
 // iSH's unchecked sprintf in fs/sock.c writes into. Safe to include here:
@@ -1149,6 +1155,10 @@ static void handle_process_exit(struct task *task, int code) {
 + (void)applyAOJIT {
     BOOL on = [self isAOJITEnabled];
     const char *cmd = on ? "on" : "off";
+    if (jit_control == NULL) {
+        NSLog(@"ISHKernel: [AOJIT] not available (libish built without the AOT runtime)");
+        return;
+    }
     int rc = jit_control(cmd, strlen(cmd));
     NSLog(@"ISHKernel: [AOJIT] %s (rc=%d)", cmd, rc);
 }
@@ -1157,6 +1167,7 @@ static void handle_process_exit(struct task *task, int code) {
     size_t size = 16384;
     char *buf = malloc(size);
     if (buf == NULL) return @"";
+    if (jit_describe == NULL) { free(buf); return @"unavailable (libish built without the AOT runtime)"; }
     jit_describe(buf, size);
     NSString *text = [NSString stringWithUTF8String:buf] ?: @"";
     free(buf);
