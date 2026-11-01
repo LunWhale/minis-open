@@ -90,6 +90,26 @@ module switches any more. Fixed by gating the sections upstream writes inline:
   through `meta.db`, so the guest shell does not list them. `/var/minis` is the
   user data that genuinely survives. The log says so.
 
+### Fix: the iOS 26 background switch could never register (build 6)
+
+`BGTaskSchedulerPermittedIdentifiers` is matched **literally** — a `*` is an
+asterisk, not a wildcard — and `BGTaskScheduler.register` answers a non-permitted
+identifier with an Objective-C exception Swift cannot catch, so the failure was a
+crash rather than the `register` returning false the caller checked for.
+
+This release shipped `com.openminis.app.continued.*` in the plist while the code
+built `com.openminis.app.continued.` + a random UUID per request. The two could
+never match, so the iOS 26 continued-processing switch did nothing, and any path
+that reached registration could die instead of logging.
+
+- One fixed identifier, `com.openminis.app.continued.run`, listed verbatim.
+- Registered once per process (registering the same id twice is what kills the app);
+  every later request reuses it.
+- The plist is read and checked **before** registering, so a future mismatch is a
+  warning line, never a crash.
+- `BGTaskIdentifierTests` pins all of it: no wildcard in the list, the code's
+  identifier present verbatim, no interpolated identifiers at any register call.
+
 ### Docs and tests
 
 - `docs/pluginization-audit.md`: what the plugin promise still covers, what it

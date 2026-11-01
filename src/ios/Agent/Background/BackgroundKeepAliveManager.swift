@@ -20,6 +20,12 @@ final class BackgroundKeepAliveManager: NSObject, ObservableObject, CLLocationMa
     /// Used by `waitIfBackgroundSuspended()` to skip suspension.
     @Published private(set) var isActive = false
 
+    /// [T-bka-continued-fixed-id] Whether this process already registered
+    /// `continuedId` with BGTaskScheduler. Registering the same identifier twice
+    /// kills the app, so registration happens once and every later request reuses
+    /// the id. Stored here, not in an extension: extensions cannot hold storage.
+    private var continuedRegistered = false
+
     /// [T-keepalive-survival-tier] Background-survival capability shown in
     /// Settings → Background → Status. Independent of whether a task is
     /// running right now — it answers "if the app backgrounds at this moment,
@@ -2367,7 +2373,18 @@ extension BackgroundKeepAliveManager {
     enum ContinuedMode: String { case off, preferred, fallback }
 
     static let continuedModeKey = "bka.continuedProcessingMode"
-    static let continuedIdPrefix = "com.openminis.app.continued."
+    /// [T-bka-continued-fixed-id] ONE identifier for every continued-processing
+    /// request, and it must appear verbatim in `BGTaskSchedulerPermittedIdentifiers`.
+    ///
+    /// This used to be `prefix + UUID()`, paired with a `com.openminis.app.continued.*`
+    /// wildcard in Info.plist. Apple's permitting list takes literal strings — a `*`
+    /// is just an asterisk — so the lookup could never match and every registration
+    /// failed. Worse, `BGTaskScheduler.register` answers a non-permitted identifier
+    /// with an uncatchable NSInternalInconsistencyException, not the `false` the
+    /// caller was checking for, so the failure mode was a hard crash rather than a
+    /// log line. One fixed id also matches Apple's model: a single identifier, many
+    /// requests, and registering the same identifier twice is what kills the app.
+    static let continuedId = "com.openminis.app.continued.run"
 
     /// The settings switch wins: off (the default) means never. When it is on,
     /// a DEBUG override (bka.continuedProcessingMode) may pick another mode;
@@ -2526,10 +2543,21 @@ extension BackgroundKeepAliveManager {
 
     @available(iOS 26.0, *)
     private func submitContinuedTask(caller: String) {
-        // A fresh identifier per request: registering one identifier twice
-        // kills the app (BGTaskScheduler).
-        let id = Self.continuedIdPrefix + UUID().uuidString.prefix(8)
-        let registered = BGTaskScheduler.shared.register(forTaskWithIdentifier: id, using: nil) { [weak self] task in
+        let id = Self.continuedId
+        if !continuedRegistered {
+            // Registering a non-permitted identifier raises an Objective-C
+            // exception that Swift cannot catch, so check the plist ourselves
+            // first — a wrong plist entry must be a warning, never a crash.
+            let permitted = Bundle.main.object(
+                forInfoDictionaryKey: "BGTaskSchedulerPermittedIdentifiers") as? [String] ?? []
+            guard permitted.contains(id) else {
+                logger.warning("[BKA][Continued] '\(id)' is not in BGTaskSchedulerPermittedIdentifiers — iOS 26 continued processing unavailable this build")
+                continuedUnavailableThisRun = true
+                return
+            }
+            // One registration per process: registering the same identifier twice
+            // kills the app (BGTaskScheduler).
+            let registered = BGTaskScheduler.shared.register(forTaskWithIdentifier: id, using: nil) { [weak self] task in
             guard let task = task as? BGContinuedProcessingTask else { task.setTaskCompleted(success: false); return }
             // Logged here, on the handler's own thread: a hop to the main actor
             // first would lose the line if the process is suspended right after.
@@ -2544,10 +2572,12 @@ extension BackgroundKeepAliveManager {
             hold.wait()
             NSLog("[BackgroundKeepAlive] [INFO] [BKA][Continued] launch handler returned id=%@", id)
         }
-        guard registered else {
-            logger.warning("[BKA][Continued] register FAILED id=\(id) - is \(Self.continuedIdPrefix)* in BGTaskSchedulerPermittedIdentifiers?")
-            continuedUnavailableThisRun = true
-            return
+            guard registered else {
+                logger.warning("[BKA][Continued] register FAILED id=\(id) — BGTaskScheduler refused it")
+                continuedUnavailableThisRun = true
+                return
+            }
+            continuedRegistered = true
         }
         let card = continuedCardText()
         let request = BGContinuedProcessingTaskRequest(identifier: id, title: card.title, subtitle: card.subtitle)
