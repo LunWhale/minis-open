@@ -133,6 +133,29 @@ boot screen.
 Also in build 7: the BGTaskScheduler identifier fix from build 6 (a wildcard that
 can never match, with an uncatchable ObjC exception behind it).
 
+### Fix: run the guest with the plain interpreter (build 8)
+
+Build 7 kept the JIT and merely re-enabled its run-time translator, which needs
+**executable memory** — and a re-signed sideload has no JIT entitlement, so the
+map fails and the runtime is left with neither a translator nor any AOT image.
+Same dead end as build 5, which is why (7) still crashed at the boot screen.
+
+Build 8 returns to the configuration this fork shipped up to 1.14, the only one
+that needs no executable memory at all:
+
+- `build_ish.sh` now builds `-Djit=false` (plain interpreter) when `deps/aot`
+  holds no images, and only uses the AOT runtime when the images exist.
+- `ISHJITStubs.c` supplies **weak** definitions of the three symbols the app
+  references but an interpreter libish does not define — `jit_control`,
+  `jit_describe`, `jit_crash_sync`. Weak, so an AOT/JIT build's strong
+  definitions override them; `weak_import` alone was not enough, because a
+  static archive linked straight into the executable still needs the symbol.
+- Consequence: `in_jit` is always 0, so the JIT crash-recovery path can never be
+  taken, and the AOJIT switch reports "unavailable" instead of pretending.
+
+Verified in the shipped binary: `dual mapping` and `running gadgets only` — both
+strings live in `jit.c` — are absent, i.e. no JIT code is linked at all.
+
 ### Docs and tests
 
 - `docs/pluginization-audit.md`: what the plugin promise still covers, what it
