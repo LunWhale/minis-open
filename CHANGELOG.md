@@ -199,6 +199,14 @@ the group also has to be baked into the entitlements, which Xcode substitutes fr
 build settings only at signing time, so a key that the runtime honoured but the
 signature did not would have been worse than one honest constant.
 
+### Published as 1.15 (11)
+
+Builds 5–10 were never released (the v1.15 release was withdrawn while the launch
+crash was chased). **11 is the first published build** and contains every fix
+above: the App Group fallback (the actual crash), the plain interpreter, the
+BGTaskScheduler identifier, the Files-app-visible `boot.log`, and the tested
+single configuration point for the App Group.
+
 ### Docs and tests
 
 - `docs/pluginization-audit.md`: what the plugin promise still covers, what it
