@@ -3,6 +3,25 @@ import Foundation
 /// Reads and writes PendingShare data to the App Group shared container.
 /// Compiled into both the main app target and the Share Extension target.
 enum SharedContainerStore {
+    /// App Group identifier shared by the app and its three extensions.
+    ///
+    /// ── CONFIGURATION POINT ──────────────────────────────────────────────
+    /// Change this line to use your OWN App Group. App Group identifiers are
+    /// scoped to a developer TEAM, so with a paid account you can register
+    /// `group.com.openminis.app` on your own team, or use any name you like.
+    ///
+    /// If you change it, change the same literal in all four entitlement files
+    ///   src/ios/Minis.entitlements
+    ///   src/ios/ShareExtension/ShareExtension.entitlements
+    ///   src/ios/FileProvider/FileProvider.entitlements
+    ///   src/ios/AgentWidget/AgentWidget.entitlements
+    /// and make sure your provisioning profile grants it. `AppGroupFallbackTests`
+    /// fails when these five places disagree, so the drift cannot go unnoticed.
+    ///
+    /// Without the group the app still runs: `resolvedContainerRoot` falls back
+    /// to a sandbox directory, and only the cross-process features (Share
+    /// extension, Files-app/FileProvider browsing, widget shared defaults) degrade.
+    /// ─────────────────────────────────────────────────────────────────────
     static let appGroupID = "group.com.openminis.app"
 
     /// App Group container root with a sandbox fallback.

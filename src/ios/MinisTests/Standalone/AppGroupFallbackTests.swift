@@ -92,6 +92,44 @@ let soul = src("Agent/Session/SoulStore.swift")
 check("SoulStore.fileURL resolves through the memory dir (the crash chain)",
       soul.contains("AIChatViewModel.minisMemoryPersistentDir.appendingPathComponent(\"SOUL.md\")"))
 
+
+print("\n▶️  5. one configuration point, five places agreeing")
+
+// [T-appgroup-configurable] The group id is defined once in source and must
+// appear verbatim in all four entitlement files. Without that, changing it in one
+// place silently splits the app from its extensions (or from what iOS grants).
+let storeSrc = src("Shared/SharedContainerStore.swift")
+let declared: String? = {
+    guard let r = storeSrc.range(of: "static let appGroupID = \""),
+          let e = storeSrc.range(of: "\"", range: r.upperBound..<storeSrc.endIndex) else { return nil }
+    return String(storeSrc[r.upperBound..<e.lowerBound])
+}()
+check("the group id is declared in one place", declared != nil, "found \(declared ?? "nil")")
+check("…and it is marked as the configuration point",
+      storeSrc.contains("CONFIGURATION POINT"))
+
+if let group = declared {
+    let entitlements = [
+        "Minis.entitlements",
+        "ShareExtension/ShareExtension.entitlements",
+        "FileProvider/FileProvider.entitlements",
+        "AgentWidget/AgentWidget.entitlements",
+    ]
+    for rel in entitlements {
+        let text = src(rel)
+        check("\(rel) is readable", !text.isEmpty)
+        check("\(rel) grants \(group)", text.contains(group))
+    }
+    check("no entitlement grants a different group",
+          entitlements.allSatisfy { rel in
+              let ids = src(rel).components(separatedBy: "<string>group.")
+                  .dropFirst()
+                  .compactMap { $0.components(separatedBy: "</string>").first }
+                  .map { "group." + $0 }
+              return ids.allSatisfy { $0 == group }
+          })
+}
+
 print("")
 if failures == 0 { print("✅ ALL PASSED") } else { print("❌ \(failures) FAILURE(S)") }
 exit(failures == 0 ? 0 : 1)

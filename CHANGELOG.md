@@ -184,6 +184,21 @@ reachable and why LiveContainer (which provides its own container) looked fine.
 that lookup happens. Both getters go through it, so a sideload with any bundle id
 starts normally and simply loses the Files-app/FileProvider integration.
 
+### App Group is now a single configuration point
+
+The group id was a hardcoded literal in `SharedContainerStore` that also had to
+appear in four entitlement files, with nothing connecting the five. It is now
+documented as the one place to change, and `AppGroupFallbackTests` fails if any of
+the five disagrees — so pointing a fork at its own group (an App Group identifier
+is scoped to a developer TEAM, so a paid account can register
+`group.com.openminis.app` itself, or any other name) cannot silently split the app
+from its extensions.
+
+A build-time `MINIS_APP_GROUP_ID` xcconfig key was attempted first and reverted:
+the group also has to be baked into the entitlements, which Xcode substitutes from
+build settings only at signing time, so a key that the runtime honoured but the
+signature did not would have been worse than one honest constant.
+
 ### Docs and tests
 
 - `docs/pluginization-audit.md`: what the plugin promise still covers, what it
