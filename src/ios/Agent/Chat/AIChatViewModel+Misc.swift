@@ -16,15 +16,20 @@ extension AIChatViewModel {
         Task {
             let bootStart = CFAbsoluteTimeGetCurrent()
             do {
+                BootTrace.mark("ensureKernelBooted: start")
                 if !ISHKernel.shared.isBooted {
                     let installStart = CFAbsoluteTimeGetCurrent()
+                    BootTrace.mark("rootfs install: begin")
                     try RootfsManager.shared.installIfNeeded()
+                    BootTrace.mark("rootfs install: ok")
                     let installElapsed = (CFAbsoluteTimeGetCurrent() - installStart) * 1000
                     logger.info("[KernelBoot] installIfNeeded: \(String(format: "%.1f", installElapsed))ms")
 
                     let kernelStart = CFAbsoluteTimeGetCurrent()
                     let rootPath = RootfsManager.shared.rootfsPath.path
+                    BootTrace.mark("kernel boot: begin root=\(rootPath)")
                     let err = ISHKernel.shared.boot(withRootPath: rootPath)
+                    BootTrace.mark("kernel boot: returned \(err)")
                     let kernelElapsed = (CFAbsoluteTimeGetCurrent() - kernelStart) * 1000
                     logger.info("[KernelBoot] kernel boot call: \(String(format: "%.1f", kernelElapsed))ms")
                     if err < 0 {
@@ -48,7 +53,9 @@ extension AIChatViewModel {
                     // /var/minis/* access already routes correctly.
                     MinisFsRouter.shared.installHook()
                 }
+                BootTrace.mark("mount overlay: begin")
                 RootfsManager.shared.applyDefaultMountOverlay()
+                BootTrace.mark("mount overlay: ok")
                 Task { @MainActor in MirrorSpeedTestViewModel.shared.autoDetectOnceIfNeeded() }
                 kernelStatus = .booted
                 let totalElapsed = (CFAbsoluteTimeGetCurrent() - bootStart) * 1000

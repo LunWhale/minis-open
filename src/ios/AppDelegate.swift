@@ -26,6 +26,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        // [T-boot-trace] First mark of the process: if boot.log has nothing at
+        // all, the crash is before didFinishLaunching.
+        BootTrace.mark("didFinishLaunching: enter")
         // [T-ish-stdin-sigpipe] Ignore SIGPIPE process-wide.
         //
         // The sandbox feeds a command's stdin from a background queue

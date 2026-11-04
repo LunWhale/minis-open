@@ -186,6 +186,10 @@
 	</array>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<!-- [T-boot-trace] Expose Documents in the Files app so a launch that
+	     dies before any UI still leaves a readable boot trace. -->
+	<key>UIFileSharingEnabled</key>
+	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
 	<key>NFCReaderUsageDescription</key>
