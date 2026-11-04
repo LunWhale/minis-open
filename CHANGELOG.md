@@ -156,6 +156,34 @@ that needs no executable memory at all:
 Verified in the shipped binary: `dual mapping` and `running gadgets only` — both
 strings live in `jit.c` — are absent, i.e. no JIT code is linked at all.
 
+### Fix: launch crash from a missing App Group (build 10)
+
+The crash report named it exactly:
+
+```
+EXC_BREAKPOINT / SIGTRAP
+0  libswiftCore  _assertionFailure
+1  AIChatViewModel.minisAppGroupRoot.getter
+2  AIChatViewModel.minisMemoryPersistentDir.getter
+3  SoulStore.fileURL.getter
+4  SoulStore.load()
+5  SoulStore.refreshCache()
+6  MinisApp.init()
+```
+
+`minisAppGroupRoot` and `minisConfigRoot` force-unwrapped
+`containerURL(forSecurityApplicationGroupIdentifier:)`. That returns nil whenever
+the binary is re-signed under a different bundle id — the report shows
+`com.openminis.appp` — because the group `group.com.openminis.app` is then not
+entitled. `MinisApp.init()` reaches it through `SoulStore.refreshCache()`, so the
+process died before a single frame of UI, which is why in-app logs were never
+reachable and why LiveContainer (which provides its own container) looked fine.
+
+`SharedContainerStore.resolvedContainerRoot` — which already falls back to
+`Library/AppGroupFallback` when the group is unavailable — is now the only way
+that lookup happens. Both getters go through it, so a sideload with any bundle id
+starts normally and simply loses the Files-app/FileProvider integration.
+
 ### Docs and tests
 
 - `docs/pluginization-audit.md`: what the plugin promise still covers, what it
