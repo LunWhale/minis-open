@@ -238,6 +238,24 @@ struct SettingsSheet: View {
                         }
                     }
                         .shown(envVarsOn)
+                    // [fork] The Extensions manager itself is NEVER gated: it is
+                    // the page that owns every switch above, so hiding it would
+                    // let a plugin lock its own owner out. Upstream 1.15 moved the
+                    // settings list into this file and the row did not come with
+                    // it — ExtensionManagerView ended up referenced by nothing.
+                    NavigationLink {
+                        ExtensionManagerView()
+                    } label: {
+                        Label {
+                            Text(AppLocalized("Extensions"))
+                        } icon: {
+                            Image(systemName: "puzzlepiece.extension.fill")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.white)
+                                .frame(width: 21, height: 21)
+                                .background(.gray, in: Circle())
+                        }
+                    }
                 }
 
                 Section("Storage") {

@@ -207,6 +207,23 @@ above: the App Group fallback (the actual crash), the plain interpreter, the
 BGTaskScheduler identifier, the Files-app-visible `boot.log`, and the tested
 single configuration point for the App Group.
 
+### Fix: the Extensions manager was unreachable (build 12)
+
+Upstream 1.15 deleted `ContentView.swift` — the file that presented the Extensions
+manager as a sheet — and moved the settings list into `SettingsSheet.swift`, but
+the "Extensions" row did not come with it. `ExtensionManagerView` ended up
+referenced by **nothing**: the whole plugin surface (every built-in switch, the
+installed-extension list, `/extensions`, `minis://extensions`) was gone while the
+code still compiled.
+
+- Settings → Agent Runtime → **Extensions** is back, and is deliberately never
+  plugin-gated: it owns the switches, so hiding it would let a plugin lock its own
+  owner out.
+- `DeepLinkCoordinator.showExtensions` has a consumer again, so `/extensions` and
+  `minis://extensions` open the manager.
+- `ExtensionsReachabilityTests` scans the whole app for the reference and pins the
+  settings row, the sheet and the flag reset.
+
 ### Docs and tests
 
 - `docs/pluginization-audit.md`: what the plugin promise still covers, what it

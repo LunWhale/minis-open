@@ -165,6 +165,11 @@ struct ContentView: View {
     /// aggregates and publishes it here (see `noteRunningSessionIds`), so the
     /// set costs nothing extra to maintain.
     @State private var runningSessionIds: Set<String> = []
+    /// [fork] Presents the Extensions manager for `minis://extensions` and
+    /// `/extensions`. Upstream 1.15 deleted the ContentView.swift that owned this
+    /// sheet, and nothing consumed `DeepLinkCoordinator.showExtensions` afterwards,
+    /// so the deep link silently did nothing.
+    @State private var showExtensionsSheet = false
 
     /// Publish the running-id set computed by the groups pass. Assigns only on
     /// a real change: Set == is O(n) but the sets are small, and an
@@ -1363,6 +1368,15 @@ struct ContentView: View {
                         withTransaction(tx) { openSession(target) }
                     }
                 }
+            }
+        }
+        .sheet(isPresented: $showExtensionsSheet) {
+            NavigationStack { ExtensionManagerView() }
+        }
+        .onChange(of: deepLink.showExtensions) { show in
+            if show {
+                showExtensionsSheet = true
+                deepLink.showExtensions = false
             }
         }
         .onChange(of: deepLink.showEnvironmentVariables) { show in
