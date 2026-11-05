@@ -243,8 +243,14 @@ struct SettingsSheet: View {
                     // let a plugin lock its own owner out. Upstream 1.15 moved the
                     // settings list into this file and the row did not come with
                     // it — ExtensionManagerView ended up referenced by nothing.
+                    // [fork] `embedded: true` is REQUIRED here: this row is
+                    // pushed inside SettingsSheet's own NavigationStack, and the
+                    // page's own nested NavigationStack (the default, for the
+                    // sheet-root case) tears the enclosing Settings sheet down
+                    // instead of showing the list — which reads as "the
+                    // Extensions page is gone" when you tap the row.
                     NavigationLink {
-                        ExtensionManagerView()
+                        ExtensionManagerView(embedded: true)
                     } label: {
                         Label {
                             Text(AppLocalized("Extensions"))

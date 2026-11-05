@@ -41,7 +41,12 @@ check("…and by more than its own file", referrers.count >= 1, "\(referrers)")
 print("\n▶️  2. there is a settings entry for it")
 
 let sheet = src("Views/Settings/SettingsSheet.swift")
-check("Settings links to the manager", sheet.contains("ExtensionManagerView()"))
+check("Settings links to the manager", sheet.contains("ExtensionManagerView(embedded: true)"))
+// The page wraps itself in a NavigationStack unless `embedded` is set; nested
+// inside SettingsSheet's stack that tears the settings sheet down instead of
+// pushing — the row looks dead.
+check("…and pushes it embedded (not as a second NavigationStack)",
+      !sheet.contains("ExtensionManagerView()"))
 check("the row is inside Agent Runtime",
       sheet.contains("Section(\"Agent Runtime\")"))
 // The one row that must never be plugin-gated — it owns the switches.
