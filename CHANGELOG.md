@@ -4,235 +4,96 @@ All fork commits are listed here, newest first. The base is upstream
 OpenMinis v1.10 (`9cf3a85`), rebased onto upstream v1.12 (`09fc199`),
 then merged with upstream v1.14 (`b4c0661`) and v1.15 (`6eda552`).
 
-## [1.15] - 2026-10-31
+## [1.15]
 
 Fork version 1.15, tracking upstream OpenMinis v1.15. Still **iOS only**.
 
-### Merge upstream v1.15
+### Upstream v1.15
 
-18 commits, 2173 files (+376k/-64k), keeping every fork feature.
+18 commits, 2173 files. The fork keeps every feature it had.
 
-- **iOS 26 background execution.** Upstream's `BackgroundKeepAliveManager` grew
-  from 1855 to 2874 lines and now uses `BGContinuedProcessingTask` — the iOS 26
-  API that keeps a long agent run alive while showing a Live Activity. Settings →
-  Agent Runtime → Enhanced Background exposes the opt-in switch (default off,
-  iOS 26+ only), and `Info.plist` declares `com.openminis.app.continued.*`.
-  This is the answer to iPad suspending long runs.
-- Big files split upstream, and the fork's additions were ported into the new
-  layout: `Views/ContentView.swift` → `Views/ContentView/**`,
+- **iOS 26 background execution.** `BackgroundKeepAliveManager` now uses
+  `BGContinuedProcessingTask`, which keeps a long agent run alive behind a Live
+  Activity. Settings → Agent Runtime → Enhanced Background exposes the opt-in
+  (default off); the identifier is declared in Info.plist and checked before use.
+- Upstream split three large files; the fork's additions moved with them:
+  `Views/ContentView.swift` → `Views/ContentView/**`,
   `Views/Chat/AIChatView.swift` → `Views/Chat/AIChatView/**`,
   `Agent/Chat/AIChatViewModel.swift` → `Agent/Chat/AIChatViewModel+*.swift`.
-- `deps/ish` advanced to upstream's 1.15 pin (`0fd17a1`), which brings the AOJIT
-  runtime; `deps/build_ish.sh` keeps the fork's patch replay and gains upstream's
-  per-platform loop plus `build_aot.sh`.
-- Android kept out, as the fork requires: 349 conflicting `src/android/**` paths
-  plus `deps/proot` and the Android scripts stay deleted. `scripts/drop-android.sh
-  --check` passes.
+- `deps/ish` advanced to upstream's pin, which brings the AOJIT runtime; see
+  *Sandbox* below for how this build is configured.
+- Android kept out: `scripts/drop-android.sh --check` passes.
 
 ### Minimal mode (new)
 
-A token-lean session flavour, modelled on DeepSeek Harness's Minimal preset
-(2 tools, one short prompt, ~1k tokens of context):
+A token-lean session flavour, modelled on DeepSeek Harness's Minimal preset.
 
-- **2 tools**: `shell_execute` + `file_write`. File inspection goes through
-  `cat`/`rg` in the shell.
-- **Prompt replaced, not trimmed**: 1014 chars ≈ 254 tokens versus the normal
-  prompt's 27101 ≈ 6775 — **24.7x** smaller.
-- **Off**: persona (Soul), memory, skills, MCP, todo, sub-agents, and 8 of the 10
-  prompt modules.
-- **Kept, deliberately**: background execution, mounted folders, shared folders,
-  environment variables.
-- **Chosen once**: `/minimal` or `/normal` in a session that has no messages yet,
-  or the "Start a minimal session" button in Settings. Once minimal, the session
-  is locked — enforced in the view model, in `ChatStore.setAgentMode`, and by the
-  message count, so a stale UI cannot write it either.
-- **Marked**: a leaf badge in the sidebar; the mode travels through the session
-  list, single-session reads and search results.
-- Settings → Agent Runtime → Minimal Mode: introduction, the start button, the
-  off/kept tables with reasons, and the user's own installed extensions (all off
-  by default, opted in one at a time).
+- **2 tools**: `shell_execute` + `file_write`.
+- **Prompt replaced, not trimmed**: 1014 chars ≈ 254 tokens against the normal
+  prompt's 27101 ≈ 6775 (24.7× smaller).
+- **Off**: persona, memory, skills, MCP, todo, sub-agents, and 8 of the 10 prompt
+  modules. **Kept**: background execution, mounted folders, shared folders,
+  environment variables — things that cost nothing per turn or that the agent
+  cannot work without.
+- **Chosen once**: `/minimal` or `/normal` on a session with no messages yet, or
+  the button in Settings. Once minimal the session is locked — enforced in the
+  view model, in `ChatStore.setAgentMode`, and by the message count.
+- **Marked**: a leaf badge in the sidebar, carried through the session list,
+  single-session reads and search results.
+- Your own installed extensions all start **off**; opt in the ones a given
+  minimal session needs.
 
-### Prompt modules wired to 1.15
+### Prompt modules wired to 1.15's prompt
 
-The fork's pluginizable system prompt had become dead switches in the merge —
-upstream rewrote the prompt as one 27 KB concatenation and nothing read the ten
-module switches any more. Fixed by gating the sections upstream writes inline:
+Upstream rewrote the prompt as one 27 KB concatenation and nothing read the ten
+module switches, so the fork's pluginizable prompt had become dead switches. The
+sections upstream writes inline are now gated instead of duplicated:
 
-- 9 modules wrap 15 section runs; `promptExtensions` plus user-typed per-plugin
-  guidance ride in a tail.
-- **Contract**: with every module enabled and no override — the stock state —
-  the assembled prompt is upstream 1.15's prompt **byte for byte** (174 ordered
-  string literals, 27101 chars, enforced by `PromptModuleGatingTests`).
-- A module's stored override still replaces its section, so modules stay
-  editable exactly as before.
+**Contract**: with every module enabled and no override — the stock state — the
+assembled prompt is upstream 1.15's prompt byte for byte (174 ordered string
+literals, 27101 chars). `PromptModuleGatingTests` enforces it on every run.
 
 ### Icons, versions, about
 
-- All **13** app-icon variants are upstream 1.15's artwork rotated 180°, including
-  the new `Icon-1024-Tinted.png`. The icon picker had been showing upstream's
-  unflipped thumbnails, and the 1.14 merge had reverted the two 1024 icons.
-- `MARKETING_VERSION` 1.15 / `CURRENT_PROJECT_VERSION` 5 across all 14
-  configurations.
-- About names the upstream base ("fork of OpenMinis 1.15"), because the fork
+- All 13 app-icon variants are upstream 1.15's artwork rotated 180°, including
+  the new Tinted icon.
+- `MARKETING_VERSION` 1.15; About names the upstream base, because the fork
   tracks upstream numbering and the number alone cannot identify the codebase.
 
-### Fixes carried in this release
+### Fixes
 
-- **"Kernel boot failed: -22"** no longer dead-ends. `-22` is `EINVAL` from
-  `fake_db_init` failing to open `meta.db`; `isInstalled` used to answer from
-  `data/` plus the `.arch` tag alone, so such a tree looked installed for ever.
-  It now requires a usable database, replaces an unbootable tree, and the failure
-  screen offers Reinstall Rootfs / Try Again. A merely unwritable database is
-  reported rather than wiped.
-- **Soul, Todo, Memory, sub-agent and extension gates** restored after upstream's
-  split dropped them from the schema and the settings list.
-- **Honest limit**: a repaired rootfs keeps `/root`'s bytes, but fakefs resolves
-  through `meta.db`, so the guest shell does not list them. `/var/minis` is the
-  user data that genuinely survives. The log says so.
-
-### Fix: the iOS 26 background switch could never register (build 6)
-
-`BGTaskSchedulerPermittedIdentifiers` is matched **literally** — a `*` is an
-asterisk, not a wildcard — and `BGTaskScheduler.register` answers a non-permitted
-identifier with an Objective-C exception Swift cannot catch, so the failure was a
-crash rather than the `register` returning false the caller checked for.
-
-This release shipped `com.openminis.app.continued.*` in the plist while the code
-built `com.openminis.app.continued.` + a random UUID per request. The two could
-never match, so the iOS 26 continued-processing switch did nothing, and any path
-that reached registration could die instead of logging.
-
-- One fixed identifier, `com.openminis.app.continued.run`, listed verbatim.
-- Registered once per process (registering the same id twice is what kills the app);
-  every later request reuses it.
-- The plist is read and checked **before** registering, so a future mismatch is a
-  warning line, never a crash.
-- `BGTaskIdentifierTests` pins all of it: no wildcard in the list, the code's
-  identifier present verbatim, no interpolated identifiers at any register call.
-
-### Fix: the sandbox could not execute a single guest instruction (build 7)
-
-Upstream 1.15 changed how iSH is compiled: `-Djit=true -Djit_emit=false`, an
-**AOT-only** runtime that "never maps executable memory" and can only run code
-from the AOT images linked into the app. Those images are ~1 GB of assembly and
-are gitignored, so this tree has none — and `build_ish.sh` still built happily,
-producing a 720-byte empty `libish_aot.a`.
-
-The result is a runtime with neither a translator nor any pre-translated code:
-`jit_init()` falls through to "running gadgets only" and no guest block can run.
-That is a crash the instant the sandbox starts, which is exactly the three-dot
-boot screen.
-
-- `build_ish.sh` now decides from reality: AOT runtime only when
-  `deps/aot/aot_*.S` exist, otherwise the plain interpreter — the configuration
-  this fork shipped up to 1.14 and the one verified on device.
-- `jit_control` / `jit_describe` are `weak_import` with NULL guards, so the
-  interpreter build links and the AOJIT UI reports "unavailable" instead of
-  calling through NULL.
-
-Also in build 7: the BGTaskScheduler identifier fix from build 6 (a wildcard that
-can never match, with an uncatchable ObjC exception behind it).
-
-### Fix: run the guest with the plain interpreter (build 8)
-
-Build 7 kept the JIT and merely re-enabled its run-time translator, which needs
-**executable memory** — and a re-signed sideload has no JIT entitlement, so the
-map fails and the runtime is left with neither a translator nor any AOT image.
-Same dead end as build 5, which is why (7) still crashed at the boot screen.
-
-Build 8 returns to the configuration this fork shipped up to 1.14, the only one
-that needs no executable memory at all:
-
-- `build_ish.sh` now builds `-Djit=false` (plain interpreter) when `deps/aot`
-  holds no images, and only uses the AOT runtime when the images exist.
-- `ISHJITStubs.c` supplies **weak** definitions of the three symbols the app
-  references but an interpreter libish does not define — `jit_control`,
-  `jit_describe`, `jit_crash_sync`. Weak, so an AOT/JIT build's strong
-  definitions override them; `weak_import` alone was not enough, because a
-  static archive linked straight into the executable still needs the symbol.
-- Consequence: `in_jit` is always 0, so the JIT crash-recovery path can never be
-  taken, and the AOJIT switch reports "unavailable" instead of pretending.
-
-Verified in the shipped binary: `dual mapping` and `running gadgets only` — both
-strings live in `jit.c` — are absent, i.e. no JIT code is linked at all.
-
-### Fix: launch crash from a missing App Group (build 10)
-
-The crash report named it exactly:
-
-```
-EXC_BREAKPOINT / SIGTRAP
-0  libswiftCore  _assertionFailure
-1  AIChatViewModel.minisAppGroupRoot.getter
-2  AIChatViewModel.minisMemoryPersistentDir.getter
-3  SoulStore.fileURL.getter
-4  SoulStore.load()
-5  SoulStore.refreshCache()
-6  MinisApp.init()
-```
-
-`minisAppGroupRoot` and `minisConfigRoot` force-unwrapped
-`containerURL(forSecurityApplicationGroupIdentifier:)`. That returns nil whenever
-the binary is re-signed under a different bundle id — the report shows
-`com.openminis.appp` — because the group `group.com.openminis.app` is then not
-entitled. `MinisApp.init()` reaches it through `SoulStore.refreshCache()`, so the
-process died before a single frame of UI, which is why in-app logs were never
-reachable and why LiveContainer (which provides its own container) looked fine.
-
-`SharedContainerStore.resolvedContainerRoot` — which already falls back to
-`Library/AppGroupFallback` when the group is unavailable — is now the only way
-that lookup happens. Both getters go through it, so a sideload with any bundle id
-starts normally and simply loses the Files-app/FileProvider integration.
-
-### App Group is now a single configuration point
-
-The group id was a hardcoded literal in `SharedContainerStore` that also had to
-appear in four entitlement files, with nothing connecting the five. It is now
-documented as the one place to change, and `AppGroupFallbackTests` fails if any of
-the five disagrees — so pointing a fork at its own group (an App Group identifier
-is scoped to a developer TEAM, so a paid account can register
-`group.com.openminis.app` itself, or any other name) cannot silently split the app
-from its extensions.
-
-A build-time `MINIS_APP_GROUP_ID` xcconfig key was attempted first and reverted:
-the group also has to be baked into the entitlements, which Xcode substitutes from
-build settings only at signing time, so a key that the runtime honoured but the
-signature did not would have been worse than one honest constant.
-
-### Published as 1.15 (11)
-
-Builds 5–10 were never released (the v1.15 release was withdrawn while the launch
-crash was chased). **11 is the first published build** and contains every fix
-above: the App Group fallback (the actual crash), the plain interpreter, the
-BGTaskScheduler identifier, the Files-app-visible `boot.log`, and the tested
-single configuration point for the App Group.
-
-### Fix: the Extensions manager was unreachable (build 12)
-
-Upstream 1.15 deleted `ContentView.swift` — the file that presented the Extensions
-manager as a sheet — and moved the settings list into `SettingsSheet.swift`, but
-the "Extensions" row did not come with it. `ExtensionManagerView` ended up
-referenced by **nothing**: the whole plugin surface (every built-in switch, the
-installed-extension list, `/extensions`, `minis://extensions`) was gone while the
-code still compiled.
-
-- Settings → Agent Runtime → **Extensions** is back, and is deliberately never
-  plugin-gated: it owns the switches, so hiding it would let a plugin lock its own
-  owner out.
-- `DeepLinkCoordinator.showExtensions` has a consumer again, so `/extensions` and
-  `minis://extensions` open the manager.
-- `ExtensionsReachabilityTests` scans the whole app for the reference and pins the
-  settings row, the sheet and the flag reset.
+- **Launch crash on a re-signed build.** `minisAppGroupRoot` and `minisConfigRoot`
+  force-unwrapped `containerURL(forSecurityApplicationGroupIdentifier:)`, which
+  returns nil whenever the bundle id differs from the entitlement's — the app died
+  inside `MinisApp.init()`, before any UI. Both now go through
+  `SharedContainerStore.resolvedContainerRoot`, whose fallback keeps the app
+  running; only the cross-process features (Share extension, Files-app browsing,
+  widget shared defaults) degrade. The App Group is one documented configuration
+  point, and `AppGroupFallbackTests` fails if the four entitlement files disagree.
+- **Sandbox.** Upstream compiles iSH as an AOT-only runtime (no run-time
+  translation, executable memory never mapped) and expects ~1 GB of AOT images
+  that are gitignored — an image-less build cannot execute a single guest
+  instruction. `build_ish.sh` now uses the AOT runtime only when those images
+  exist and otherwise builds the plain interpreter this fork shipped up to 1.14.
+  `ISHJITStubs.c` supplies weak definitions of the three JIT symbols the app
+  references, so both configurations link.
+- **Extensions manager was unreachable.** Upstream deleted the file that presented
+  it, and `ExtensionManagerView` ended up referenced by nothing: the whole plugin
+  surface was gone while the code still compiled. Restored as Settings → Agent
+  Runtime → Extensions, and `/extensions` / `minis://extensions` open it again.
+  It is deliberately never plugin-gated — it owns the switches.
+- **Diagnostics.** `UIFileSharingEnabled` exposes Documents in the Files app and
+  `Documents/boot.log` records the launch milestones with fsync, so a launch that
+  dies before any UI still leaves evidence.
+- Soul / Todo / Memory / sub-agent / extension gates restored after the split.
 
 ### Docs and tests
 
-- `docs/pluginization-audit.md`: what the plugin promise still covers, what it
-  does not (the 10 prompt modules are now wired; below them, features that were
-  never pluginized are listed explicitly), and a diagnosis of every failing
-  standalone test.
-- `MinimalModeTests` 102 checks, `PromptModuleGatingTests` 28, both green.
-  Suite total 294 passing / 25 failing — all 25 are upstream-1.15 drift,
-  itemised in the audit doc rather than silently updated.
+- `docs/pluginization-audit.md` — what the plugin promise covers, what it does not,
+  the unreferenced-view scan, and a diagnosis of every failing standalone test.
+- New suites: `MinimalModeTests`, `PromptModuleGatingTests`,
+  `BGTaskIdentifierTests`, `AppGroupFallbackTests`, `ExtensionsReachabilityTests`,
+  `RootfsMetaDBBootabilityTests`.
 - All keys in `Localizable.xcstrings` have zh-Hans and zh-Hant.
 
 ## [1.14] - 2026-09-13

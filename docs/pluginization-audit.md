@@ -215,3 +215,34 @@ default DerivedData location. Fix: have the harness resolve both locations.
 (the macOS interpreter has no UIKit). `RetryPayloadAndIndexTests`,
 `ImageCtxIosETests` — no `❌` line, abort before asserting. These four cannot be
 judged on this machine; they need a device/simulator run.
+
+---
+
+## 8. Unreferenced views after the 1.15 split
+
+A scan of every app source (734 files, 1678 declared types) for types with zero
+references outside their own file, run because the Extensions manager was exactly
+that — compiled, unreachable, invisible to the user. Seven views are in that state.
+
+Fixed: **`ExtensionManagerView`** — Settings → Agent Runtime → Extensions, plus the
+`/extensions` and `minis://extensions` deep link. See §8.1 of the changelog entry.
+
+Still unreferenced, classified by what a user would notice:
+
+| View | File | Assessment |
+|---|---|---|
+| `MinisImageView`, `MinisFileChipView` | `Views/Chat/MinisMediaViews.swift` | Legacy. Chat media renders through the markdown path; these are leftovers of the replaced renderer. Harmless. |
+| `ICloudBackupView` | `Views/Backup/ICloudBackupView.swift` | **Needs a decision.** Upstream 1.15 folded iCloud into `CloudSyncSettingsView` + backup destinations; no settings row or deep link reaches this page any more. Either restore a row or delete the file. |
+| `VoiceWaveformView` | `Views/Chat/Voice/VoiceWaveformView.swift` | **Needs a decision.** The voice UI no longer shows a waveform. Restore the call site or delete it. |
+| `RemoteDeviceSessionsView`, `RemoteMemoriesListView`, `RemoteSkillsListView` | `Views/Settings/CloudSyncSettingsView.swift` | **Needs a decision.** Remote browsing of another device's sessions/memories/skills has no entry point; `CloudSyncSettingsView` presents its own sections instead. |
+| `BrowserBenchTestView` | `Debug/BrowserBenchTestView.swift` | Debug-only harness. Harmless. |
+
+Also orphaned: `DeepLinkCoordinator.pendingFocus` is never set and never read.
+
+Two classes of regression this scan cannot see, worth checking separately when
+touching a split file:
+1. an `@Published` flag that a router sets but nothing observes (this is how
+   `showExtensions` died);
+2. a `NavigationLink` target that exists but whose row was dropped in the move
+   (this is how the Extensions row died).
+`ExtensionsReachabilityTests` now pins the first two for that one feature.
