@@ -173,6 +173,28 @@ enum ModelsDevAPI { static func enrichModel(_ m: LLMModel) -> LLMModel { m } }
 enum XAIModelsAPI { static var allModels: [LLMModel] { [] } }
 enum KimiModelsAPI { static var allModels: [LLMModel] { [] } }
 
+// AgentMode names the feature plugins by id. The real BuiltinExtension lives in
+// Agent/Extension and drags the registry, the manifest store and the JS runtime
+// in behind it, none of which the request-body path touches.
+enum BuiltinExtension {
+    static let todoID = "builtin.todo"
+    static let subagentsID = "builtin.subagents"
+    static let soulID = "builtin.soul"
+    static let mcpID = "builtin.mcp"
+    static let mountsID = "builtin.mounts"
+    static let memoryID = "builtin.memory"
+    static let skillsID = "builtin.skills"
+    static let envVarsID = "builtin.env-vars"
+    static let sharedFoldersID = "builtin.shared-folders"
+    static let promptShellID = "builtin.prompt.shell"
+    static let promptWorkspaceID = "builtin.prompt.workspace"
+    static let promptMemoryID = "builtin.prompt.memory"
+    static let promptCodingID = "builtin.prompt.coding"
+    static let promptAppleID = "builtin.prompt.apple"
+    static let promptMinisCLIID = "builtin.prompt.minis-cli"
+    static let promptEnvSecretsID = "builtin.prompt.env-secrets"
+}
+
 """
 func emit(_ s: String) { out += s + "\n" }
 
@@ -294,7 +316,7 @@ for f in ["Fixtures.swift", "WireImages.swift", "Scenarios.swift"] {
     }
     generated[f] = t
 }
-let wholeFiles = ["Providers/AgentProvider.swift", "Agent/Chat/ChatStoreModels.swift", "Providers/LLMTypes.swift",
+let wholeFiles = ["Providers/AgentProvider.swift", "Agent/Chat/ChatStoreModels.swift", "Agent/Chat/AgentMode.swift", "Providers/LLMTypes.swift",
                   "Providers/ProviderTypes.swift", "Providers/ThinkingLevelCatalog.swift",
                   "Providers/Gemini/GeminiWireFormat.swift"]
 for f in wholeFiles { generated["whole_" + (f as NSString).lastPathComponent] = source(f) }

@@ -1711,21 +1711,9 @@ private final class EagerStreamingURLProtocol: URLProtocol, URLSessionDataDelega
         let mutable = (request as NSURLRequest).mutableCopy() as! NSMutableURLRequest
         URLProtocol.setProperty(true, forKey: "EagerHandled", in: mutable)
         RequestBodyPatcher.materializeBodyStream(mutable)
-        // [T-anthropic-toolimages-cross-request] Claim this request's token
-        // BEFORE patchToolResultsWithImages, exactly as OAuthURLProtocol does.
-        // Tool-result images are stored per request token, and without the
-        // stamp `takeToolResultImages` sees no token and returns empty — so on
-        // the api-key path (EagerStreamingHTTPClient) images attached to a tool
-        // result went out as plain text. Leaving the token pending also let a
-        // LATER request claim it.
-        RequestBodyPatcher.stampRequestToken(onto: mutable)
-        RequestBodyPatcher.normalizeKeyOrder(in: mutable)
-        RequestBodyPatcher.injectToolsCacheControl(into: mutable)
-        RequestBodyPatcher.injectEagerInputStreaming(into: mutable)
-        RequestBodyPatcher.patchToolResultsWithImages(into: mutable)
-        RequestBodyPatcher.injectCacheTTL(into: mutable)
-        RequestBodyPatcher.injectThinkingConfig(into: mutable)
-        RequestBodyPatcher.injectThinkingBlocksForCompatProxy(into: mutable)
+        // One chain, not two. The stamps come first inside the helper, so a
+        // tool-result image is claimed by this request before the patcher
+        // looks for it, and no patcher runs twice.
         RequestBodyPatcher.applyKeyAuthBodyPatches(to: mutable)
 
         // Remove stale Content-Length — URLSession will recalculate from httpBody
@@ -1921,17 +1909,7 @@ private final class DualAuthURLProtocol: URLProtocol, URLSessionDataDelegate {
 
         // Apply same patching as EagerStreamingURLProtocol
         RequestBodyPatcher.materializeBodyStream(mutable)
-        // [T-anthropic-toolimages-cross-request] Same missing stamp as
-        // EagerStreamingURLProtocol above — the manual-token path
-        // (DualAuthHTTPClient) dropped tool-result images for the same reason.
-        RequestBodyPatcher.stampRequestToken(onto: mutable)
-        RequestBodyPatcher.normalizeKeyOrder(in: mutable)
-        RequestBodyPatcher.injectToolsCacheControl(into: mutable)
-        RequestBodyPatcher.injectEagerInputStreaming(into: mutable)
-        RequestBodyPatcher.patchToolResultsWithImages(into: mutable)
-        RequestBodyPatcher.injectCacheTTL(into: mutable)
-        RequestBodyPatcher.injectThinkingConfig(into: mutable)
-        RequestBodyPatcher.injectThinkingBlocksForCompatProxy(into: mutable)
+        // Same single chain as EagerStreamingHTTPClient, for the same reason.
         RequestBodyPatcher.applyKeyAuthBodyPatches(to: mutable)
         mutable.setValue(nil, forHTTPHeaderField: "Content-Length")
 
