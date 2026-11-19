@@ -354,8 +354,20 @@ for (apk, inside, bid) in [("musl-1.2.5-r8.apk", "lib/ld-musl-aarch64.so.1", "38
 for apk in ["musl-utils-1.2.5-r8.apk", "busybox-binsh-1.37.0-r8.apk", "ssl_client-1.37.0-r8.apk"] {
     check("bundled \(apk) present", FileManager.default.fileExists(atPath: restoreDir.appendingPathComponent(apk).path))
 }
-check("bundled in the app (Resources) and kept in git",
-      pbx.contains("E5A000A01 /* AOJITRestore in Resources */,") && gitignore.contains("!src/ios/AOJITRestore/*.apk"))
+let restoreAPKs = ["musl-1.2.5-r8.apk", "musl-utils-1.2.5-r8.apk", "busybox-1.37.0-r8.apk", "busybox-binsh-1.37.0-r8.apk"]
+func trackedInGit(_ path: String) -> Bool {
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+    p.arguments = ["-C", repo.path, "ls-files", "--error-unmatch", path]
+    p.standardOutput = FileHandle.nullDevice
+    p.standardError = FileHandle.nullDevice
+    do { try p.run() } catch { return false }
+    p.waitUntilExit()
+    return p.terminationStatus == 0
+}
+check("bundled in the app (Resources)", pbx.contains("E5A000A01 /* AOJITRestore in Resources */,"))
+check("the restore apks are tracked by git and nothing ignores them",
+      restoreAPKs.allSatisfy { trackedInGit("src/ios/AOJITRestore/\($0)") } && !gitignore.contains("*.apk"))
 func at(_ s: String) -> String.Index { restoreSh.range(of: s)?.lowerBound ?? restoreSh.endIndex }
 check("restore.sh: rollback download → dry run → install → rollback, in that order",
       at("apk fetch -q -o \"$ROLLBACK\"") < at("apk add --simulate --no-network $files")
@@ -463,12 +475,17 @@ let firstProc = kernel.range(of: "err = become_first_process();")
 check("applied before the first guest process",
       applyAt != nil && firstProc != nil && applyAt!.lowerBound < firstProc!.lowerBound)
 check("changing the setting applies at once", kernel.contains("[NSUserDefaults.standardUserDefaults setBool:enabled forKey:AOJITEnabledDefaultsKey];\n    [self applyAOJIT];"))
-check("libish is AOT-only (setup)", buildIsh.contains("-Dguest_arch=arm64 \\\n            -Djit=true \\\n            -Djit_emit=false"))
-check("libish is AOT-only (reconfigure)", buildIsh.contains("-Db_ndebug=\"$MESON_NDEBUG\" \\\n            -Djit=true \\\n            -Djit_emit=false"))
+check("AOT runtime only when images exist",
+      buildIsh.contains("if compgen -G \"$SCRIPT_DIR/aot/aot_*.S\"")
+      && buildIsh.contains("ISH_JIT_FLAGS=\"-Djit=true -Djit_emit=false\""))
+check("plain interpreter when there are no images",
+      buildIsh.contains("ISH_JIT_FLAGS=\"-Djit=false\"") && buildIsh.contains("ISH_BUILD_HAS_JIT=0"))
+check("meson gets whichever flags the branch picked",
+      buildIsh.components(separatedBy: "            $ISH_JIT_FLAGS").count - 1 == 2)
 check("images archive built by build_ish.sh", buildIsh.contains("bash \"$SCRIPT_DIR/build_aot.sh\""))
 check("empty archive when no images (link never breaks)", buildAot.contains("void ish_aot_none(void) {}"))
 check("archive force-loaded in both configurations",
-      pbx.components(separatedBy: "\"-force_load\",\n\t\t\t\t\t\"$(SRCROOT)/../../deps/libs/libish_aot.a\",").count - 1 == 2)
+      pbx.components(separatedBy: "\"-force_load\",\n\t\t\t\t\t\"$(ISH_LIBS_DIR)/libish_aot.a\",").count - 1 == 2)
 check(".S images kept out of git", gitignore.contains("deps/aot/*.S"))
 
 print("")

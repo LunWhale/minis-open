@@ -36,7 +36,8 @@
   grep -rn "MinisNet\|MinisTs" --include=*.swift src/ios   # 空
   ```
 
-  即：能力在库里，入口不存在。Android 才是这套 API 的消费者。
+  即：能力在库里，入口不存在——`MinisNetfs*` 同样是「编进框架、Swift 零调用」的状态。
+  Android 才是这套 API 的消费者。
 - **`src/shared/network/route_vectors.json`** → 只有 `deps/rclone-mobile/nethub/spec_vectors_test.go`
   读它，用于把共享 spec 跑成 Go 测试用例（本轮已跑，见 §5）。
 - **`src/android/app/build.gradle.kts`** → fork 已删 Android；合并时是唯一的冲突
@@ -50,7 +51,8 @@
 | MCP | `src/ios/Agent/Session/MCPStore.swift` + `MCPOAuth*` | HTTP/SSE + stdio（经 iSH shell） | 服务器由用户配置，等于「已经插件化」 |
 | 浏览器 | `Agent/Chat/AIChatViewModel+BrowserUse*` | WKWebView | 必须原生，WebKit 无 JS 替代 |
 | 沙箱网络 | `src/ios/Shared/NetworkMonitor.swift`（`ContainerDnsSettings`）、`src/ios/Views/Rootfs/RootfsManagementView.swift` | iSH 内核 slirp/loopback + resolv.conf 注入 | 配置键 `network.dnsMode` / `network.dnsCustomServers` |
-| rclone | `RcloneBridge` / `RcloneRPC` / `RcloneRemoteStore` | Go 框架（含 `MinisNetfs*`） | 备份上传、网盘挂载 |
+| rclone | `RcloneBridge` / `RcloneRPC` / `RcloneRemoteStore` / `RcloneTransfer` | Go 框架 | 备份上传与远端凭据管理；`MinisNetfs*` 与 nethub 一样只编译、Swift 侧无调用 |
+| 挂载 | `Views/Settings/MountedFoldersManager.swift` | FileProvider / 系统网络共享 | 不经过 rclone netfs，走系统文件提供者 |
 | 扩展 | `Agent/Extension/ExtensionJSRuntime.swift`（`makeHTTPBridge`）、`ExtensionRegistry.swift:603` | URLSession.shared / 请求改写 | 权限名 `network`、`requests`；示例 `dist/extensions/request-interceptor.minisx` |
 
 ## 4. 结论
