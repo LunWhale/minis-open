@@ -35,6 +35,12 @@ RUN_ID="$(date +%Y%m%d-%H%M%S)"
 OUT="$DD/runs/$RUN_ID"
 mkdir -p "$OUT"
 
+# macOS ships no `timeout`(1): use coreutils when present, else the bundled perl shim.
+if command -v timeout >/dev/null 2>&1; then TIMEOUT_BIN="$(command -v timeout)"
+elif command -v gtimeout >/dev/null 2>&1; then TIMEOUT_BIN="$(command -v gtimeout)"
+else TIMEOUT_BIN="$TOOLS/timeout.sh"
+fi
+
 ONLY=(); STANDALONE=(); SKIP_BUILD=0; XCTEST=1
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -115,7 +121,7 @@ if [ ${#STANDALONE[@]} -gt 0 ]; then
       [ -f "$f" ] || continue
       s=$(date +%s)
       log="$OUT/standalone-${f%.swift}.log"
-      if timeout 600 swift "$f" > "$log" 2>&1 && ! grep -q "❌" "$log"; then r=PASS; else r=FAIL; SA_RC=1; fi
+      if "$TIMEOUT_BIN" 600 swift "$f" > "$log" 2>&1 && ! grep -q "❌" "$log"; then r=PASS; else r=FAIL; SA_RC=1; fi
       echo "  $r  $f  ($(( $(date +%s) - s ))s, ✅ $(grep -c '✅' "$log" || true) / ❌ $(grep -c '❌' "$log" || true))"
     done
   done

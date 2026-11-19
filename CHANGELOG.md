@@ -24,6 +24,29 @@ Fork version 1.15, tracking upstream OpenMinis v1.15. Still **iOS only**.
   *Sandbox* below for how this build is configured.
 - Android kept out: `scripts/drop-android.sh --check` passes.
 
+### Upstream v1.15.1 (build 3)
+
+3 commits on top of v1.15, merged as `09340af`. Only one carries code:
+
+- **`ee718c6` — Tailscale exit node works** (Go). Host names resolve IPv4 first;
+  loopback stays local (`rule="loopback"`); an offline exit node refuses instead
+  of leaking direct; the shell gets empty AAAA answers when IPv6 cannot leave.
+  8 files: `deps/rclone-mobile/nethub/{nethub,dns,udp}.go`,
+  `deps/rclone-mobile/tsnet/{tsnet,proxyview}.go`,
+  `src/shared/network/{README.md,route_vectors.json}`,
+  `deps/rclone-mobile/nethub/dial_tailnet_test.go`.
+- The other two are the Android version bump (dropped with `src/android`) and the
+  release merge point. The only conflict was that modify/delete on
+  `src/android/app/build.gradle.kts`; resolved by removing the file.
+- `Rclone.xcframework` rebuilt (`deps/build_rclone_ios.sh`); the framework exports
+  31 `MinisNet*`/`MinisTs*` symbols and the app binary contains the new code
+  (`strings Minis.debug.dylib | grep "the exit node is offline"`). No Swift file
+  changed: nothing in `src/ios` calls that API yet.
+- `CURRENT_PROJECT_VERSION` → 3 for the app, extensions and widget.
+- Why iOS needs no follow-up, what must not be touched and what should become a
+  plugin (exit-node routing, network diagnostics) is written down with
+  reproducible commands in [docs/network-review.md](docs/network-review.md).
+
 ### Minimal mode (new)
 
 A token-lean session flavour, modelled on DeepSeek Harness's Minimal preset.
