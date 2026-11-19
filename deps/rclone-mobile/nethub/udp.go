@@ -433,7 +433,9 @@ func (h *Hub) dialUDPRoute(id, tag, dst, host string) (net.Conn, Decision, int64
 	t0 := time.Now()
 	var conn net.Conn
 	var err error
-	if d.Kind == "tailscale" {
+	if d.Kind == "tailscale" && h.exitOffline(d) {
+		err = stageErr("udp-tailnet", errExitOffline)
+	} else if d.Kind == "tailscale" {
 		conn, err = h.ts.Dial(ctx, "udp", dst)
 		err = stageErr("udp-tailnet", err)
 	} else {

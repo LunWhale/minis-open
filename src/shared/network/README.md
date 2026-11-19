@@ -120,7 +120,18 @@ push, OS weather / location services, the system sign-in sheet
    or a peer's bare short name). Never a hard-coded 100.64.0.0/10.
 3. `direct`: out directly.
 4. `tailscale`: out directly, unless an exit node is active, then through the
-   tailnet (the exit node). `direct` ignores an exit node.
+   tailnet (the exit node). `direct` ignores an exit node. Loopback
+   (`localhost`, `*.localhost`, 127.0.0.0/8, ::1) is this device and always
+   goes direct (`loopback`), never to the exit node. A host name sent to the
+   exit node is dialed over IPv4 first, then IPv6: the node resolves it and
+   would otherwise try only the first address, which fails outright on a
+   tailnet path without IPv6. While the exit node is offline, connections
+   that would leave through it fail (`the exit node is offline`) instead of
+   going out through the system network. When IPv6 does not leave through
+   the exit node (it does not route `::/0`, or one IPv6 dial through it -
+   a probe, or a real one - failed as unreachable in the last 10 minutes),
+   the shell's intercepted DNS answers AAAA for names that leave through it
+   with no addresses, so programs connect over IPv4.
 5. `proxy:<id>`: through that upstream, unless the host matches its bypass
    list (then direct). A proxy that no longer exists → direct
    (`missing-proxy`), never a failure.
@@ -132,7 +143,7 @@ push, OS weather / location services, the system sign-in sheet
    destinations.
 
 Decision fields for logs: `kind` (direct | tailscale | proxy), `rule`
-(route | tailnet | exit-node | bypass | missing-proxy), `route`, `exit`
+(route | tailnet | exit-node | loopback | bypass | missing-proxy), `route`, `exit`
 (`direct`, `tailscale`, `proxy:<name>`).
 
 ---

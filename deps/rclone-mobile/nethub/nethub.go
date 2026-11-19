@@ -84,6 +84,33 @@ type PeerDescriber interface {
 	DescribePeer(host string) string
 }
 
+// ExitIPv6Reporter is optionally implemented by a Tailnet: whether the exit
+// node in use routes IPv6 (::/0). Must not block.
+type ExitIPv6Reporter interface {
+	ExitNodeIPv6() bool
+}
+
+// ExitOnlineReporter is optionally implemented by a Tailnet: whether the
+// exit node in use is online. Must not block.
+type ExitOnlineReporter interface {
+	ExitNodeOnline() bool
+}
+
+// errExitOffline: the exit node is offline, and the node would otherwise
+// send the connection out through the system network - a silent direct
+// connection the user's route never asked for (FIX-261025-27). Classified
+// "unreachable" by its text.
+var errExitOffline = errors.New("the exit node is offline (host is down)")
+
+// exitOffline: d leaves through an exit node that is offline right now.
+func (h *Hub) exitOffline(d Decision) bool {
+	if d.Rule != "exit-node" {
+		return false
+	}
+	r, ok := h.ts.(ExitOnlineReporter)
+	return ok && !r.ExitNodeOnline()
+}
+
 // Decision is where one connection goes.
 type Decision struct {
 	Kind     string // direct | tailscale | proxy
@@ -127,6 +154,13 @@ type Hub struct {
 
 	// exits: consecutive failures per proxy / Tailscale (exitalert.go).
 	exits *exitTracker
+
+	// exitV6Dead: when an IPv6 dial through the exit node last failed as
+	// unreachable (unix nanos, 0 = never); see exitIPv6Usable.
+	exitV6Dead atomic.Int64
+	// exitV6Probed: when exitIPv6Usable last probed IPv6 through the exit
+	// node (unix nanos, 0 = never).
+	exitV6Probed atomic.Int64
 
 	// UDP associations (udp.go).
 	udp      udpCounters
@@ -304,6 +338,11 @@ func (h *Hub) Decide(tag, host string) Decision {
 	case route == "direct":
 		return Decision{Kind: "direct", Route: route, Rule: "route"}
 	case route == "tailscale":
+		if isLoopbackHost(host) {
+			// This device, never the exit node (the diagnostics' own
+			// self-tests and a shell's localhost services dial it).
+			return Decision{Kind: "direct", Route: route, Rule: "loopback"}
+		}
 		if tsUp && h.ts.ExitNodeActive() {
 			return Decision{Kind: "tailscale", Route: route, Rule: "exit-node"}
 		}
@@ -322,17 +361,24 @@ func (h *Hub) Decide(tag, host string) Decision {
 	return Decision{Kind: "direct", Route: route, Rule: "route"}
 }
 
-// MatchBypass: exact host, "*.suffix" / ".suffix", CIDR, or IP. localhost and
-// loopback always bypass.
-func MatchBypass(list []string, host string) bool {
+// isLoopbackHost: localhost, *.localhost, 127.0.0.0/8 or ::1.
+func isLoopbackHost(host string) bool {
 	h := strings.ToLower(strings.Trim(host, "[]"))
 	if h == "localhost" || strings.HasSuffix(h, ".localhost") {
 		return true
 	}
-	ip, ipErr := netip.ParseAddr(h)
-	if ipErr == nil && ip.IsLoopback() {
+	ip, err := netip.ParseAddr(h)
+	return err == nil && ip.Unmap().IsLoopback()
+}
+
+// MatchBypass: exact host, "*.suffix" / ".suffix", CIDR, or IP. localhost and
+// loopback always bypass.
+func MatchBypass(list []string, host string) bool {
+	if isLoopbackHost(host) {
 		return true
 	}
+	h := strings.ToLower(strings.Trim(host, "[]"))
+	ip, ipErr := netip.ParseAddr(h)
 	for _, raw := range list {
 		e := strings.ToLower(strings.TrimSpace(raw))
 		if e == "" {
@@ -363,7 +409,11 @@ func MatchBypass(list []string, host string) bool {
 func (h *Hub) dial(ctx context.Context, d Decision, addr string) (net.Conn, error) {
 	switch d.Kind {
 	case "tailscale":
-		c, err := h.ts.Dial(ctx, "tcp", addr)
+		if h.exitOffline(d) {
+			return nil, stageErr("tailnet", errExitOffline)
+		}
+		c, err := h.dialTailnet(ctx, addr)
+		h.noteExitIPv6(d, addr, err)
 		return c, stageErr("tailnet", err)
 	case "proxy":
 		return DialUpstream(ctx, &h.dialer, *d.Upstream, addr)
@@ -371,6 +421,99 @@ func (h *Hub) dial(ctx context.Context, d Decision, addr string) (net.Conn, erro
 		c, err := h.dialDirect(ctx, "tcp", addr)
 		return c, stageErr("direct", err)
 	}
+}
+
+// dialTailnet dials addr through the node. The node resolves a host name
+// itself and dials only the first address it gets back, with no fallback:
+// an AAAA answer first on a path without IPv6 (an exit node, a tailnet that
+// has none) failed every such dial with "network is unreachable" although
+// IPv4 worked (FIX-261025-27). A host name is therefore dialed as tcp4 first
+// and as tcp6 only when that fails; an IP literal or a tailnet name (answered
+// from the node's own map in either family) is dialed as given.
+func (h *Hub) dialTailnet(ctx context.Context, addr string) (net.Conn, error) {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, err
+	}
+	if _, ipErr := netip.ParseAddr(host); ipErr == nil || h.ts.IsTailnetName(host) {
+		return h.ts.Dial(ctx, "tcp", addr)
+	}
+	c, err4 := h.ts.Dial(ctx, "tcp4", addr)
+	if err4 == nil {
+		return c, nil
+	}
+	if ctx.Err() != nil {
+		return nil, err4
+	}
+	c, err6 := h.ts.Dial(ctx, "tcp6", addr)
+	if err6 == nil {
+		return c, nil
+	}
+	return nil, fmt.Errorf("%w (IPv6: %v)", err4, err6)
+}
+
+// exitV6Memory: how long an IPv6 "unreachable" through the exit node keeps
+// the shell's AAAA answers back for names that leave through it.
+const exitV6Memory = 10 * time.Minute
+
+// noteExitIPv6 remembers an IPv6 literal that the exit node could not reach
+// at all ("network is unreachable": the path has no IPv6), and forgets it
+// once an IPv6 dial through the exit node works again.
+func (h *Hub) noteExitIPv6(d Decision, addr string, err error) {
+	if d.Rule != "exit-node" {
+		return
+	}
+	host, _, _ := net.SplitHostPort(addr)
+	ip, perr := netip.ParseAddr(host)
+	if perr != nil || !ip.Unmap().Is6() {
+		return
+	}
+	switch {
+	case err == nil:
+		h.exitV6Dead.Store(0)
+	case Classify(err) == ClassUnreachable:
+		if h.exitV6Dead.Swap(time.Now().UnixNano()) == 0 {
+			h.logf("[Net][DNS] IPv6 is unreachable through the exit node: the shell gets IPv4 answers only for names that leave through it")
+		}
+	}
+}
+
+// exitV6ProbeAddr is dialed to learn whether IPv6 leaves through the exit
+// node at all (Cloudflare's resolver; any reply, even a refusal, says yes).
+var exitV6ProbeAddr = "[2606:4700:4700::1111]:443"
+
+// exitIPv6Usable: IPv6 destinations can leave through the exit node in use.
+// False when the exit node does not route ::/0, or an IPv6 dial through it
+// failed as unreachable within exitV6Memory (FIX-261025-27). An exit node
+// can carry ::/0 and still have no IPv6 path from this node - seen on a
+// Pixel 6, every IPv6 dial "network is unreachable" in ~30 ms - so without a
+// recent answer one IPv6 dial is tried first, and only an "unreachable"
+// (not a slow answer) counts against it.
+func (h *Hub) exitIPv6Usable() bool {
+	if r, ok := h.ts.(ExitIPv6Reporter); ok && !r.ExitNodeIPv6() {
+		return false
+	}
+	if h.exitOffline(Decision{Rule: "exit-node"}) {
+		return true // every connection through it fails anyway; nothing to probe
+	}
+	if at := h.exitV6Dead.Load(); at != 0 {
+		return time.Since(time.Unix(0, at)) > exitV6Memory
+	}
+	now := time.Now().UnixNano()
+	if last := h.exitV6Probed.Load(); last != 0 && time.Duration(now-last) < exitV6Memory {
+		return true
+	}
+	if !h.exitV6Probed.CompareAndSwap(h.exitV6Probed.Load(), now) {
+		return true // another query is probing
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	c, err := h.ts.Dial(ctx, "tcp6", exitV6ProbeAddr)
+	if c != nil {
+		c.Close()
+	}
+	h.noteExitIPv6(Decision{Kind: "tailscale", Rule: "exit-node"}, exitV6ProbeAddr, err)
+	return h.exitV6Dead.Load() == 0
 }
 
 // describePeer: peer details for a tailnet destination, "" if unknown.

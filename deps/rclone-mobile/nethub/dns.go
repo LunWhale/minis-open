@@ -90,6 +90,20 @@ func (h *Hub) answerDNS(id, tag, resolver string, query []byte, tcp bool, upstre
 	ctx, cancel := context.WithTimeout(context.Background(), dnsTimeout)
 	defer cancel()
 	t0 := time.Now()
+	if qtype == dnsmessage.TypeAAAA && name != "" && !h.ts.IsTailnetName(name) {
+		// A program that gets an AAAA first connects over IPv6, and the
+		// shell's forwarding has already accepted that connection, so it
+		// cannot fall back to IPv4 when the exit node has no IPv6 path:
+		// answer "no AAAA" for names that leave through such an exit node.
+		if d := h.Decide(tag, name); d.Rule == "exit-node" && !h.exitIPv6Usable() {
+			if answer, ok := dnsNoData(query); ok {
+				if h.okLog.allow("dns|noaaaa|" + name) {
+					h.logf("[Net][DNS] %s name=%s type=AAAA rule=exit-node-no-ipv6 answered without addresses", id, name)
+				}
+				return answer, nil
+			}
+		}
+	}
 	var answer []byte
 	var err error
 	if via == "tailnet" {
@@ -114,6 +128,30 @@ func (h *Hub) answerDNS(id, tag, resolver string, query []byte, tcp bool, upstre
 		h.logf("[Net][DNS] %s name=%s type=%s via=%s rule=%s rcode=%s in %dms", id, orNone(name), qtype, via, rule, dnsRcode(answer), ms)
 	}
 	return answer, nil
+}
+
+// dnsNoData builds the answer "the name exists, no records of this type"
+// (NOERROR, no answers) to query, keeping its ID, question and RD flag.
+func dnsNoData(query []byte) ([]byte, bool) {
+	var p dnsmessage.Parser
+	h, err := p.Start(query)
+	if err != nil || h.Response {
+		return nil, false
+	}
+	q, err := p.Question()
+	if err != nil {
+		return nil, false
+	}
+	b := dnsmessage.NewBuilder(nil, dnsmessage.Header{
+		ID: h.ID, Response: true, OpCode: h.OpCode, RecursionDesired: h.RecursionDesired,
+		RecursionAvailable: true, RCode: dnsmessage.RCodeSuccess,
+	})
+	b.EnableCompression()
+	if b.StartQuestions() != nil || b.Question(q) != nil {
+		return nil, false
+	}
+	msg, err := b.Finish()
+	return msg, err == nil
 }
 
 func dnsRcode(msg []byte) string {

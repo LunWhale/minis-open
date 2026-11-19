@@ -319,6 +319,14 @@ type routesJSON struct {
 	// always go through the tailnet.
 	MagicDNSSuffix string `json:"magicDNSSuffix,omitempty"`
 	ExitNode       bool   `json:"exitNode"`
+	// ExitIPv6: the exit node in use routes ::/0 (its allowed IPs carry
+	// it). Without it an IPv6 destination fails at once through the exit
+	// node while IPv4 works (FIX-261025-27).
+	ExitIPv6 bool `json:"exitIPv6,omitempty"`
+	// ExitOnline: the exit node in use is online. While it is not, the node
+	// sends public addresses out through the system network instead
+	// (tsdial's SystemDial), so callers must refuse them (FIX-261025-27).
+	ExitOnline bool `json:"exitOnline,omitempty"`
 	// Whether subnet routes advertised by peers are accepted (RouteAll).
 	AcceptRoutes bool `json:"acceptRoutes"`
 }
@@ -379,6 +387,14 @@ func buildRoutes(st *ipnstate.Status, acceptRoutes bool) routesJSON {
 		}
 		if p.ExitNode {
 			out.ExitNode = true
+			out.ExitOnline = p.Online
+			if p.AllowedIPs != nil {
+				for _, r := range p.AllowedIPs.All() {
+					if r.Bits() == 0 && r.Addr().Is6() {
+						out.ExitIPv6 = true
+					}
+				}
+			}
 		}
 	}
 	out.AcceptRoutes = acceptRoutes

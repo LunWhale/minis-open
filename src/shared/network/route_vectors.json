@@ -1,5 +1,5 @@
 {
-  "about": "Routing decision vectors for Settings > Network (spec: README.md section 3). Each case: the router config, the Tailscale node's state, one connection (tag, host) and the decision. kind: direct | tailscale | proxy. rule: route | tailnet | exit-node | bypass | missing-proxy. Checked against the Go router by deps/rclone-mobile/nethub/spec_vectors_test.go; every platform's router must produce the same.",
+  "about": "Routing decision vectors for Settings > Network (spec: README.md section 3). Each case: the router config, the Tailscale node's state, one connection (tag, host) and the decision. kind: direct | tailscale | proxy. rule: route | tailnet | exit-node | loopback | bypass | missing-proxy. Checked against the Go router by deps/rclone-mobile/nethub/spec_vectors_test.go; every platform's router must produce the same.",
   "cases": [
     {"name": "unconfigured app: everything direct",
      "config": {"defaultRoute": "direct", "tags": {}, "upstreams": [], "tailscale": false},
@@ -45,6 +45,14 @@
      "config": {"defaultRoute": "tailscale", "tags": {}, "upstreams": [], "tailscale": true},
      "node": {"running": true, "exitNode": true, "prefixes": []}, "tag": "default", "host": "example.com",
      "want": {"kind": "tailscale", "rule": "exit-node"}},
+    {"name": "route tailscale with an exit node: loopback stays on this device",
+     "config": {"defaultRoute": "tailscale", "tags": {}, "upstreams": [], "tailscale": true},
+     "node": {"running": true, "exitNode": true, "prefixes": []}, "tag": "default", "host": "127.0.0.1",
+     "want": {"kind": "direct", "rule": "loopback"}},
+    {"name": "route tailscale with an exit node: localhost stays on this device",
+     "config": {"defaultRoute": "tailscale", "tags": {}, "upstreams": [], "tailscale": true},
+     "node": {"running": true, "exitNode": true, "prefixes": []}, "tag": "shell", "host": "localhost",
+     "want": {"kind": "direct", "rule": "loopback"}},
     {"name": "route direct ignores an active exit node",
      "config": {"defaultRoute": "direct", "tags": {}, "upstreams": [], "tailscale": true},
      "node": {"running": true, "exitNode": true, "prefixes": []}, "tag": "default", "host": "example.com",

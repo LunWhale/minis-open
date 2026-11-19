@@ -36,6 +36,8 @@ type routeCache struct {
 	state    string
 	prefixes []netip.Prefix
 	exit     bool
+	exitV6   bool // the exit node routes ::/0
+	exitUp   bool // the exit node is online
 	accept   bool
 	self     []netip.Addr // this node's tailnet addresses
 	suffix   string
@@ -119,7 +121,7 @@ func refreshRoutes() {
 						next.prefixes = append(next.prefixes, pp)
 					}
 				}
-				next.exit, next.accept, next.suffix = r.ExitNode, r.AcceptRoutes, r.MagicDNSSuffix
+				next.exit, next.exitV6, next.exitUp, next.accept, next.suffix = r.ExitNode, r.ExitIPv6, r.ExitOnline, r.AcceptRoutes, r.MagicDNSSuffix
 				next.self = append([]netip.Addr(nil), st.TailscaleIPs...)
 				if st.Self != nil {
 					if label, _, _ := strings.Cut(st.Self.DNSName, "."); label != "" {
@@ -173,8 +175,8 @@ func logTransitions(prev, next routeCache) {
 	if next.running && (prev.online != next.online || prev.total != next.total) {
 		Logf("[Net][TS] peers online %d/%d", next.online, next.total)
 	}
-	if prev.exit != next.exit {
-		Logf("[Net][TS] exit node in use = %v", next.exit)
+	if prev.exit != next.exit || prev.exitV6 != next.exitV6 || prev.exitUp != next.exitUp {
+		Logf("[Net][TS] exit node in use = %v (online = %v, routes IPv6 = %v)", next.exit, next.exitUp, next.exitV6)
 	}
 	if prev.accept != next.accept && next.state != "Stopped" {
 		Logf("[Net][TS] subnet routes accepted = %v (%d prefixes routed to the tailnet)", next.accept, len(next.prefixes))
@@ -197,6 +199,12 @@ type ProxyView struct{}
 func (ProxyView) Running() bool            { return currentRoutes().running }
 func (ProxyView) Prefixes() []netip.Prefix { return currentRoutes().prefixes }
 func (ProxyView) ExitNodeActive() bool     { return currentRoutes().exit }
+
+// ExitNodeOnline (nethub.ExitOnlineReporter): the exit node in use is online.
+func (ProxyView) ExitNodeOnline() bool { r := currentRoutes(); return r.exit && r.exitUp }
+
+// ExitNodeIPv6 (nethub.ExitIPv6Reporter): the exit node in use routes ::/0.
+func (ProxyView) ExitNodeIPv6() bool { r := currentRoutes(); return r.exit && r.exitV6 }
 
 // SelfAddrs (nethub.SelfAddresser): this node's tailnet addresses.
 func (ProxyView) SelfAddrs() []netip.Addr { return currentRoutes().self }
