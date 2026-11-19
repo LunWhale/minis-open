@@ -504,14 +504,18 @@ checkEq("tool-result builder is called from exactly one place in the view model"
         vm.components(separatedBy: "historyWithEmptyToolResultReminder()").count - 1, 1)
 checkEq("callback builder is called from exactly one place in the view model",
         vm.components(separatedBy: "historyWithEmptyCallbackReminder()").count - 1, 1)
+// The reminder history is now built once into `reminderHistory` and handed to
+// whichever stream path survives the provider live check, so the invariant is
+// "the budget-applied builder output is the message list the reminder sends".
 check("that place is the reminder request itself (messages: of streamWithAutoRetry)",
-      vm.contains("messages: applyRequestImageBudget(tailIsToolResult ? historyWithEmptyToolResultReminder() : historyWithEmptyCallbackReminder())"))
+      vm.contains("let reminderHistory = applyRequestImageBudget(tailIsToolResult ? historyWithEmptyToolResultReminder() : historyWithEmptyCallbackReminder())")
+        && vm.contains("messages: reminderHistory,"))
 check("the builders are never fed to persistAgentMessage / agentHistory",
       vm.contains("agentHistory = historyWithEmpty") || vm.contains("persistAgentMessage(historyWithEmpty")
         || persistence.contains("agentHistory = historyWithEmpty"), false)
 check("one-shot flag is set BEFORE the reminder request is sent",
       (vm.range(of: "didInjectEmptyToolReminderThisRun = true")?.lowerBound ?? vm.endIndex)
-        < (vm.range(of: "let reminderStream = try await streamWithAutoRetry(")?.lowerBound ?? vm.startIndex))
+        < (vm.range(of: "reminderStream = try await streamWith")?.lowerBound ?? vm.startIndex))
 check("a still-empty reminder round throws providerError, not another reminder",
       vm.contains("if isEmptyResponse(reminderResult) {")
         && vm.contains("throw LLMError.providerError(message: \"The model returned no response after a tool result, even after a reminder."))

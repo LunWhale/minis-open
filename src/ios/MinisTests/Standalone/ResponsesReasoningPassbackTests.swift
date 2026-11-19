@@ -31,6 +31,18 @@ import Foundation
 /// The chat page's sources, read as one text: AIChatView.swift (state and
 /// `body`) first, then every other file under Views/Chat/AIChatView/ - the
 /// old single AIChatView.swift was split into them.
+/// Only the banner views: other files under AIChatView/ carry their own
+/// `.lineLimit(2)` for unrelated content, and this test is about the banner.
+func bannerViewSource() -> String {
+    let ios = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let dir = ios.appendingPathComponent("Views/Chat/AIChatView")
+    let files = (FileManager.default.enumerator(at: dir, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? [])
+        .filter { $0.pathExtension == "swift" && $0.lastPathComponent.contains("Banner") }
+        .sorted { $0.path < $1.path }
+    return files.compactMap { try? String(contentsOf: $0, encoding: .utf8) }.joined(separator: "\n")
+}
+
 func chatViewSource() -> String {
     let ios = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -414,8 +426,14 @@ do {
         // appended upstream description, not just the trail lines.
         check("the bubble error is no longer clamped to 2 lines",
               row.contains(".lineLimit(8)") && !row.contains(".lineLimit(2)"))
+        // The old clamp survives in the comment that records the change, so
+        // only real code lines count as "still clamped".
+        let bannerOnly = bannerViewSource()
+        let bannerCode = bannerOnly.split(separator: "\n")
+            .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
+            .joined(separator: "\n")
         check("the banner is no longer clamped to 2 lines",
-              banner.contains(".lineLimit(8)") && !banner.contains(".lineLimit(2)"))
+              bannerCode.contains(".lineLimit(8)") && !bannerCode.contains(".lineLimit(2)"))
         check("the banner top-aligns now that its text wraps",
               banner.contains("HStack(alignment: .top, spacing: 6) {"))
     }

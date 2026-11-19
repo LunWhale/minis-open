@@ -1,4 +1,20 @@
 #!/usr/bin/env swift
+// SUPERSEDED-BY: ImageRealIosA/B/C/D, ImageBudgetBase64Tests
+//
+// Why this suite is retired rather than fixed: it works by splicing verbatim
+// code out of production files (block(from:through:)) and compiling it. The
+// v1.15 image work moved every one of those statements: the byte pipeline now
+// lives behind readImageInference / browserUseInferenceImage /
+// saveBrowserSnapshotMedia / saveReadImageSnapshotMedia, the plan carries
+// positions instead of positional keys, and AIChatViewModel+ConcurrentTools no
+// longer writes toolImageData inline. The extraction therefore reports DRIFT
+// for code that no longer exists, not a regression.
+//
+// The same propositions (P-i1..P-i9) are covered against the live code, with
+// real UIImage/ImageIO round-trips, by the four ImageRealIos* harnesses and by
+// ImageBudgetBase64Tests. Keep those in sync; do not resurrect this file
+// without re-deriving every block() anchor.
+//
 // [T-image-repro] Image-pipeline reproduction suite (iOS).
 //
 // Runs the REAL image code paths on generated images and records what each

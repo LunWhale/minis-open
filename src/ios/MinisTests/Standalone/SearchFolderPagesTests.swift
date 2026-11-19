@@ -145,9 +145,10 @@ check("memo key includes the page state (only while searching)",
 // Rendering.
 check("Show more row rendered in both list layouts, not in select mode",
       view.components(separatedBy: "if group.hiddenMatchCount > 0, !isSelecting {\n                        searchFolderShowMoreRow(group)").count - 1 == 2)
+// The card's last-row flag moved from a view-local `isLast` into the row
+// models (isLastInFolder:), so the two layouts are counted by call site.
 check("both layouts close the card via isLastMemberRow",
-      view.contains("FolderMemberRowBackground(isLast: group.isLastMemberRow(session.id))")
-      && view.contains("let isLast = group.isLastMemberRow(sessionId)")
+      view.components(separatedBy: "isLastInFolder: group.isLastMemberRow(").count - 1 == 2
       && !view.contains("== group.ids.last"))
 let row = between(view, "private func searchFolderShowMoreRow(_ group: SidebarGroup) -> some View {", "\n    }\n")
 check("a tap adds one page to THIS folder only", row.contains("searchFolderPages[fid, default: 1] += 1"))

@@ -27,6 +27,28 @@ enum ModelsDevAPI { static func enrichModel(_ m: LLMModel) -> LLMModel { m } }
 enum XAIModelsAPI { static var allModels: [LLMModel] { [] } }
 enum KimiModelsAPI { static var allModels: [LLMModel] { [] } }
 
+// AgentMode names the feature plugins by id. The real BuiltinExtension lives in
+// Agent/Extension and pulls the registry, the manifest store and the JS runtime
+// behind it - none of which images touch - so the harness pins the ids only.
+enum BuiltinExtension {
+    static let todoID = "builtin.todo"
+    static let subagentsID = "builtin.subagents"
+    static let soulID = "builtin.soul"
+    static let mcpID = "builtin.mcp"
+    static let mountsID = "builtin.mounts"
+    static let memoryID = "builtin.memory"
+    static let skillsID = "builtin.skills"
+    static let envVarsID = "builtin.env-vars"
+    static let sharedFoldersID = "builtin.shared-folders"
+    static let promptShellID = "builtin.prompt.shell"
+    static let promptWorkspaceID = "builtin.prompt.workspace"
+    static let promptMemoryID = "builtin.prompt.memory"
+    static let promptCodingID = "builtin.prompt.coding"
+    static let promptAppleID = "builtin.prompt.apple"
+    static let promptMinisCLIID = "builtin.prompt.minis-cli"
+    static let promptEnvSecretsID = "builtin.prompt.env-secrets"
+}
+
 // MARK: - Fixtures (same generators as the previous round, so bytes compare)
 
 enum IosBPattern { case page, photo }

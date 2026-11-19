@@ -90,8 +90,14 @@ do {
         check("a deferred-text flush precedes the title call",
               lastFlush != nil && lastFinalFlushLog != nil && lastFlush!.lowerBound > lastFinalFlushLog!.lowerBound)
         let between = lastFlush.map { String(vm[$0.upperBound..<t.lowerBound]) } ?? ""
-        check("…with nothing but comments between them",
-              between.split(separator: "\n").allSatisfy { $0.trimmingCharacters(in: .whitespaces).isEmpty || $0.trimmingCharacters(in: .whitespaces).hasPrefix("//") })
+        // The StreamEnd block now does its own UI work (the FINAL FLUSH
+        // logging, setStreamingTextBlockContent, auto-play) between the two
+        // calls, so "comments only" is no longer the shape. What the check is
+        // for still holds: the title call is the next thing after that flush
+        // and neither call is duplicated in between.
+        check("…with no second flush or title call between them",
+              !between.contains("generateSessionTitleIfNeeded(")
+                && !between.contains("flushDeferredStreamingTextUpdateIfNeeded()"))
         // And no second flush left behind after it in the same block (would
         // mean the move was a copy, not a move).
         let after = vm[t.upperBound...]

@@ -142,11 +142,12 @@ print("\n[6] The budget is applied on the PRIMARY request, not just fallbacks")
 // the empty-response retry and the two group-fallback paths — all of which run
 // AFTER a request has already failed. The request carrying the conversation
 // went out unbudgeted and got request_too_large.
-let mainSend = vm.range(of: "let stream = try await streamWithGroupFallback")
+let mainSend = vm.range(of: "stream = try await streamWithGroupFallback(\n                    provider: provider,\n                    messages: contextHistory")
 check("primary send site still exists", mainSend != nil)
 if let r = mainSend {
     // Look back from the send for the budget call in the same block.
-    let before = String(vm[vm.index(r.lowerBound, offsetBy: -2600)..<r.lowerBound])
+    let back = max(vm.distance(from: vm.startIndex, to: r.lowerBound) - 3000, 0)
+    let before = String(vm[vm.index(vm.startIndex, offsetBy: back)..<r.lowerBound])
     check("primary request applies applyRequestImageBudget",
           before.contains("contextHistory = applyRequestImageBudget(contextHistory)"))
 }
@@ -166,7 +167,8 @@ check("fallback/retry sites still budgeted (>= 3)", sends >= 3)
 
 print("\n[7a] every provider send entry is budgeted")
 check("empty-response reminder retry is budgeted",
-      vm.contains("messages: applyRequestImageBudget(tailIsToolResult ? historyWithEmptyToolResultReminder() : historyWithEmptyCallbackReminder()),"))
+      vm.contains("let reminderHistory = applyRequestImageBudget(")
+      && vm.contains("messages: reminderHistory,"))
 check("fallback / retry sends pass applyRequestImageBudget(effectiveAgentHistory()) — 3 sites (always-fallback, autoRetry, retries-exhausted)",
       vm.components(separatedBy: "messages: applyRequestImageBudget(effectiveAgentHistory())").count - 1 >= 3)
 checkEq("no send passes a raw effectiveAgentHistory() (unbudgeted)",
@@ -305,11 +307,13 @@ check("the planner no longer keys on bridged object identity",
       rb.contains("ObjectIdentifier(img.data as AnyObject)"), false)
 check("the rewrite no longer recomputes a bridged identity",
       rb.contains("ObjectIdentifier(ref.image.data as AnyObject)"), false)
-check("BudgetImage carries a positional key", rb.contains("let key: Int"))
-check("the planner keys on that position", rb.contains("let id = img.key"))
-check("the plan reports keys, not ids", rb.contains("let droppedKeys: Set<Int>"))
-check("the rewrite looks the same key up", rb.contains("let id = ref.image.key"))
-check("both lookups test against droppedKeys", rb.contains("plan.droppedKeys.contains(id)"))
+check("the image walk carries a positional key", rb.contains("let position: Int"))
+check("the planner keys on that position", rb.contains("let id = position"))
+check("the plan reports positions, not object identities",
+      rb.contains("let droppedIds: Set<Int>") && rb.contains("POSITIONS in the image"))
+check("the rewrite looks the same position up", rb.contains("let id = ref.position"))
+check("both lookups test against droppedIds",
+      rb.components(separatedBy: "plan.droppedIds.contains(id)").count - 1 == 2)
 // The positional scheme itself, ported: two positions of the same image are
 // separate keys, so the older position is elided and the newer kept.
 do {

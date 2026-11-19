@@ -102,11 +102,17 @@ let bridge = source("NativeOffloads/BrowserUseOffloadBridge.swift")
 let coord = source("Agent/ISH/ISHExecutionCoordinator.swift")
 let objc = source("NativeOffloads/BrowserUseOffload.m")
 if !bridge.isEmpty {
-    check("precondition: the session key is the process-wide mounted-sid snapshot",
-          bridge.replacingOccurrences(of: "\n", with: " ")
-            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
-            .contains("ISHExecutionCoordinator.mountedSessionIdSnapshot ?? Self.unmountedSentinel")
-          && coord.contains("nonisolated static var mountedSessionIdSnapshot: String?"))
+    // The session key used to be the process-wide mounted-sid snapshot; shells
+    // from different chats now run concurrently, so the bridge keys on the
+    // calling task's fs_context and only falls back to the snapshot when there
+    // is none.
+    let flatBridge = bridge.replacingOccurrences(of: "\n", with: " ")
+        .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+    check("precondition: the session key is the caller's fs_context, snapshot only as fallback",
+          flatBridge.contains("let caller = ISHExecutionCoordinator.callerSessionId(fsContext: fsContext)")
+          && coord.contains("nonisolated static func callerSessionId(fsContext: UInt64)")
+          && coord.contains("MinisFsRouter.shared.sid(for: fsContext)")
+          && coord.contains("return (mountedSessionIdSnapshot, fsContext == 0 ?"))
     // [T-browser-cli-reclaim-scope] Fixed shape: execute hands back a
     // per-invocation token and the ObjC timeout branch passes exactly that
     // token back; nothing matches by (sid, tab) any more.

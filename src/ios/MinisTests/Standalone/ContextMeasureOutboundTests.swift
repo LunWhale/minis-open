@@ -459,9 +459,10 @@ do {
     // Every size consumer in the loop reads the same number.
     check("offload is judged on the measurement",
           vm.contains("offloadContextIfNeeded(model: activeModelForOffload, lastContextTokens: measureOutboundContextTokens())"))
-    // 5 sizing sites + the [CtxMeter] dispatch log, which reports the same max_tokens.
-    checkEq("max_tokens / fallback sizing read the dispatch measurement (5 sites + dispatch log)",
-            vm.components(separatedBy: "lastContextTokens: dispatchInputTokens").count - 1, 6)
+    // 6 sizing sites + the [CtxMeter] dispatch log, which reports the same
+    // max_tokens. The sixth site is the compat-proxy fallback pass.
+    checkEq("max_tokens / fallback sizing read the dispatch measurement (6 sites + dispatch log)",
+            vm.components(separatedBy: "lastContextTokens: dispatchInputTokens").count - 1, 7)
     check("no loop site sizes a request from the stale report",
           !vm.contains("lastContextTokens: turnUsage.latestContextTokens"))
 

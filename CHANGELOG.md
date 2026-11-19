@@ -47,6 +47,38 @@ Fork version 1.15, tracking upstream OpenMinis v1.15. Still **iOS only**.
   plugin (exit-node routing, network diagnostics) is written down with
   reproducible commands in [docs/network-review.md](docs/network-review.md).
 
+### Test chain: standalone suite green, one real bug found
+
+`scripts/ios-unit-tests.sh --no-xctest --standalone '*'` now runs clean on this
+machine (297/322 before, plus 2 simulator-only skips and 1 retired suite).
+
+- **Real defect (fixed).** `EagerStreamingHTTPClient.startLoading()` and
+  `DualAuthHTTPClient.startLoading()` each ran their own eight-request patch
+  list and then called `RequestBodyPatcher.applyKeyAuthBodyPatches(to:)`, which
+  runs the same eight again — every key-auth request was patched twice (images
+  re-compressed, placeholders substituted twice). The inline chains are gone;
+  the helper is the only chain. `ImageRealIosDTests` pins it.
+- **Environment, not code.** `~/.zshrc` exported
+  `DYLD_LIBRARY_PATH=/opt/homebrew/lib`, so every arm64 process loaded Homebrew's
+  libpng/liblzma/libjpeg over the system copies and ImageIO's PNG plugin died at
+  `0x0bad4007`. That one line explained all three "unexplainable" failures:
+  `actool`/`ibtool` crashing at launch (BUILD FAILED), the Catalyst image harness
+  crashing in `CGImageDestinationFinalize`, and why `arch -x86_64` looked like the
+  cure. With the variable unset, arm64 `xcodebuild` builds natively and
+  `actool`/`ibtool` work. `docs/network-review.md` records the diagnosis.
+- **Assertion drift, ~20 suites.** Upstream moved code the standalone tests pin
+  by literal string: the image pipeline now lives behind `readImageInference` /
+  `browserUseInferenceImage` / `saveBrowserSnapshotMedia`, budget ids are list
+  positions rather than positional keys, the Anthropic session key comes from
+  `callerSessionId(fsContext:)`, and `AIChatViewModel.swift` was split into
+  partials. Each was re-pinned to the new shape; `ImagePipelineReproTests` was
+  retired (`SUPERSEDED-BY:`) because its extraction targets code that no longer
+  exists, and `ImageRealIosA/B/C/D` + `ImageBudgetBase64Tests` carry the same
+  propositions against the live pipeline.
+- **Runner fixes.** No `timeout(1)` on macOS (bundled perl shim), `pipefail`
+  killing the sweep on a non-matching `grep`, and `--standalone '*'` now skips
+  simulator-only UIKit drivers and `SUPERSEDED-BY` suites.
+
 ### Minimal mode (new)
 
 A token-lean session flavour, modelled on DeepSeek Harness's Minimal preset.

@@ -151,14 +151,19 @@ if store.isEmpty || app.isEmpty {
     print("  ⏭  source not readable from this sandbox")
 } else {
     check("window constant is 6h", store.contains("static let modelsRefreshWindow: TimeInterval = 6 * 60 * 60"))
+    // The Codex client-version short-circuit joined the gate: a version bump
+    // refreshes immediately, and only the unchanged-version path waits out
+    // the rolling window.
     check("gate compares a rolling interval against the window",
-          store.contains("if let lastRefresh, Date().timeIntervalSince(lastRefresh) < Self.modelsRefreshWindow {"))
+          store.contains("if !versionChanged, let lastRefresh, Date().timeIntervalSince(lastRefresh) < Self.modelsRefreshWindow {"))
     // The old gate must be gone from this function.
     if let r = store.range(of: "func refreshAllModelsIfNeeded()") {
-        let body = String(store[r.lowerBound...].prefix(2600))
+        let body = String(store[r.lowerBound...].prefix(3200))
         // The word survives in a comment that records the old behaviour; the
         // CALL must not.
         check("no calendar-day check in the gate", body.contains("calendar.isDateInToday("), false)
+        // The fetches are detached now (`Task { await ... }` inside the loop),
+        // so the stamp still has to land before the loop that spawns them.
         check("date is stamped before the fetches are kicked off",
               body.contains("UserDefaults.standard.set(Date(), forKey: key)")
               && body.range(of: "UserDefaults.standard.set(Date(), forKey: key)")!.lowerBound

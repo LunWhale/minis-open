@@ -28,9 +28,9 @@
 ## 2. 这些改动落到 iOS 的哪里
 
 - **`deps/rclone-mobile/**`** → 只进 `deps/frameworks/Rclone.xcframework`，由
-  `./deps/build_rclone_ios.sh` 重编（device + simulator 两片）。框架**导出了 31 个
-  `MinisNet*` / `MinisTs*` C 符号**（`MinisTsSetExitNode`、`MinisNetDecide`、
-  `MinisNetDiagnose`、`MinisNetfs*` …），但 Swift 侧没有任何调用点：
+  `./deps/build_rclone_ios.sh` 重编（device + simulator 两片）。框架**导出了 43 个
+  `MinisNet*` / `MinisTs*` C 符号**（12 个 nethub + 12 个 tsnet + 19 个 netfs：
+  `MinisTsSetExitNode`、`MinisNetDecide`、`MinisNetDiagnose` …），但 Swift 侧没有任何调用点：
 
   ```sh
   grep -rn "MinisNet\|MinisTs" --include=*.swift src/ios   # 空
@@ -86,7 +86,7 @@
 判定原则：**所有用户都要 → 核心；要账号/外部设备/合规开关 → 扩展；只做诊断观测 → 扩展工具。**
 
 1. **出口路由（Tailscale exit node / 自定义代理）** — 插件
-   现状：Go 侧 31 个符号完备（`MinisTsStart/Stop/SetExitNode/Routes`、`MinisNetDecide`…），
+   现状：Go 侧 43 个符号完备（`MinisTsStart/Stop/SetExitNode/Routes`、`MinisNetDecide`…），
    iOS 侧 0 入口。**不要**做进 Settings 核心：它需要 Tailscale 账号、要 NetworkExtension
    权限、绝大多数用户永远不点。做法是扩展包（`ui-widget` 配置页 + `agent-tool`
    `net_route_status` / `net_route_set`，permissions 声明 `network`），核心只保留一层薄桥
@@ -109,15 +109,24 @@
 | 合并 | `git merge upstream/main` | 1 处冲突（android gradle modify/delete），`git rm` 后得 `09340af` |
 | Go 测试 | `cd deps/rclone-mobile && go test ./nethub/... ./tsnet/...` | ok（nethub 16.099s、tsnet 0.048s），含 `spec_vectors_test` |
 | 重编框架 | `./deps/build_rclone_ios.sh` | `Rclone.xcframework` 108 MB，`strings` 命中 `the exit node is offline` |
-| 构建 | `arch -x86_64 xcodebuild -project src/ios/Minis.xcodeproj -scheme Minis -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` | **BUILD SUCCEEDED**；`Minis.debug.dylib` 内同样命中该字符串，`nm` 导出 31 个 `_MinisNet*` |
+| 构建 | `xcodebuild -project src/ios/Minis.xcodeproj -scheme Minis -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` | **BUILD SUCCEEDED**（arm64 原生，见下节根因）；`Minis.debug.dylib` 内同样命中该字符串，`nm` 导出 43 个 `MinisNet*`/`MinisTs*` |
 | 容器 DNS 回归 | `./scripts/ios-unit-tests.sh --no-xctest --standalone 'ISHContainerNetworkDnsTests'` | ✅ 43 / ❌ 0（含「mode custom + servers → 内核写的 resolv.conf」端到端） |
 | 测试卫生 | `python3 scripts/ios-unit-tests/static_check.py` | 63 hits / 63 allowlisted / 0 stale |
 
 ### 环境缺陷（不是代码问题，但会挡住 Xcode 测试）
 
-- **arm64 的 `actool` / `ibtool` / `ibtoold` 启动即崩**：`EXC_ARM_DA_ALIGN`、PC 落在
-  `0x0bad4007`，导致 `BUILD FAILED`。x86_64 slice 在 Rosetta 下正常，因此所有
-  `xcodebuild` 调用前面加 `arch -x86_64`。
+- **`~/.zshrc` 里的 `export DYLD_LIBRARY_PATH=/opt/homebrew/lib:$DYLD_LIBRARY_PATH`
+  污染了每一个 arm64 进程**：Homebrew 的 `libpng16` / `liblzma` / `libjpeg` / `libzstd`
+  会顶掉系统动态库，`ImageIO` 的 PNG 写入插件随后踩到 `0x0bad4007`，
+  报 `EXC_BAD_ACCESS` / `EXC_ARM_DA_ALIGN` / `SIGBUS`。三个"症状"其实是同一个根因：
+  - `actool` / `ibtool` / `ibtoold --version` 启动即崩 → `BUILD FAILED`；
+  - `ImageRealIosA` 的 Catalyst harness 在 `CGImageDestinationFinalize` 崩；
+  - Rosetta 下的 x86_64 进程不读 arm64 的 Homebrew 库，所以 `arch -x86_64` "看起来"是解药。
+
+  清理后验证：`env -u DYLD_LIBRARY_PATH ibtool --version` 与 `actool --version` 立即正常，
+  `xcodebuild …`（原生 arm64）**BUILD SUCCEEDED**，`ImageRealIosATests` ✅23/❌0。
+  **正确的修法是把这行从 `~/.zshrc` 删掉**（或只在该 shell 里临时 `export`），
+  不再需要 `arch -x86_64`。
 - **`My Mac (Designed for iPad)` 目的地不出现**：Xcode 26.2 (17C52) 配 macOS 26.3 (25D125)
   时，`MinisUnitTests` 的 destination 列表里只有真机和模拟器，
   `scripts/ios-unit-tests.sh` 会停在 `no 'My Mac (Designed for iPad)' destination`。
@@ -125,8 +134,46 @@
 - `timeout(1)` 在 macOS 上不存在，脚本改用内置的 `scripts/ios-unit-tests/timeout.sh`
   （perl `alarm` 垫片）。
 
+### 5.1 standalone 套件（`scripts/ios-unit-tests.sh --no-xctest --standalone '*'`）
+
+本轮把整条 standalone 测试链跑通并逐个修到绿。除环境根因（见上）之外，另有
+**一处真实代码缺陷**由测试抓出：
+
+- `src/ios/Providers/Anthropic/OAuthHTTPClient.swift`：`EagerStreamingHTTPClient.startLoading()`
+  与 `DualAuthHTTPClient.startLoading()` 先手写跑了一遍 8 个 request patcher，紧接着又
+  调 `RequestBodyPatcher.applyKeyAuthBodyPatches(to:)`（同样 8 个），等于每个请求
+  **双重打补丁**（图片被压两次、占位符被替换两次）。已删掉两处内联链，只保留 helper
+  调用；`ImageRealIosD` 的 "no protocol runs its own patch list any more" 因此由红转绿。
+
+其余 20 余处是上游重构导致的断言漂移（不是回归），按测试逐个对齐到新代码：
+
+| 套件 | 漂移点 → 新事实 |
+|---|---|
+| `BrowserCLIReclaimScopeTests` | 会话键从进程级 `mountedSessionIdSnapshot` 改为 `ISHExecutionCoordinator.callerSessionId(fsContext:)`，先查 `MinisFsRouter.shared.sid(for:)`，无 fs_context 才回落快照 |
+| `ContextMeasureOutboundTests` | `lastContextTokens: dispatchInputTokens` 由 6 处变 7 处（多一处 compat-proxy fallback 重建） |
+| `CodexEmptyResponseReproTests` | 预算结果改名 `reminderHistory`，再作为 `messages:` 传入 |
+| `CodexModelDiscoveryTests` | iOS-only fork 没有 `src/android`，Android 可见性对拍降级为 KNOWN GAP |
+| `ShortcutBackgroundTitleTests` | StreamEnd 收尾块插入 FINAL FLUSH 日志/自动播放，断言语义放宽为「两次 flush 之间没有第二个 title 或 flush 调用」 |
+| `ModelsRefreshWindowTests` | 门限改为 `!versionChanged, let lastRefresh, Date().timeIntervalSince(lastRefresh) < modelsRefreshWindow` |
+| `SearchFolderPagesTests` | 卡片收尾统一走 `isLastInFolder: group.isLastMemberRow(`（stack/split 两处） |
+| `SidebarRowLookupHangTests` | iPhone 行由 `NavigationLink(value:)` 改为 `Button { menuActions.send(.open(sid)) }` |
+| `ResponsesReasoningPassbackTests` | banner 语料改为只读文件名含 `Banner` 的文件，避免被别处的 `.lineLimit(2)` 误伤 |
+| `OffloadReadbackLoopTests` / `OffloadWriteIntegrityTests` | 回读重建点 4→5；answered-id 扫描改为 warm-up 计划 |
+| `ProviderQuotaTests` / `GeminiProviderFactoryChokepointTests` | 配额打标收敛到 `LLMProviderFactory`；provider 重建点 3→4 |
+| `HistoryRebuildKeepsIdsTests` | retry 清理与 in-loop 清扫搬进 `+Send.swift` / `+AgentLoop.swift`，测试改为拼接读取 |
+| `ImageBudgetBase64Tests` | 预算 id 从「位置键」改为「位置索引」：`position` / `droppedIds`；主发送点、reminder 预算点同步 |
+| `ImageRealIosB/C/D` | harness 白名单补 `AgentMode.swift`，并桩掉 `BuiltinExtension`（16 个 builtin id） |
+| `ImageCtxIosE` | 抽取基线 commit `f7d3541` 被 squash 掉，基线缺失降级为 KNOWN GAP |
+| `ChatShareModelTests` | 混合 Int/CGFloat 表达式触发 type-check 超时，拆成显式 `CGFloat` 常量 |
+| `ImagePipelineReproTests` | **退役**：它 splice 的生产代码（`readImageInference` 等）已整体挪走，覆盖由 `ImageRealIosA/B/C/D` + `ImageBudgetBase64Tests` 承接，文件头写明 `SUPERSEDED-BY` |
+
+工具链侧修了三处：macOS 没有 `timeout(1)`（改用 `scripts/ios-unit-tests/timeout.sh`
+perl 垫片）；`pipefail` 下 `grep` 无匹配会让脚本静默退出（补 `|| true`）；
+`--standalone '*'` 现在会跳过只吃模拟器的 UIKit 驱动和 `SUPERSEDED-BY` 套件。
+
 ## 6. 后续
 
 - 想要 Tailscale 出口：Swift 桥 3 个函数 + 扩展包，另需评估 NetworkExtension 权限的
   审核与描述文件成本。
-- 等 Xcode 26.3 之后再跑完整 XCTest；在那之前 CI 用 `arch -x86_64` 或真机目的地。
+- 等 Xcode 26.3 之后再跑完整 XCTest；在那之前 CI 用真机/模拟器目的地。构建本身
+  已不需要 `arch -x86_64` —— 先把 `DYLD_LIBRARY_PATH` 摘干净。

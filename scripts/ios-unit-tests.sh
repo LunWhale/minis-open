@@ -121,6 +121,17 @@ if [ ${#STANDALONE[@]} -gt 0 ]; then
       [ -f "$f" ] || continue
       s=$(date +%s)
       log="$OUT/standalone-${f%.swift}.log"
+      # A driver that imports UIKit in its own header only runs inside a
+      # simulator (see its header); `swift` on the Mac cannot compile it. The
+      # image harnesses also carry `import UIKit`, but inside the source text
+      # they hand to a Catalyst build - those still run here.
+      uikit=$(grep -n '^import UIKit' "$f" | head -1 | cut -d: -f1 || true)
+      if [ -n "$uikit" ] && [ "$uikit" -le 30 ]; then echo "  SKIP  $f  (needs the simulator)"; continue; fi
+      # A suite whose header names its successor is retired: it splices
+      # production code that has since moved, so its failures are drift, not
+      # regressions. The successor carries the same propositions.
+      superseded=$(grep -m1 '^// SUPERSEDED-BY:' "$f" | cut -d: -f2- | sed 's/^ *//' || true)
+      if [ -n "$superseded" ]; then echo "  SKIP  $f  (superseded by $superseded)"; continue; fi
       if "$TIMEOUT_BIN" 600 swift "$f" > "$log" 2>&1 && ! grep -q "❌" "$log"; then r=PASS; else r=FAIL; SA_RC=1; fi
       echo "  $r  $f  ($(( $(date +%s) - s ))s, ✅ $(grep -c '✅' "$log" || true) / ❌ $(grep -c '❌' "$log" || true))"
     done

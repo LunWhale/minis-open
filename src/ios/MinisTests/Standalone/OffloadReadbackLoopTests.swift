@@ -203,8 +203,10 @@ if agentProv.isEmpty || offl.isEmpty { print("  ⏭  sources not readable") } el
               String(conc[$0.upperBound...]).prefix(700).contains("offloadToolOutput(")
           }!)
     // The flag must survive every part rebuild, or a reminder launders it.
+    // A tripwire, not a census: the count moves only when a part rebuild is
+    // added, and the point of the check is that none of them forgets the flag.
     checkEq("every rebuild site carries the flag forward",
-            (pers + budget + offl).components(separatedBy: "isOffloadReadback: isReadback").count - 1, 4)
+            (pers + budget + offl).components(separatedBy: "isOffloadReadback: isReadback").count - 1, 5)
 }
 
 print("\n\(failures == 0 ? "✅ ALL PASSED" : "❌ \(failures) FAILURE(S)")")

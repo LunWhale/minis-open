@@ -401,8 +401,13 @@ do {
         // the END — past the candidate range's protected tail, where a
         // candidate call's result often sits. Nothing before the anchor is a
         // candidate any more, so nothing earlier can answer one.
+        // The scan start is now min(warm-up start, anchor): the warm-up before
+        // the anchor is sent too, so the sweep has to begin where the send
+        // begins and still run to the END of history.
         check("answered ids are collected up to the end of history, not just the candidate range",
-              offl.contains("for msg in agentHistory[scanStart...] {") && offl.contains("answeredToolUseIds.insert(id)"))
+              offl.contains("for msg in agentHistory[answeredFrom...] {")
+              && offl.contains("answeredToolUseIds.insert(id)")
+              && offl.contains("let answeredFrom = min(warmUpIndices.first ?? scanStart, scanStart)"))
     }
 }
 

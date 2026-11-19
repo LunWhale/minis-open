@@ -223,8 +223,11 @@ check("select mode is chosen once per section, rows fall back to a placeholder i
       sessionList.components(separatedBy: "selectableRow(sessionForRow(sessionId) ?? .missingRowPlaceholder(sessionId))").count == 3)
 let stackBody = rowsFile.components(separatedBy: "struct SessionStackRow: View {").last?.components(separatedBy: "struct SessionSplitRow").first ?? ""
 let splitBody = rowsFile.components(separatedBy: "struct SessionSplitRow: View {").last ?? ""
+// Navigation is a Button that sends .open(sid) through the action channel now
+// (NavigationLink(value:) would push from inside a List row that must stay
+// equatable), so the row's tappable surface is pinned by that send instead.
 check("iPhone row keeps navigation, drag, regen overlay, folder background and the value-only menu",
-      ["NavigationLink(value: session.id)", ".draggable(session.id)", "if isRegeneratingTitle {",
+      ["menuActions.send(.open(sid))", ".draggable(session.id)", "if isRegeneratingTitle {",
        "FolderMemberRowBackground(isLast: isLastInFolder)", "SessionContextMenu(", ".equatable()",
        ".listRowInsets(EdgeInsets())", ".listRowSeparator(.hidden)", "HomeListPerf.rowBuilt()"].allSatisfy(stackBody.contains))
 check("iPad row keeps selection tag, highlight band, draft menu id, drag, regen overlay",

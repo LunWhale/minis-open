@@ -87,7 +87,9 @@ do {
     // Every rebuild site goes through the choke point.
     let fb = source("Agent/Chat/AIChatViewModel+Fallback.swift")
     let vm = chatViewModelSource()
-    checkEq("three group-fallback rebuilds", fb.components(separatedBy: "currentProvider = await makeAgentProvider(for: nextEntry)").count - 1, 3)
+    // Four now: the image-budget fallback path rebuilds the provider too. The
+    // point is that every rebuild goes through the chokepoint.
+    checkEq("four group-fallback rebuilds", fb.components(separatedBy: "currentProvider = await makeAgentProvider(for: nextEntry)").count - 1, 4)
     check("retry-countdown model switch rebuilds via the factory", fb.contains("let newProvider = await makeAgentProvider(for: entry)"))
     check("the loop's initial provider comes from the factory", vm.contains("var provider = await makeAgentProvider(for: entry)"))
     check("mid-loop model switch too", vm.contains("provider = await makeAgentProvider(for: newEntry)"))

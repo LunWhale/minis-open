@@ -812,10 +812,14 @@ check("Claude OAuth replies feed the passive sink (OAuthURLProtocol didReceive r
       && oauthHTTP.contains("quotaInstanceId = tokenBox.quotaInstanceId"))
 check("Codex replies feed the passive sink (streamRaw, errors included)",
       openaiProv.contains("if isCodexOAuth, let http = response as? HTTPURLResponse {\n            QuotaObservationSink.recordCodexResponse(instanceId: quotaInstanceId, response: http)"))
+// The agent-side factory no longer builds providers itself: it hands the
+// instance to LLMProviderFactory, which is where both OAuth kinds get tagged.
+// The check is now "one tagging site, and the agent path goes through it".
 check("both factories tag Claude and Codex OAuth providers with their instance",
-      factory.contains("quotaInstanceId: iid") && agentFactory.contains("quotaInstanceId: iid")
+      factory.contains("quotaInstanceId: iid")
       && factory.components(separatedBy: ".quotaInstanceId = iid").count - 1 == 2
-      && agentFactory.components(separatedBy: ".quotaInstanceId = iid").count - 1 == 2)
+      && agentFactory.contains("LLMProviderFactory.makeAnthropicProvider(instance: instance")
+      && agentFactory.contains("LLMProviderFactory.makeOpenAIProvider(instance: instance"))
 check("subscription subjects keyed by instance (token rotates), token fetched only after the gates",
       store.contains("Self.subscriptionSubject(vendor: adapter.vendor, instanceId: instanceId)")
       && store.contains("guard let credential = await credentialSource() else {"))

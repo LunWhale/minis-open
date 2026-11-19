@@ -292,8 +292,14 @@ do {
     let with = ChatShareImageLayout.place(header: 60, groups: [100, 200], margin: 8, headerGap: 8, unitGap: 18)
     expect("layout: header at the top margin, then 8pt, then groups 18pt apart",
            with.ys == [8, 76, 194] && with.height == 8 + 60 + 8 + 100 + 18 + 200 + 8)
+    // Split into typed steps: one mixed Int/CGFloat expression this long makes
+    // the compiler give up before it can type-check the whole test file.
+    let parts: CGFloat = 60 + 100 + 200
+    let gapCount: CGFloat = max(3 - 2, 0)
+    let margin: CGFloat = 8
+    let expectedWithHeader: CGFloat = margin * 2 + parts + 18 * gapCount + 8
     expect("layout: with the header it matches the old formula (2m + parts + gaps + 8)",
-           with.height == 8 * 2 + (60 + 100 + 200) + 18 * CGFloat(max(3 - 2, 0)) + 8)
+           with.height == expectedWithHeader)
     let without = ChatShareImageLayout.place(header: nil, groups: [100, 200], margin: 8, headerGap: 8, unitGap: 18)
     expect("layout: hidden title — the first group starts at the top margin, no header gap",
            without.ys == [8, 126] && without.height == 8 + 100 + 18 + 200 + 8)

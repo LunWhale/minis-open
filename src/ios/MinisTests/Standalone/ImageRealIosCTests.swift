@@ -164,6 +164,28 @@ enum ModelsDevAPI { static func enrichModel(_ m: LLMModel) -> LLMModel { m } }
 enum XAIModelsAPI { static var allModels: [LLMModel] { [] } }
 enum KimiModelsAPI { static var allModels: [LLMModel] { [] } }
 
+// AgentMode names the feature plugins by id; the real BuiltinExtension lives in
+// Agent/Extension and pulls the registry, the manifest store and the JS runtime
+// behind it. Nothing on the persistence path needs any of that.
+enum BuiltinExtension {
+    static let todoID = "builtin.todo"
+    static let subagentsID = "builtin.subagents"
+    static let soulID = "builtin.soul"
+    static let mcpID = "builtin.mcp"
+    static let mountsID = "builtin.mounts"
+    static let memoryID = "builtin.memory"
+    static let skillsID = "builtin.skills"
+    static let envVarsID = "builtin.env-vars"
+    static let sharedFoldersID = "builtin.shared-folders"
+    static let promptShellID = "builtin.prompt.shell"
+    static let promptWorkspaceID = "builtin.prompt.workspace"
+    static let promptMemoryID = "builtin.prompt.memory"
+    static let promptCodingID = "builtin.prompt.coding"
+    static let promptAppleID = "builtin.prompt.apple"
+    static let promptMinisCLIID = "builtin.prompt.minis-cli"
+    static let promptEnvSecretsID = "builtin.prompt.env-secrets"
+}
+
 /// Stand-in for the app's MainActor view model: only the statics the blocks use.
 final class AIChatViewModel {
     var sessionId: String? = HarnessEnv.sessionId
@@ -219,7 +241,7 @@ let sdk = sh(["xcrun", "--sdk", "macosx", "--show-sdk-path"]).1.trimmingCharacte
 let catalyst = ["-D", "IMAGE_REAL_IOS_C", "-target", "arm64-apple-ios17.0-macabi", "-sdk", sdk,
                 "-Fsystem", "\(sdk)/System/iOSSupport/System/Library/Frameworks",
                 "-L", "\(sdk)/System/iOSSupport/usr/lib"]
-let wholeFiles = ["Providers/AgentProvider.swift", "Agent/Chat/ChatStoreModels.swift", "Providers/LLMTypes.swift",
+let wholeFiles = ["Providers/AgentProvider.swift", "Agent/Chat/ChatStoreModels.swift", "Agent/Chat/AgentMode.swift", "Providers/LLMTypes.swift",
                   "Providers/ProviderTypes.swift", "Providers/ThinkingLevelCatalog.swift",
                   "Providers/Gemini/GeminiWireFormat.swift"]
 let anthropicSrc = repoRoot.appendingPathComponent("build/DerivedData/SourcePackages/checkouts/SwiftAnthropic/Sources/Anthropic")

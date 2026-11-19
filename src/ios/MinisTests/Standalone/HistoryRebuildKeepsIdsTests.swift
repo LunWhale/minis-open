@@ -35,7 +35,14 @@ check("NEW: in-place edit keeps reasoningEcho", anchor.reasoningEcho == "enc")
 
 print("\nsource")
 let off = source("Agent/Chat/AIChatViewModel+Offloading.swift")
-let vm = source("Agent/Chat/AIChatViewModel.swift")
+// The retry cleanup and the in-loop sweep moved out of the main file into
+// their own partials; concatenate them so the invariants below still cover
+// every site.
+let vm = [
+    source("Agent/Chat/AIChatViewModel.swift"),
+    source("Agent/Chat/AIChatViewModel+Send.swift"),
+    source("Agent/Chat/AIChatViewModel+AgentLoop.swift"),
+].joined(separator: "\n")
 check("image eviction edits parts in place", off.contains("agentHistory[mi].parts = newParts"))
 check("retry cleanup edits parts in place", vm.contains("agentHistory[i].parts = cleaned  // [T-history-rebuild-keeps-ids]"))
 check("in-loop orphan sweep edits parts in place", vm.contains("agentHistory[i].parts = cleanedParts  // [T-history-rebuild-keeps-ids]"))

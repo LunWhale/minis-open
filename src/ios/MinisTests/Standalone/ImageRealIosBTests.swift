@@ -217,7 +217,7 @@ func sh(_ args: [String], timeout: TimeInterval = 600) -> (Int32, String) {
 let sdk = sh(["xcrun", "--sdk", "macosx", "--show-sdk-path"]).1.trimmingCharacters(in: .whitespacesAndNewlines)
 let catalyst = ["-target", "arm64-apple-ios17.0-macabi", "-sdk", sdk, "-Fsystem", "\(sdk)/System/iOSSupport/System/Library/Frameworks",
                 "-L", "\(sdk)/System/iOSSupport/usr/lib"]
-let whole = ["Providers/AgentProvider.swift", "Agent/Chat/ChatStoreModels.swift", "Providers/LLMTypes.swift", "Providers/ProviderTypes.swift",
+let whole = ["Providers/AgentProvider.swift", "Agent/Chat/ChatStoreModels.swift", "Agent/Chat/AgentMode.swift", "Providers/LLMTypes.swift", "Providers/ProviderTypes.swift",
              "Providers/ThinkingLevelCatalog.swift", "Providers/Gemini/GeminiWireFormat.swift"].map { iosRoot.appendingPathComponent($0).path }
 let helpers = ((try? FileManager.default.contentsOfDirectory(atPath: helperDir.path)) ?? []).filter { $0.hasSuffix(".swift") }.sorted()
     .map { helperDir.appendingPathComponent($0).path }
