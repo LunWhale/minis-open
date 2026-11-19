@@ -127,10 +127,28 @@
   `xcodebuild …`（原生 arm64）**BUILD SUCCEEDED**，`ImageRealIosATests` ✅23/❌0。
   **正确的修法是把这行从 `~/.zshrc` 删掉**（或只在该 shell 里临时 `export`），
   不再需要 `arch -x86_64`。
-- **`My Mac (Designed for iPad)` 目的地不出现**：Xcode 26.2 (17C52) 配 macOS 26.3 (25D125)
-  时，`MinisUnitTests` 的 destination 列表里只有真机和模拟器，
-  `scripts/ios-unit-tests.sh` 会停在 `no 'My Mac (Designed for iPad)' destination`。
-  XCTest 套件在本机暂时跑不了，standalone 脚本（`swift <file>`）不受影响。
+- **XCTest 仍然跑不起来，但原因不是目的地**：摘掉 `DYLD_LIBRARY_PATH` 之后
+  `My Mac (Designed for iPad)` 目的地重新出现（之前它是跟着 `ibtool` 一起崩在
+  xcodebuild 的发现阶段）。现在走得比之前远：
+  `build-for-testing -destination 'id=<My Mac>' CODE_SIGNING_ALLOWED=NO` 能产
+  `.xctestrun`；`test-without-building` 却停在安装：
+
+  ```
+  无法安装 "com.openminis.MinisTestHost"
+  Failed to verify code signature of …/MinisTestHost.app : 0xe800801c
+  (No code signature found.)
+  ```
+
+  用 `codesign -f -s - --entitlements`（application-identifier /
+  com.apple.developer.team-identifier / get-task-allow）做 ad-hoc 签名也不被接受
+  （`无法验证其完整性`）。iOS-on-Mac 的安装需要 **com.openminis.\* 的 provisioning
+  profile**，本机 3 个 profile 只覆盖 `com.brooks.idsh*` 与 `tg.tgqq7885.tool6`。
+  模拟器路线也不通：`-destination 'platform=iOS Simulator…'` 的
+  `build-for-testing` 直接报 `Unable to find module dependency: 'Minis'`（app target
+  的 iSH arm64 依赖只有 device 片）。
+
+  结论：本机能验的是「静态守卫 + 319 个 standalone 脚本 + arm64 `xcodebuild build`
+  + IPA 打包」；XCTest 套件需要一台配了 `com.openminis.*` 描述文件的机器。
 - `timeout(1)` 在 macOS 上不存在，脚本改用内置的 `scripts/ios-unit-tests/timeout.sh`
   （perl `alarm` 垫片）。
 

@@ -64,8 +64,16 @@ machine (297/322 before, plus 2 simulator-only skips and 1 retired suite).
   `0x0bad4007`. That one line explained all three "unexplainable" failures:
   `actool`/`ibtool` crashing at launch (BUILD FAILED), the Catalyst image harness
   crashing in `CGImageDestinationFinalize`, and why `arch -x86_64` looked like the
-  cure. With the variable unset, arm64 `xcodebuild` builds natively and
-  `actool`/`ibtool` work. `docs/network-review.md` records the diagnosis.
+  cure — it also hid the `My Mac (Designed for iPad)` destination, which is back.
+  With the variable unset, arm64 `xcodebuild` builds natively and `actool`/`ibtool`
+  work. `docs/network-review.md` records the diagnosis.
+- **XCTest still cannot run here**, for a different reason: the test host builds
+  unsigned, but iOS-on-Mac refuses to install it (`0xe800801c`, no code signature;
+  ad-hoc signing is rejected too). Installing `com.openminis.MinisTestHost` needs a
+  provisioning profile for `com.openminis.*`; this machine has profiles only for
+  `com.brooks.idsh*` and `tg.tgqq7885.tool6`. The simulator route fails earlier —
+  `build-for-testing` for iOS Simulator cannot resolve the `Minis` module because
+  the iSH dependency ships device slices only.
 - **Assertion drift, ~20 suites.** Upstream moved code the standalone tests pin
   by literal string: the image pipeline now lives behind `readImageInference` /
   `browserUseInferenceImage` / `saveBrowserSnapshotMedia`, budget ids are list

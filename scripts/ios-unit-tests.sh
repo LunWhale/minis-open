@@ -67,8 +67,11 @@ if [ "$XCTEST" = 1 ]; then
 
   if [ "$SKIP_BUILD" = 0 ]; then
     step "build Minis (Debug) for Minis.debug.dylib - build only, never run"
+    # Build only, never install: no certificate is configured on this machine,
+    # so signing would abort at "requires a development team".
     xcodebuild build -project "$PROJ" -scheme Minis -configuration Debug -destination 'generic/platform=iOS' \
-      -derivedDataPath "$DD" > "$OUT/build-app.log" 2>&1 || { tail -30 "$OUT/build-app.log"; fail "app build ($OUT/build-app.log)"; }
+      CODE_SIGNING_ALLOWED=NO -derivedDataPath "$DD" > "$OUT/build-app.log" 2>&1 \
+      || { tail -30 "$OUT/build-app.log"; fail "app build ($OUT/build-app.log)"; }
     step "build MinisTestHost + MinisTests"
     rm -f "$DD"/Build/Products/*.xctestrun
     xcodebuild build-for-testing -project "$PROJ" -scheme MinisUnitTests -configuration Debug \
